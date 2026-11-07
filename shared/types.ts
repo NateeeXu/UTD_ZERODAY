@@ -58,6 +58,13 @@ export interface Household {
   tractGeoid?: string;             // 所属人口普查区
   childrenUnder18?: boolean;       // 家里有 18 岁以下孩子
   awayDaytime?: boolean;           // 白天通常不在家（通勤上班等）
+  // v2 功能需求（CMIST），按普查区真实比例抽样，个体是合成的
+  age75?: boolean;                 // 75 岁以上（卡特里娜死亡风险最高的年龄段）
+  disability?: boolean;            // 残障或行动不便
+  noVehicle?: boolean;             // 家里没有车，难以撤离
+  limitedEnglish?: boolean;        // 英语能力有限
+  primaryLanguage?: string;        // 外联短信用的语言，例如 "en"、"es"、"zh"、"vi"
+  mobileHome?: boolean;            // 住移动房屋，风灾下最脆弱
 }
 
 export interface World {
@@ -84,7 +91,9 @@ export interface TruthRow {
 
 export type SimEvent =
   | { kind: 'sms_sent'; t: Minutes; householdId: string }
-  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help'; damage: Damage }
+  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help'; damage: Damage;
+      text?: string;       // v2：自由文本回复（可能是多语言），由 Claude 解析成 safety/damage/needs
+      language?: string }  // v2：回复所用语言
   | { kind: 'claim'; t: Minutes; householdId: string; peril: Peril; reportedDamage: Damage }
   | { kind: 'field_report'; t: Minutes; householdId: string; adjusterId: string; safety: Safety; damage: Damage };
 
