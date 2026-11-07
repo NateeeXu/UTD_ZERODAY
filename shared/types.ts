@@ -31,7 +31,7 @@ export interface HexCell {
 // v2：真实设施（学校常作为避难所）
 export interface Facility {
   id: string;
-  kind: 'school' | 'hospital' | 'shelter' | 'fire_station';
+  kind: 'school' | 'hospital' | 'shelter' | 'fire_station' | 'mast';
   name: string;
   lat: number;
   lng: number;
@@ -63,7 +63,7 @@ export interface Household {
   disability?: boolean;            // 残障或行动不便
   noVehicle?: boolean;             // 家里没有车，难以撤离
   limitedEnglish?: boolean;        // 英语能力有限
-  primaryLanguage?: string;        // 外联短信用的语言，例如 "en"、"es"、"zh"、"vi"
+  primaryLanguage?: string;        // 外联短信用的语言，也是自由文本回复的语言。代码：en es zh vi tl ko fr de ru ar other-ie other-api other
   mobileHome?: boolean;            // 住移动房屋，风灾下最脆弱
 }
 
@@ -79,6 +79,8 @@ export interface World {
   hazardType?: HazardType;  // 旧数据没有这个字段，视为 hurricane
   facilities?: Facility[];
   dataSources?: string[];   // 真实数据来源和许可说明
+  horizonMinutes?: number;  // 事件时长，缺省为 4320（72 小时）
+  eventLocalHour?: number;  // 灾害发生时的当地小时（0–23），决定 awayDaytime 是否起作用
 }
 
 // 真实情况。只有模拟器知道；引擎只在训练（回测事件）和评估（留出家庭）时读取。
@@ -111,7 +113,14 @@ export interface ModelParams {
   severe: { bias: number; weights: number[] };     // 预测 P(damage >= 2)
   needsHelp: { bias: number; weights: number[] };  // 预测 P(safety = needs_help)
   sourceTrust: { hazard: number; sms: number; claims: number }; // 0–1，展示用的数据源可信度
-  calibration: { brier: number; ece: number; heldOutEvent: string };
+  calibration: {
+    brier: number; ece: number; heldOutEvent: string;
+    auc?: number;                                          // v2 可选
+    needsHelp?: { brier: number; ece: number; auc: number };
+    baseline?: { brier: number; ece: number; auc: number }; // 只看灾害强度的基线
+  };
+  region?: string;      // v2：这个模型对应的地区
+  hazardType?: HazardType;
   trainedOn: string[];  // 用了哪些回测事件
 }
 
@@ -121,6 +130,7 @@ export interface HouseholdEstimate {
   pNeedsHelp: number;
   uncertainty: number;  // 0–1，越大越拿不准
   verified: boolean;    // 有现场报告
+  inspectScore?: number; // v2：主动查勘的推荐分
 }
 
 export interface HexEstimate {
@@ -133,5 +143,8 @@ export interface HexEstimate {
   priority: Priority;
   verification: Verification;
   silence: number;          // 0–1，应有信号却没有信号的程度
-  counts: { smsSent: number; smsReplies: number; claims: number; fieldReports: number };
+  counts: { smsSent: number; smsReplies: number; claims: number; fieldReports: number }; // 按户去重的计数
+  hazard?: number;          // v2：0–1 灾害分，验证规则用它
+  reason?: string;          // v2：给界面的一句话解释
+  silenceCause?: 'away' | 'trapped' | 'outage' | 'unknown'; // v2：沉默的主要原因
 }
