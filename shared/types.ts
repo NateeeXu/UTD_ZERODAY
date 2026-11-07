@@ -8,16 +8,37 @@ export type Damage = 0 | 1 | 2 | 3; // 0 无损，1 轻微，2 严重，3 无法
 export type Safety = 'safe' | 'needs_help' | 'unsure';
 export type Priority = 'P0' | 'P1' | 'P2';                    // 需要多快采取行动
 export type Verification = 'verified' | 'needs_verification';  // 信息够不够
-export type Peril = 'wind' | 'flood';
+export type Peril = 'wind' | 'flood' | 'earthquake';
+export type HazardType = 'hurricane' | 'earthquake';
 
 export interface HexCell {
   hex: HexId;
   lat: number;
   lng: number;
-  windMph: number;         // 峰值风速
-  floodDepthFt: number;    // 洪水深度，0 表示没淹
+  windMph: number;         // 峰值风速（地震场景为 0）
+  floodDepthFt: number;    // 洪水深度，0 表示没淹（地震场景为 0）
   towerOutagePct: number;  // 0–100，基站中断比例
   analystZone: 0 | 1 | 2;  // 人工标注的受灾区：0 无，1 中度，2 严重
+  // v2 可选字段：真实地图版数据才有，旧数据没有也合法
+  hazardIndex?: number;     // 0–1，不分灾种的强度，引擎优先用它
+  shakingMmi?: number;      // 地震：修正麦加利烈度
+  liquefaction?: number;    // 地震：0–1 液化易发程度
+  tractGeoid?: string;      // 重叠最多的人口普查区
+  daytimeWorkers?: number;  // LODES：在这个格子里上班的人数
+  residentWorkers?: number; // LODES：住在这个格子里的在职人数
+}
+
+// v2：真实设施（学校常作为避难所）
+export interface Facility {
+  id: string;
+  kind: 'school' | 'hospital' | 'shelter' | 'fire_station';
+  name: string;
+  lat: number;
+  lng: number;
+  hex: HexId;
+  enrollment?: number;
+  capacity?: number;
+  source: string;           // 数据来源，例如 "NCES" 或 "OpenStreetMap"
 }
 
 export interface Household {
@@ -33,6 +54,10 @@ export interface Household {
   earthquakeEndorsement: boolean;  // 地震要单独的附加险（飓风场景里只做展示）
   phoneOnFile: boolean;            // 有登记手机号才会收到短信
   holdout: boolean;                // true：只用来评估，永远不参与训练
+  // v2 可选字段
+  tractGeoid?: string;             // 所属人口普查区
+  childrenUnder18?: boolean;       // 家里有 18 岁以下孩子
+  awayDaytime?: boolean;           // 白天通常不在家（通勤上班等）
 }
 
 export interface World {
@@ -42,6 +67,11 @@ export interface World {
   center: { lat: number; lng: number };
   hexes: HexCell[];
   households: Household[];
+  // v2 可选字段
+  region?: string;          // 例如 "tx-corpus-christi"、"ca-bay-area"
+  hazardType?: HazardType;  // 旧数据没有这个字段，视为 hurricane
+  facilities?: Facility[];
+  dataSources?: string[];   // 真实数据来源和许可说明
 }
 
 // 真实情况。只有模拟器知道；引擎只在训练（回测事件）和评估（留出家庭）时读取。

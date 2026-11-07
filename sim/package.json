@@ -1,0 +1,19 @@
+{
+  "name": "triage-loop-sim",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Synthetic data simulator for Triage Loop (all data fictional)",
+  "type": "module",
+  "scripts": {
+    "sim": "node src/main.ts",
+    "check": "node src/check.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "h3-js": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

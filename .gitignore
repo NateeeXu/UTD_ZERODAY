@@ -19,3 +19,6 @@ spacetime.local.json
 .idea/
 .vscode/
 *.log
+
+# 真实数据的原始下载文件，体积大，可重新下载
+data/raw/
