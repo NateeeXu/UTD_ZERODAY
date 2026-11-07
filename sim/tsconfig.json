@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "../shared/types.ts"]
+  "include": ["src/**/*.ts", "real/**/*.ts", "../shared/types.ts"]
 }

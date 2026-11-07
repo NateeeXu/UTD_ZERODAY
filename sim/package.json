@@ -7,7 +7,11 @@
   "scripts": {
     "sim": "node src/main.ts",
     "check": "node src/check.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "real:fetch": "node real/fetch.ts",
+    "real:tx": "node real/main.ts tx",
+    "real:ca": "node real/main.ts ca",
+    "real:check": "node real/check.ts"
   },
   "dependencies": {
     "h3-js": "^4.5.0"
