@@ -1,0 +1,16 @@
+{
+  // Type-check for the Node scripts and the generated bindings (`npm run typecheck`).
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts", "../bindings/**/*.ts"]
+}

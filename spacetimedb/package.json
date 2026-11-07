@@ -1,0 +1,28 @@
+{
+  "name": "triage-loop-spacetimedb",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Triage Loop SpacetimeDB module (HackUTD 2026). All data is synthetic.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "spacetime build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "publish:local": "spacetime publish -s local --module-path . --yes triage-loop",
+    "publish:local:clean": "spacetime publish -s local --module-path . --delete-data=always --yes triage-loop",
+    "generate": "spacetime generate --lang typescript --out-dir bindings --module-path . --import-extension ts",
+    "seed": "node scripts/seed.ts",
+    "smoke": "node scripts/smoke.ts",
+    "sync-engine": "node scripts/sync-engine.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "spacetimedb": "2.14.*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.6.2"
+  }
+}
