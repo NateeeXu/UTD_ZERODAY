@@ -1,0 +1,21 @@
+# 依赖和构建产物
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# 密钥：这是公开仓库，任何密钥都不能提交
+.env
+.env.*
+!.env.example
+
+# Spacetime 本地数据
+.spacetime/
+spacetime.local.json
+
+# 系统和编辑器
+.DS_Store
+.idea/
+.vscode/
+*.log
