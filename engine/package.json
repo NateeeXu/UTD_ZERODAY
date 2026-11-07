@@ -1,0 +1,18 @@
+{
+  "name": "triage-loop-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fusion engine for Triage Loop: features, logistic calibration, inference, learning loop, active inspection (all data synthetic)",
+  "type": "module",
+  "scripts": {
+    "fixture": "node scripts/fixture.ts",
+    "calibrate": "node scripts/calibrate.ts",
+    "replay": "node scripts/replay.ts",
+    "check": "node scripts/selfcheck.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
