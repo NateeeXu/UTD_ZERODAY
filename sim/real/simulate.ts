@@ -126,15 +126,39 @@ export interface SimOptions {
   dataSources: string[];
 }
 
-/** Straight track through the landfall point along the heading: 160 km offshore to 200 km inland. */
-function hurricaneGeometry(sc: HurricaneScenario): HazardGeometry {
+/** Track, landfall and the expected wind swath, from the same wind profile as the simulator (HurricaneTrack.wind). */
+function hurricaneGeometry(sc: HurricaneScenario, t: HurricaneTrack): HazardGeometry {
   const h = (sc.headingDeg * Math.PI) / 180;
+  const ux = Math.sin(h), uy = Math.cos(h);
   const kmLng = 111.32 * Math.cos((sc.landfall.lat * Math.PI) / 180);
+  // s km along the track (+ = after landfall), d km to its right
+  const at = (s: number, d: number) => ({
+    lat: round(sc.landfall.lat + (s * uy - d * ux) / 111.32, 4),
+    lng: round(sc.landfall.lng + (s * ux + d * uy) / kmLng, 4),
+  });
   const track = [];
-  for (let d = -160; d <= 200; d += 40) track.push({ lat: round(sc.landfall.lat + (d * Math.cos(h)) / 111.32, 4), lng: round(sc.landfall.lng + (d * Math.sin(h)) / kmLng, 4) });
+  for (let s = -160; s <= 200; s += 40) track.push(at(s, 0));
+  // Radius where wind drops to V: vmax(s) * 0.9 (asymmetry + exposure, typical) * (R / d)^0.6 = V
+  const radius = (s: number, V: number) => {
+    const v = t.vmaxAt(s) * 0.9;
+    return v <= V ? 0 : sc.rmaxKm * (v / V) ** (1 / 0.6);
+  };
+  const band = (V: number) => {
+    const left = [], right = [];
+    for (let s = -160; s <= 200; s += 20) {
+      const r = radius(s, V);
+      if (r <= 0) continue;
+      left.push(at(s, -r));
+      right.unshift(at(s, r));
+    }
+    return [...left, ...right];
+  };
   const v = sc.vmaxMph;
   const category = v >= 157 ? 5 : v >= 130 ? 4 : v >= 111 ? 3 : v >= 96 ? 2 : 1;
-  return { kind: 'hurricane', landfall: sc.landfall, track, headingDeg: sc.headingDeg, vmaxMph: v, category, rmaxKm: sc.rmaxKm };
+  return {
+    kind: 'hurricane', landfall: sc.landfall, track, headingDeg: sc.headingDeg, vmaxMph: v, category, rmaxKm: sc.rmaxKm,
+    swath: { hurricane: band(74), tropical: band(39), radiiKm: { hurricane: Math.round(radius(0, 74)), tropical: Math.round(radius(0, 39)) } },
+  };
 }
 
 export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: SimOptions): { bundle: EventBundle; meta: SimMeta } {
@@ -478,7 +502,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       households,
       region: r.id,
       hazardType: sc.kind,
-      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
+      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc, track!) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
       facilities: base.facilities,
       dataSources: opt.dataSources,
       eventLocalHour,

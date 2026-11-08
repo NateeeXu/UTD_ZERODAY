@@ -107,7 +107,7 @@ From the outside these all look like silence. The carrier receipt separates them
 ### Hazard on the map
 
 `world.hazardGeometryJson` (JSON string, '' when none): draw the event itself on the map.
-- Hurricane: `{ kind: 'hurricane', landfall: {lat, lng}, track: [{lat, lng}, ...], headingDeg, vmaxMph, category, rmaxKm }`: landfall marker + storm track line (160 km offshore to 200 km inland).
+- Hurricane: `{ kind: 'hurricane', landfall: {lat, lng}, track: [{lat, lng}, ...], headingDeg, vmaxMph, category, rmaxKm }`: landfall marker + storm track line (160 km offshore to 200 km inland). Also `swath: { hurricane: [{lat, lng}, ...], tropical: [...], radiiKm: { hurricane, tropical } }`: the expected impact area as two closed polygons along the track, where hurricane-force (>= 74 mph) and tropical-storm-force (>= 39 mph) winds are expected, from the simulator's wind profile; draw them under the cells with low opacity.
 - Earthquake: `{ kind: 'earthquake', epicenter: {lat, lng}, rupture: [{lat, lng}, {lat, lng}] | null, magnitude, faultName }`: epicentre marker + rupture line (`null` for USGS ShakeMap scenarios).
 
 ### Uncertainty on the map
