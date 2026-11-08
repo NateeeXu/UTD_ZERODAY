@@ -5,8 +5,9 @@
 import { useMemo, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
-import { ESCALATION, EscalationChip, riskFlags } from './accounting';
+import { ESCALATION, riskFlags } from './accounting';
 import type { ClaimRow, FieldReportRow, HouseholdEstimateRow, HouseholdFollowupRow, HouseholdRow, SmsReplyRow } from './rows';
+import type { Priority } from './mapModel';
 import { fmtT, homeLabel, pct } from '../format';
 
 export const DAMAGE = ['None', 'Minor', 'Severe', 'Uninhabitable'] as const;
@@ -70,6 +71,28 @@ export function propertyLine({ est, replies, reports, claims }: HouseholdSignals
   const claim = latest(claims);
   if (claim) return { status: `Claim reported: ${DAMAGE[claim.reportedDamage] ?? claim.reportedDamage}`, detail: withWhy(model) };
   return { status: report ? 'Not assessed' : 'Not inspected', detail: withWhy(model) };
+}
+
+// The Home panel's readout, in the area panel's format (a short value over a short label):
+// people | home damage | model chance of severe damage. Same precedence as peopleLine / propertyLine.
+function homeReadout(s: HouseholdSignals): { v: string; l: string; title?: string }[] {
+  const { est, replies, reports, claims } = s;
+  const detail = peopleLine(s).detail;
+  const people = {
+    v: est ? (est.accounted ? 'Accounted' : 'Not heard from') : '—',
+    l: detail ? detail.charAt(0).toLowerCase() + detail.slice(1) : 'people',
+  };
+  const assessed = latest(reports.filter((r) => r.damageKnown));
+  const reply = latest(replies);
+  const claim = latest(claims);
+  const dmg = (d: number) => DAMAGE[d] ?? String(d);
+  const home = assessed ? { v: dmg(assessed.damage), l: 'home damage (inspected)' }
+    : reply && !reply.damageKnown ? { v: 'Unknown', l: 'home damage' }
+    : reply ? { v: dmg(reply.damage), l: 'home damage (resident)' }
+    : claim ? { v: dmg(claim.reportedDamage), l: 'home damage (claim)' }
+    : { v: '—', l: latest(reports) ? 'home not assessed' : 'home not inspected' };
+  const model = { v: est ? pct(est.pSevere) : '—', l: 'chance of severe damage', title: 'Model estimate' };
+  return [people, home, model];
 }
 
 // Field report damage as text ("not assessed" when the visit could not look at the house).
@@ -153,8 +176,10 @@ export function ContactActions({ householdId, note, recommended, canAssign, adju
 }
 
 // Manager: one household in the right rail (opened from a queue or request row).
-export function HouseholdPanel({ householdId, household, est, replies, reports, claims, label, fictional, sentTo, canAssign, adjusterUrl, onAssign, onClose, noteFor }: {
+export function HouseholdPanel({ householdId, household, est, replies, reports, claims, label, priority, unverified, fictional, sentTo, canAssign, adjusterUrl, onAssign, onClose, noteFor }: {
   householdId: string;
+  priority?: Priority;      // the household's cell, shown like the area panel's chip
+  unverified?: boolean;
   household: HouseholdRow | undefined;
   est: HouseholdEstimateRow | undefined;
   replies: readonly SmsReplyRow[];
@@ -176,6 +201,7 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
   const flags = riskFlags(household);
   const kids = noteFor?.(household);
   const step = est?.escalation ?? '';
+  const stepInfo = step ? ESCALATION[step] ?? { label: step, tone: 'muted' as const } : null;
 
   return (
     <aside className="card detail hh-panel">
@@ -184,16 +210,23 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
           <button className="link muted" onClick={onClose}>← Back</button>
           <button className="link muted close" onClick={onClose} aria-label="Close">×</button>
         </div>
+        {/* Same layout as the area panel (CellDetail): chip, title, status pill; one muted line; the readout. */}
         <div className="detail-title">
+          {priority && (
+            <span className={`chip chip-${priority}`} style={{ opacity: unverified ? 0.55 : 1 }} title={unverified ? `${priority}, needs check` : priority}>{priority}</span>
+          )}
           <h2>{homeLabel(householdId, fictional)}</h2>
-          {step && <EscalationChip step={step} />}
+          {stepInfo && <span className={`pill tone-${stepInfo.tone}`}>{stepInfo.label}</span>}
         </div>
-        <span className="muted small">{label}</span>
-        {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
+        <span className="muted small">
+          {label}{flags.length > 0 && <> · <span className="risk">{flags.join(' · ')}</span></>}
+        </span>
         {kids && <span className="kids small">{kids}</span>}
       </div>
       <div className="detail-body">
-        <PeopleProperty {...signals} />
+        <div className="readout">
+          {homeReadout(signals).map((r) => <span key={r.l} title={r.title}><b>{r.v}</b>{r.l}</span>)}
+        </div>
         {sentTo && <p className="small"><span className="esc esc-green">Adjuster sent · {sentTo}</span></p>}
         <h3 className="eyebrow divider">Contact history</h3>
         {history.length ? (

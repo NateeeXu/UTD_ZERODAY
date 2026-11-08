@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { RegionConfig } from './config';
 import { CellDetail, RegionHeader } from './ManagerLive';
-import { FacilityKey, LiveMap } from './LiveMap';
+import { LiveMap } from './LiveMap';
 import { makeLabeler } from './labels';
 import { CAUSE, COLOR, isSuspected, prio, RANK, unitsFor, type MapUnit, type Priority } from './mapModel';
-import { loadPreview, snapshotFacilities, snapshotRows, type PreviewData } from './snapshot';
+import { loadPreview, snapshotRows, type PreviewData } from './snapshot';
 import type { HexStatsRow } from './rows';
 import { pct } from '../format';
 
@@ -20,12 +20,10 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
   const [t, setT] = useState(360);
   const [tab, setTab] = useState<'verify' | 'act'>('verify');
   const [selected, setSelected] = useState<MapUnit | null>(null);
-  const [showFacilities, setShowFacilities] = useState(false);
   const [res, setRes] = useState<7 | 8>(7);
 
   const snap = region.preview ? data?.regions[region.preview] : undefined;
   const cells = useMemo(() => (snap ? snapshotRows(snap.snapshots[String(t)] ?? []) : []), [snap, t]);
-  const facilities = useMemo(() => (snap ? snapshotFacilities(snap) : []), [snap]);
   const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), false), [snap]); // eslint-disable-line react-hooks/exhaustive-deps
   const labelFor = useCallback((u: MapUnit) => (u.res === 7 ? labeler.district(u.id) : labeler.cell(u.id)), [labeler]);
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
@@ -84,8 +82,6 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
       <div className="stage">
         <LiveMap
           cells={cells}
-          facilities={facilities}
-          showFacilities={showFacilities}
           labelFor={labelFor}
           selected={sel?.id ?? null}
           onSelect={setSelected}
@@ -98,10 +94,6 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
         <div className="overlay top-left">
           <div className="map-chips">
             <span className="pill">{res === 7 ? 'Districts · H3 res 7' : 'Neighborhoods · H3 res 8'}</span>
-            <label className="check chip-check">
-              <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} />
-              <FacilityKey />
-            </label>
           </div>
         </div>
 

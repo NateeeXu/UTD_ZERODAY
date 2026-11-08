@@ -1,8 +1,15 @@
 /* Area panel (CellDetail): the district's "Most urgent neighborhood" line. */
 .detail-body .nb-line { margin: 14px 20px 4px; font-size: 13.5px; color: #555; }
 .detail-body .nb-line .nb-link { font: inherit; font-weight: 700; color: #111; text-decoration: underline; text-underline-offset: 2px; }
-/* No hairlines above and below the area panel's body (higher specificity: this file loads before styles.css). */
-.right-rail .card.detail:not(.hh-panel) > .detail-head { border-bottom: 0; }
-.right-rail .card.detail:not(.hh-panel) > .detail-actions { border-top: 0; }
-/* Each number sits centred directly above its label. */
-.right-rail .card.detail:not(.hh-panel) .readout span { align-items: center; text-align: center; }
+/* No hairlines above and below the panel body, area and Home panel alike (higher specificity: this file loads before styles.css). */
+.right-rail .card.detail > .detail-head { border-bottom: 0; }
+.right-rail .card.detail > .detail-actions { border-top: 0; }
+/* Each value sits centred directly above its label. */
+.right-rail .card.detail .readout span { align-items: center; text-align: center; }
+/* Home panel: the household's next step as an outlined pill, like the area panel's status pill. */
+.right-rail .hh-panel .detail-title .pill.tone-green { border-color: #0f7a55; color: #0b5c40; }
+.right-rail .hh-panel .detail-title .pill.tone-amber { border-color: #b45309; color: #92400e; }
+.right-rail .hh-panel .detail-title .pill.tone-red { border-color: #b42d29; color: #9b1f1b; }
+.right-rail .hh-panel .detail-title .pill.tone-blue { border-color: #2b5fb4; color: #234f97; }
+.right-rail .hh-panel .detail-title .pill.tone-muted { border-color: var(--line); color: var(--muted); }
+.right-rail .hh-panel .detail-body > .readout + p { margin-top: 10px; }

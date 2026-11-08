@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary, cellToLatLng } from 'h3-js';
-import type { FacilityRow, HexStatsRow } from './rows';
+import type { HexStatsRow } from './rows';
 import type { HazardGeometry } from '@shared/types';
 import { COLOR, LOD_ZOOM, cellSetKey, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
 import { hazardLabel } from './hazard';
@@ -13,23 +13,8 @@ const HAZARD_FILL = '#3b5b8c';
 const HAZARD_INK = '#1e2a3a';
 export type FitTarget = { target: 'cells' | 'cone'; n: number };
 
-type FacilityKind = 'school' | 'university' | 'hospital';
-// Shape and colour carry the kind: hospital = green square, school = blue dot, university = larger
-// blue dot. Same look as FacilityKey in the toggle chip.
-function facilityIcon(kind: FacilityKind): L.DivIcon {
-  const size = kind === 'university' ? 13 : 10;
-  return L.divIcon({
-    className: `fac-icon fac-${kind}`,
-    html: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-}
-
 interface Props {
   cells: readonly HexStatsRow[];
-  facilities: readonly FacilityRow[];
-  showFacilities: boolean;
   labelFor: (u: MapUnit) => string;
   selected: string | null;              // res-8 hex or res-7 district id
   onSelect: (unit: MapUnit) => void;
@@ -124,10 +109,10 @@ function smoothWheelZoom(m: L.Map): () => void {
   };
 }
 
-export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority', hazard = null, fitTo = null, adjusters }: Props) {
+export function LiveMap({ cells, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority', hazard = null, fitTo = null, adjusters }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
-  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup; hazard: L.LayerGroup; adj: L.LayerGroup } | null>(null);
+  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; hazard: L.LayerGroup; adj: L.LayerGroup } | null>(null);
   const lastFitN = useRef(0);
   // Polygons are kept and restyled in place; rebuilt only when the level of detail changes.
   const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; shape: MapUnit['shape'] }> } | null>(null);
@@ -155,7 +140,6 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
       cells: L.layerGroup().addTo(m),
       rings: L.layerGroup().addTo(m),
       sel: L.layerGroup().addTo(m),
-      fac: L.layerGroup(),
       hazard: L.layerGroup().addTo(m),
       adj: L.layerGroup().addTo(m),
     };
@@ -340,28 +324,6 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     m.flyToBounds(L.latLngBounds(pts), { paddingTopLeft: [padLeft, 24], paddingBottomRight: [padRight, 24], duration: 0.6 });
   }, [fitTo, hazard, cells, padLeft, padRight]);
 
-  // Schools / universities / hospitals.
-  useEffect(() => {
-    const m = map.current;
-    const g = groups.current;
-    if (!m || !g) return;
-    g.fac.clearLayers();
-    // Schools, universities and hospitals only (the table also has fire stations, shelters, masts).
-    // Drawn as markers (markerPane, z 600), so they always sit above the hexes even after the cells
-    // are rebuilt on a zoom level-of-detail change.
-    for (const f of facilities.filter((x) => x.kind === 'school' || x.kind === 'university' || x.kind === 'hospital')) {
-      const kind = f.kind as FacilityKind;
-      const what = kind === 'hospital' ? 'Hospital' : kind === 'university' ? 'University' : 'School';
-      const tip = document.createElement('span'); // textContent: names come from data, never parsed as HTML
-      tip.textContent = `${what} · ${f.name}${f.enrollment != null ? ` · ${f.enrollment.toLocaleString()} students` : ''}`;
-      L.marker([f.lat, f.lng], { icon: facilityIcon(kind), keyboard: false, title: '' })
-        .bindTooltip(tip, { direction: 'top', offset: [0, -8] })
-        .addTo(g.fac);
-    }
-    if (showFacilities) g.fac.addTo(m);
-    else g.fac.remove();
-  }, [facilities, showFacilities]);
-
   // Adjuster positions (demo starts picked on the phones). Markers (z 600), so they sit above the hexes.
   useEffect(() => {
     const g = groups.current;
@@ -389,14 +351,4 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
   }, [flash]);
 
   return <div ref={el} className="map" />;
-}
-
-/** Toggle-chip label that doubles as the map key for the facility icons. */
-export function FacilityKey() {
-  const badge = (k: FacilityKind) => <i className={`fac-icon fac-${k}`} aria-hidden />;
-  return (
-    <span className="fac-key">
-      {badge('school')} Schools · {badge('hospital')} Hospitals
-    </span>
-  );
 }

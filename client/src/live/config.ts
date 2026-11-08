@@ -9,13 +9,14 @@ export interface RegionConfig {
   label: string;
   db: string | null;              // live database (set an env var to '' to fall back to the preview)
   preview: 'tx' | 'ca' | null;    // read-only snapshot from docs/preview/preview-data.js, used only when db is empty
+  dev?: boolean;                  // not in the top-bar switcher; reachable only with ?region=<id> in the URL
 }
 
 // Region → database. Override per region with env vars once Nate publishes them.
 export const REGIONS: RegionConfig[] = [
   { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? 'triage-loop-nateeexu-tx', preview: 'tx' },
   { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? 'triage-loop-nateeexu-ca', preview: 'ca' },
-  { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null },
+  { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null, dev: true },
 ];
 
 const REGION_KEY = 'triage-region';
@@ -28,8 +29,10 @@ export function initialRegion(): RegionConfig {
   } catch {
     /* storage blocked */
   }
-  const want = fromUrl ?? saved;
-  return REGIONS.find((r) => r.id === want && (r.db || r.preview)) ?? REGIONS.find((r) => r.db || r.preview)!;
+  const usable = (id: string | null) => REGIONS.find((r) => r.id === id && (r.db || r.preview));
+  // A dev region opens only from an explicit ?region=; a remembered one falls back to the first public region.
+  const remembered = usable(saved);
+  return usable(fromUrl) ?? (remembered && !remembered.dev ? remembered : undefined) ?? REGIONS.find((r) => !r.dev && (r.db || r.preview))!;
 }
 
 // Phone screens need a live database: fall back to the first region that has one.

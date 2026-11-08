@@ -3,7 +3,7 @@ import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './config';
-import { FacilityKey, LiveMap, type FitTarget } from './LiveMap';
+import { LiveMap, type FitTarget } from './LiveMap';
 import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
@@ -53,7 +53,8 @@ export function RegionHeader({ region, onRegion, fictional, scenario, children }
         </span>
       </div>
       <div className="segmented" role="group" aria-label="Region">
-        {REGIONS.map((r) => {
+        {/* Dev regions (Harbor Bend) stay off the switcher; shown only while one is open via ?region=. */}
+        {REGIONS.filter((r) => !r.dev || r.id === region.id).map((r) => {
           const available = !!(r.db || r.preview);
           return (
             <button key={r.id} className={r.id === region.id ? 'on' : ''} disabled={!available}
@@ -123,7 +124,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [mapMode, setMapMode] = useState<MapMode>('priority');
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
-  const [showFacilities, setShowFacilities] = useState(false);
   // The disaster itself (cone / track / landfall, or epicentre / rupture). Parsed once per world.
   const hazard = useMemo(() => parseHazard(world?.hazardGeometryJson), [world?.hazardGeometryJson]);
   const [fitTo, setFitTo] = useState<FitTarget | null>(null); // map opens on the cells; the button flips to the cone and back
@@ -240,6 +240,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const focusIds = useMemo(() => (focus ? [focus.id] : []), [focus]);
   const focusHousehold = useHouseholdsById(focusIds).get(focus?.id ?? '');
   const focusEst = useEstimatesById(focusIds).get(focus?.id ?? '');
+  const focusCell = focus ? cellBy.get(focus.hex) : undefined;
   const focusSignals = useMemo(() => ({
     replies: focus ? smsReplies.filter((r) => r.householdId === focus.id) : [],
     reports: focus ? fieldReports.filter((r) => r.householdId === focus.id) : [],
@@ -279,8 +280,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
       <div className="stage">
         <LiveMap
           cells={cells}
-          facilities={facilities}
-          showFacilities={showFacilities}
           labelFor={labelFor}
           selected={focus?.hex ?? sel?.id ?? null}
           onSelect={selectUnit}
@@ -324,10 +323,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               <button className={mapMode === 'priority' ? 'on' : ''} aria-pressed={mapMode === 'priority'} onClick={() => setMapMode('priority')}>Priority</button>
               <button className={mapMode === 'unaccounted' ? 'on' : ''} aria-pressed={mapMode === 'unaccounted'} onClick={() => setMapMode('unaccounted')}>Unaccounted</button>
             </div>
-            <label className="glass-chip">
-              <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} disabled={!facilities.length} />
-              <FacilityKey />
-            </label>
             {hasCone(hazard) && (
               <button className="glass-chip chip-btn" aria-pressed={coneShown}
                 onClick={() => setFitTo((f) => ({ target: f?.target === 'cone' ? 'cells' : 'cone', n: (f?.n ?? 0) + 1 }))}>
@@ -386,6 +381,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               est={focusEst}
               {...focusSignals}
               label={labeler.cell(focus.hex)}
+              priority={focusCell && prio(focusCell.priority)}
+              unverified={focusCell?.verification === 'needs_verification'}
               fictional={fictional}
               sentTo={sentTo.get(focus.id)}
               canAssign={adjusters.length > 0}
