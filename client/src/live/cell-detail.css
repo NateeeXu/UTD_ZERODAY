@@ -1,3 +1,8 @@
 /* Area panel (CellDetail): the district's "Most urgent neighborhood" line. */
 .detail-body .nb-line { margin: 14px 20px 4px; font-size: 13.5px; color: #555; }
 .detail-body .nb-line .nb-link { font: inherit; font-weight: 700; color: #111; text-decoration: underline; text-underline-offset: 2px; }
+/* No hairlines above and below the area panel's body (higher specificity: this file loads before styles.css). */
+.right-rail .card.detail:not(.hh-panel) > .detail-head { border-bottom: 0; }
+.right-rail .card.detail:not(.hh-panel) > .detail-actions { border-top: 0; }
+/* Each number sits centred directly above its label. */
+.right-rail .card.detail:not(.hh-panel) .readout span { align-items: center; text-align: center; }
