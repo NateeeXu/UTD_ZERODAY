@@ -3,6 +3,7 @@ type P = { size?: number };
 const base = (size: number) => ({ width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true });
 
 export const ChevronLeft = ({ size = 22 }: P) => <svg {...base(size)}><path d="M15 5l-7 7 7 7" /></svg>;
+export const ChevronRight = ({ size = 18 }: P) => <svg {...base(size)}><path d="M9 5l7 7-7 7" /></svg>;
 export const More = ({ size = 22 }: P) => (
   <svg {...base(size)} stroke="none" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
 );

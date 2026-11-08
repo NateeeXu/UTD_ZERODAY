@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ManagerLive } from './live/ManagerLive';
 import { AdjusterLive } from './live/AdjusterLive';
-import { ReplyLive } from './live/ReplyLive';
+import { FollowLive, ReplyLive } from './live/ReplyLive';
 import { ManagerView } from './views/ManagerView';
 import { AdjusterView } from './views/AdjusterView';
 import { SmsView } from './views/SmsView';
@@ -15,6 +15,7 @@ import { TriageProvider } from './state/TriageStore';
 //     #/                    manager dashboard
 //     #/adjuster            adjuster phone
 //     #/reply?h=ID&code=C   policyholder SMS page (QR target)
+//     #/app?code=C          insurer-app messages concept (follows the newest accepted home)
 //   Local mode (browser-only replay of data/live.json, no backend):
 //     #/local  #/local/adjuster  #/local/sms?h=ID
 //   Design explorations:
@@ -46,6 +47,8 @@ export function App() {
     case '/reply':
     case '/sms':
       return <ReplyLive householdId={q.get('h')} code={q.get('code') ?? ''} />;
+    case '/app':
+      return <FollowLive code={q.get('code') ?? ''} />;
     case '/local':
       return <Local><ManagerView /></Local>;
     case '/local/adjuster':

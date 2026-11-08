@@ -1,4 +1,7 @@
 // Policyholder "Disaster check-in" page (QR target): #/reply?h=<householdId>&code=<reply passcode>. No login.
+// FollowLive (#/app?code=<reply passcode>) is the same chat in an insurer-app messages look (appMode): it follows
+// the household of the newest automatic (system) message, so a demo phone switches to a home as soon as an
+// adjuster accepts it. appMode styles live under .rp[data-app], so #/reply is unchanged.
 // Mobile first (390×844), safe areas, 44 px targets. One red token (--brand-red) for small accents only;
 // the one large red area is the full-width Call 911 after "Need help". Styles: ./reply/reply.css.
 //
@@ -15,13 +18,22 @@ import type ChatMessageRowDef from '../module_bindings/chat_message_table.ts';
 import { LiveProvider } from './LiveProvider';
 import { initialLiveRegion, type RegionId } from './config';
 import { useVisualViewport } from './useVisualViewport';
-import { ArrowUp, Camera, ChatIcon, ChevronLeft, More, PhoneIcon, Pin, Shield } from './reply/icons';
+import { ArrowUp, Camera, ChatIcon, ChevronLeft, ChevronRight, More, PhoneIcon, Pin, Shield } from './reply/icons';
 import './reply/reply.css';
 
 const CODE_KEY = 'triage-reply-code'; // same key as the QR card on the dashboard
 const MAX_TEXT = 500; // submit_raw_reply accepts 1..500 characters
 const PLACE: Record<RegionId, string> = { tx: 'Corpus Christi', ca: 'the Bay Area', harbor: 'your area' };
 const BAD_LINK = "This link doesn't match a household in the current demo.";
+const LOGO_URL = ''; // appMode conversation badge; empty = neutral red shield
+const TOAST_MS = 5000;
+// Damage scale the accept template asks about; a lone digit is understood by the backend.
+const DAMAGE_CHOICES: { n: string; label: string }[] = [
+  { n: '1', label: 'Minor or no damage' },
+  { n: '2', label: 'Moderate' },
+  { n: '3', label: 'Severe' },
+  { n: '4', label: 'Not sure' },
+];
 
 type ChipId = 'ok' | 'help' | 'away';
 // Quick replies go to submit_parsed_reply (no Claude parse needed); damage 255 = not described.
@@ -89,13 +101,85 @@ export function ReplyLive({ householdId, code }: { householdId: string | null; c
   );
 }
 
-function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode: string; place: string }) {
+// #/app: follows the newest system message's household (key = household, so local state resets on a switch).
+export function FollowLive({ code }: { code: string }) {
+  const region = useMemo(initialLiveRegion, []);
+  useViewportFitCover();
+  return (
+    <LiveProvider screen="reply" db={region.db!}>
+      <Follow code={code} place={PLACE[region.id]} />
+    </LiveProvider>
+  );
+}
+
+type Toast = { key: number; text: string };
+
+function Follow({ code, place }: { code: string; place: string }) {
+  const [all, ready] = useTable(tables.chatMessage);
+  const latestSystem = useMemo(
+    () => all.reduce<ChatRow | null>((a, r) => (r.sender === 'system' && (!a || r.id > a.id) ? r : a), null),
+    [all],
+  );
+  const householdId = latestSystem?.householdId ?? null;
+
+  // Notifications only for messages that arrive after the page opened (a reload doesn't replay them).
+  const seen = useRef<bigint | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    const max = all.reduce((m, r) => (r.id > m ? r.id : m), 0n);
+    if (seen.current === null) { seen.current = max; return; }
+    const fresh = all.filter((r) => r.id > seen.current! && r.sender !== 'policyholder').sort(byId);
+    if (max > seen.current) seen.current = max;
+    const last = fresh[fresh.length - 1];
+    if (last) setToast({ key: Date.now(), text: last.sender === 'system' ? 'Adjuster assigned' : 'New message from your adjuster' });
+  }, [all, ready]);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(id);
+  }, [toast]);
+  const openLatest = () => {
+    setToast(null);
+    document.querySelector('.rp[data-app] .rp-thread')?.scrollTo({ top: 1e9, behavior: 'smooth' });
+  };
+
+  return (
+    <>
+      {householdId ? (
+        <CheckIn key={householdId} appMode householdId={householdId} urlCode={code} place={place} />
+      ) : (
+        <Page appMode helpSent={false} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), onRetry: () => undefined, enabled: false, state: 'idle' }}>
+          <p className="rp-note rp-empty">{ready ? 'No messages yet.' : 'Loading…'}</p>
+        </Page>
+      )}
+      {toast && (
+        <button key={toast.key} type="button" className="rp-toast" role="status" onClick={openLatest}>
+          <span className="rp-toast-badge"><Shield /></span>
+          <span className="rp-toast-text"><b>{toast.text}</b><span>Tap to view</span></span>
+        </button>
+      )}
+    </>
+  );
+}
+
+function CheckIn({ householdId, urlCode, place, appMode = false }: { householdId: string; urlCode: string; place: string; appMode?: boolean }) {
   const [rows, ready] = useTable(useMemo(() => tables.household.where((r) => r.id.eq(householdId)), [householdId]));
   const [worldRows] = useTable(tables.world);
   const [sentRows] = useTable(useMemo(() => tables.smsSent.where((r) => r.householdId.eq(householdId)), [householdId]));
   const [chatRows] = useTable(useMemo(() => tables.chatMessage.where((r) => r.householdId.eq(householdId)), [householdId]));
   const submitParsed = useReducer(reducers.submitParsedReply);
   const submitRaw = useReducer(reducers.submitRawReply);
+  // appMode header: the adjuster of this home's newest open assignment (name from member).
+  const [assignRows] = useTable(useMemo(() => tables.assignment.where((r) => r.householdId.eq(householdId)), [householdId]), { enabled: appMode });
+  const [members] = useTable(tables.member, { enabled: appMode });
+  const adjusterName = useMemo(() => {
+    if (!appMode) return null;
+    const open = assignRows.filter((a) => a.status === 'assigned').sort((a, b) => (a.id < b.id ? 1 : -1))[0];
+    if (!open) return null;
+    const hex = open.adjuster.toHexString();
+    return members.find((m) => m.identity.toHexString() === hex)?.name.trim() || null;
+  }, [appMode, assignRows, members]);
 
   const hazard = worldRows[0]?.hazardType === 'earthquake' ? 'earthquake' : 'hurricane';
   const known = rows.length > 0;
@@ -223,6 +307,10 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
     if (send === 'failed') setSend('idle');
   };
 
+  // appMode: the 1–4 damage card, after the accept template (a system row) until a lone 1–4 has been sent.
+  const showDamage = appMode && chat.some((r) => r.sender === 'system')
+    && !chat.some((r) => r.sender === 'policyholder' && /^[1-4]$/.test(r.text.trim()));
+
   const saveCode = (v: string) => {
     writeCode(v);
     setCode(v);
@@ -234,6 +322,8 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
 
   return (
     <Page
+      appMode={appMode}
+      who={adjusterName}
       helpSent={helpSent}
       scrollKey={scrollKey}
       onAddCode={() => { pending.current = null; setSheet(true); }}
@@ -276,6 +366,18 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
               ),
             )}
           </div>
+          {showDamage && (
+            <div className="rp-card rp-damage" role="group" aria-labelledby="rp-damage-title">
+              <h2 id="rp-damage-title">How is your home?</h2>
+              {DAMAGE_CHOICES.map((d) => (
+                <button key={d.n} type="button" className="rp-damage-row" disabled={!known || send === 'sending'}
+                  onClick={() => withCode((c) => deliverText(d.n, c))}>
+                  <span>{d.n} · {d.label}</span>
+                  <ChevronRight />
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
     </Page>
@@ -296,7 +398,7 @@ function ChatBubble({ row, received }: { row: ChatRow; received: boolean }) {
   return (
     <div className="rp-msg">
       <span className="rp-from">{from}</span>
-      <div className="rp-bubble them">{row.text}</div>
+      <div className={`rp-bubble them${row.sender === 'system' ? ' sys' : ''}`}>{row.text}</div>
     </div>
   );
 }
@@ -357,7 +459,9 @@ function useStickToBottom(thread: RefObject<HTMLElement | null>, content: RefObj
 }
 
 // Call 911 is visual only in this demo: it never dials and shows no message.
-function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
+function Page({ appMode = false, who = null, helpSent, scrollKey, onAddCode, composer, sheet, children }: {
+  appMode?: boolean;
+  who?: string | null; // appMode: the adjuster's name, if one is assigned
   helpSent: boolean;
   scrollKey?: string;
   onAddCode?: () => void;
@@ -374,13 +478,17 @@ function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
   const sending = composer.state === 'sending';
   const canSend = composer.enabled && !sending && composer.text.trim().length > 0;
   return (
-    <div className="rp" ref={pageRef}>
+    <div className="rp" ref={pageRef} data-app={appMode ? '' : undefined}>
       <div className="rp-top">
         <header className="rp-head">
-          <button type="button" className="rp-close" onClick={() => { if (window.history.length > 1) window.history.back(); }}>
-            <ChevronLeft /> Close
-          </button>
-          <h1>Disaster check-in</h1>
+          {appMode ? (
+            <button type="button" className="rp-close">Close</button> /* static in the concept */
+          ) : (
+            <button type="button" className="rp-close" onClick={() => { if (window.history.length > 1) window.history.back(); }}>
+              <ChevronLeft /> Close
+            </button>
+          )}
+          <h1>{appMode ? 'Messages' : 'Disaster check-in'}</h1>
           <button type="button" className="rp-more" aria-label="More" aria-expanded={menu} onClick={() => setMenu((v) => !v)} disabled={!onAddCode}>
             <More />
           </button>
@@ -391,7 +499,17 @@ function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
           </div>
         )}
         <div className="rp-sub">
-          <span className="rp-auto"><ChatIcon /> Automated assistant</span>
+          {appMode ? (
+            <span className="rp-convo">
+              <span className="rp-logo">{LOGO_URL ? <img src={LOGO_URL} alt="" /> : <Shield size={20} />}</span>
+              <span className="rp-convo-text">
+                <b>{who ?? 'Disaster check-in'}</b>
+                <span>{who ? 'Your adjuster' : 'Automated assistant'}</span>
+              </span>
+            </span>
+          ) : (
+            <span className="rp-auto"><ChatIcon /> Automated assistant</span>
+          )}
           {!helpSent && (
             <button type="button" className="rp-911"><PhoneIcon /> Call 911</button>
           )}

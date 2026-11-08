@@ -106,3 +106,71 @@
 .rp-btn:disabled { opacity: 0.4; cursor: default; }
 @keyframes rp-up { from { transform: translateY(24px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .rp-sheet { animation: none; } }
+
+/* ---- Insurer-app messages concept (#/app, appMode). Everything below is scoped to .rp[data-app] or to
+   classes only appMode renders, so the #/reply page above is unchanged. Clean white cards on #F7F7F7, 1px
+   #E5E5E5 borders, 12px radius, no heavy shadows; red (#D8232A) only for links, the user's bubbles and
+   the current state. Call 911 keeps its existing look. */
+.rp[data-app] {
+  --rp-bg: #f7f7f7;
+  --rp-line: #e5e5e5;
+  --rp-border: #e5e5e5;
+  --rp-radius: 12px;
+  border-top: 0;
+  font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif;
+}
+.rp[data-app] .rp-close { padding: 0 12px 0 6px; color: var(--brand-red); font-size: 17px; }
+.rp[data-app] .rp-more { color: var(--brand-red); }
+.rp[data-app] .rp-sub { padding: 4px 0 12px; }
+.rp-convo { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rp-logo { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: var(--brand-red); color: #fff; overflow: hidden; }
+.rp-logo img { width: 100%; height: 100%; object-fit: cover; }
+.rp-convo-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.rp-convo-text b { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-convo-text span { font-size: 13px; color: var(--rp-muted); }
+.rp[data-app] .rp-911 { border-color: #d4d4d8; }
+
+/* Messages: automatic notice = beige card, adjuster = white card, the user = red bubble on the right */
+.rp[data-app] .rp-thread { padding: 16px; }
+.rp[data-app] .rp-bubble { border-radius: var(--rp-radius); font-size: 16px; line-height: 1.4; white-space: pre-line; }
+.rp[data-app] .rp-bubble.them { background: #fff; border: 1px solid var(--rp-line); font-weight: 400; }
+.rp[data-app] .rp-bubble.them.sys { background: #f6f0e6; border-color: #ebe2d2; }
+.rp[data-app] .rp-bubble.me { background: var(--brand-red); color: #fff; }
+.rp[data-app] .rp-out.failed .rp-bubble { background: #fff; color: var(--rp-text); border: 1px solid var(--rp-line); }
+.rp[data-app] .rp-from { font-size: 13px; }
+.rp[data-app] .rp-chip { background: #fff; border-color: var(--rp-line); }
+.rp[data-app] .rp-chip.sending { border-color: var(--brand-red); color: var(--brand-red); }
+.rp[data-app] .rp-note { border-radius: var(--rp-radius); border-color: var(--rp-line); }
+.rp[data-app] .rp-empty { align-self: center; margin-top: 24vh; padding: 18px 22px; color: var(--rp-muted); text-align: center; }
+
+/* 1–4 damage card, under the messages and above the composer */
+.rp-card { background: #fff; border: 1px solid var(--rp-line); border-radius: var(--rp-radius); }
+.rp-damage { display: flex; flex-direction: column; padding: 6px 0; }
+.rp-damage h2 { margin: 0; padding: 10px 16px 6px; font-size: 15px; font-weight: 600; }
+.rp-damage-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 12px 0 16px;
+  border: 0; border-top: 1px solid var(--rp-line); background: none; font-size: 16px; text-align: left; cursor: pointer;
+}
+.rp-damage-row svg { flex-shrink: 0; color: #a1a1aa; }
+.rp-damage-row:disabled { opacity: 0.5; cursor: default; }
+.rp-damage-row:active:not(:disabled) { background: var(--rp-bg); }
+
+/* Composer + footer */
+.rp[data-app] .rp-input { border-radius: var(--rp-radius); background: #fff; }
+.rp[data-app] .rp-send { border-radius: var(--rp-radius); }
+.rp[data-app] .rp-foot { white-space: normal; font-size: 13px; line-height: 1.35; padding-top: 2px; }
+
+/* Top notification (new automatic notice or adjuster message): white card sliding in under the status bar */
+.rp-toast {
+  position: fixed; z-index: 60; left: 50%; top: calc(var(--vv-top, 0px) + env(safe-area-inset-top) + 8px);
+  display: flex; align-items: center; gap: 12px; width: min(calc(100% - 24px), 456px); min-height: 60px; padding: 10px 14px;
+  transform: translateX(-50%); border: 1px solid #e5e5e5; border-radius: 14px; background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1); color: #111113; text-align: left; cursor: pointer;
+  font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; animation: rp-toast-in 260ms ease-out;
+}
+.rp-toast-badge { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; background: #D8232A; color: #fff; }
+.rp-toast-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.rp-toast-text b { font-size: 15px; font-weight: 600; }
+.rp-toast-text span { font-size: 13px; color: #6b6b72; }
+@keyframes rp-toast-in { from { transform: translate(-50%, -24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rp-toast { animation: none; } }
