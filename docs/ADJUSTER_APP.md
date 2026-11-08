@@ -336,7 +336,7 @@ Purpose: let the adjuster and the policyholder talk about one task inside the ap
 |---|---|
 | `queued` | "iMessage simulated" |
 | `sent` | "iMessage sent" |
-| `failed` | "iMessage failed" |
+| `failed` | "iMessage not confirmed" |
 
 - Without the bridge (`SPACETIME_API.md` section 9) rows stay `queued`, so `queued` must always read as simulated. Show no phone number; the tables hold none.
 - Only the accept notice goes out by iMessage. Messages the adjuster types stay in the app.
