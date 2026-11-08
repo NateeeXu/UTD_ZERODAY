@@ -419,7 +419,7 @@ Top 10 per adjuster, at most 3 per cell. An adjuster with no position has no row
 | score | f64 | value per minute; compare only within one priority |
 | distanceKm | f64 | straight line |
 | etaMin | f64 | drive only, not routing (formula below) |
-| reason | string | one line for the card: `No reply 14 h`, `Vulnerable · no reply 14 h`, `Inspect · first in area`, `Inspect · likely severe`, `Inspect · damage unclear` |
+| reason | string | one line for the card: `No reply 14 h`, `Inspect · first in area`, `Inspect · likely severe`, `Inspect · damage unclear` |
 | createdAt | timestamp | when the list was last rebuilt |
 
 **Candidates:** `unaccounted_queue` rows with `escalation = 'field_visit'` (welfare) plus `inspection_candidate` rows (inspection), minus households with an open assignment. A household in both stays welfare.
