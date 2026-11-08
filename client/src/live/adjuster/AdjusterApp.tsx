@@ -22,6 +22,7 @@ import { PhoneMap, type MapArea } from './PhoneMap';
 import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget } from './ReportFlow';
 import { Icon, needIcon } from './icons';
 import { useStickySheet } from './sheetState';
+import { useBackgroundLocation } from './location';
 import './adjuster.css';
 
 interface Task {
@@ -118,8 +119,8 @@ function Field({ meName }: { meName: string }) {
   const [worldRows] = useTable(tables.world);
   const [replayRows] = useTable(tables.replayState);
   const [members] = useTable(tables.member);
-  // Demo start position and the "Next best" list. No real GPS in the demo: a default start near the
-  // middle of the region, and the adjuster can tap the map to move it.
+  // Position and the "Next best" list: a default start near the middle of the region, then refreshed
+  // in the background every minute (location.ts), with nothing on screen.
   const [locRows, locReady] = useTable(tables.adjusterLocation);
   const [facilities] = useTable(tables.facility);
   const [recRows] = useTable(tables.myRecommendations);
@@ -175,7 +176,7 @@ function Field({ meName }: { meName: string }) {
   }, [showToast]);
   const outbox = useOutbox({ submit, isActive: conn.isActive, myCount, onSent });
 
-  // ---- Position: the demo start in adjuster_location (source 'demo'). Until one is saved, the default
+  // ---- Position: adjuster_location (source 'demo', or 'gps' from the background refresh). Until one is saved, the default
   // start is the facility nearest the middle of the region (a staging point), else the middle itself.
   const regionCenter = useMemo<D.LatLng | null>(() => {
     if (!cells.length) return null;
@@ -200,13 +201,11 @@ function Field({ meName }: { meName: string }) {
   }, [regionCenter, facilities]);
   const myLoc = myId ? locRows.find((r) => r.identity.isEqual(myId)) : undefined;
   const savedPos = useMemo<D.LatLng | null>(
-    () => (myLoc && myLoc.source === 'demo' ? [myLoc.lat, myLoc.lng] : null),
-    [myLoc?.lat, myLoc?.lng, myLoc?.source], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (myLoc ? [myLoc.lat, myLoc.lng] : null),
+    [myLoc?.lat, myLoc?.lng], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const mePos = savedPos ?? staging;
   const hasStart = !!mePos;
-  const [moving, setMoving] = useState(false);
-  const isDefaultStart = !!staging && (!savedPos || (savedPos[0] === staging[0] && savedPos[1] === staging[1]));
   // The card is the row with the lowest rank (rows of taken tasks disappear; the rest keep their ranks).
   const nextBest: NextBest | null = useMemo(() => {
     if (!recRows.length) return null;
@@ -214,14 +213,6 @@ function Field({ meName }: { meName: string }) {
     return { householdId: r.householdId, rank: r.rank, priority: r.priority, distanceKm: r.distanceKm, etaMin: r.etaMin, reason: r.reason };
   }, [recRows]);
 
-  const setStart = useCallback(async (lat: number, lng: number) => {
-    try {
-      await updateLocation({ lat, lng, source: 'demo' });
-      showToast('Start set');
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e));
-    }
-  }, [updateLocation, showToast]);
   const refreshNow = useCallback(async () => {
     try {
       await refreshRecs();
@@ -248,7 +239,7 @@ function Field({ meName }: { meName: string }) {
   }, [acceptRec, nextBest, accepting, showToast]);
   const imessageBy = useImessageFor(acceptedId ? [...ids, acceptedId] : ids);
 
-  // Rebuild "Next best" when the Tasks page opens (and after a reconnect). Never on a timer.
+  // Rebuild "Next best" when the Tasks page opens (and after a reconnect); useBackgroundLocation keeps it fresh.
   const onTasks = route.name === 'tasks';
   const refreshRef = useRef(refreshRecs);
   refreshRef.current = refreshRecs;
@@ -264,6 +255,10 @@ function Field({ meName }: { meName: string }) {
     seeded.current = true;
     updateLocation({ lat: staging[0], lng: staging[1], source: 'demo' }).catch(() => undefined);
   }, [conn.isActive, locReady, myLoc, staging, updateLocation]);
+  useBackgroundLocation({
+    active: conn.isActive, serverPos: myLoc ?? null, cells, busy: accepting,
+    sendLocation: updateLocation, refresh: refreshRecs,
+  });
 
   // ---- Tasks ----
   const unsentIds = useMemo(() => new Set(outbox.items.map((i) => i.householdId)), [outbox.items]);
@@ -444,8 +439,8 @@ function Field({ meName }: { meName: string }) {
         </span>
         <section className="adj-float-card adj-glass" aria-label="Distance">
           <div>
-            <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'No start set'}</div>
-            <span className="adj-sub">{t.miles != null ? `to the center of ${t.district} (${t.label})` : 'Set your start on the Tasks map'}</span>
+            <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'No position yet'}</div>
+            <span className="adj-sub">{t.miles != null ? `to the center of ${t.district} (${t.label})` : 'Distance shows once the region loads'}</span>
           </div>
           <span className="adj-caption">Demo data: area, not an address</span>
           <button type="button" className="adj-btn dark block" onClick={() => setRoute({ name: 'home', id: t.id })}>Open home</button>
@@ -497,7 +492,7 @@ function Field({ meName }: { meName: string }) {
   }
 
   const tab: Tab = route.name === 'messages' ? 'messages' : route.name === 'me' ? 'me' : 'tasks';
-  const tabBar = <TabBar tab={tab} unread={unreadCount} onTab={(k) => { setMoving(false); setRoute({ name: k }); }} />;
+  const tabBar = <TabBar tab={tab} unread={unreadCount} onTab={(k) => setRoute({ name: k })} />;
   if (route.name === 'messages') {
     return (
       <div className="adj">
@@ -512,8 +507,7 @@ function Field({ meName }: { meName: string }) {
       <div className="adj">
         <ProfileView
           meName={whoAmI} region={initialLiveRegion().label} sim={sim} badge={badge} open={open.length} done={done.length}
-          unsent={outbox.items.length} isDefaultStart={isDefaultStart} hasStart={hasStart}
-          onMoveStart={() => { setMoving(true); setRoute({ name: 'tasks' }); }}
+          unsent={outbox.items.length}
         />
         {tabBar}
         {toastEl}
@@ -525,9 +519,8 @@ function Field({ meName }: { meName: string }) {
   return (
     <div className="adj has-tabs">
       <TasksView
-        moving={moving} setMoving={setMoving}
-        open={open} done={done} me={mePos} hasStart={hasStart} isDefaultStart={isDefaultStart} regionCenter={regionCenter} meName={whoAmI} sim={sim} badge={badge}
-        nextBest={nextBest} accepting={accepting} onSetStart={setStart} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
+        open={open} done={done} me={mePos} hasStart={hasStart} regionCenter={regionCenter} meName={whoAmI} sim={sim} badge={badge}
+        nextBest={nextBest} accepting={accepting} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
         accepted={accepted} onDismissAccepted={() => setAcceptedId(null)}
         onMessage={(id) => setRoute({ name: 'chat', id, from: 'tasks' })}
         bannerFor={bannerFor} myId={myId}
@@ -614,9 +607,8 @@ function MessagesView({ threads, meName, badge, onOpen }: { threads: Thread[]; m
   );
 }
 
-function ProfileView({ meName, region, sim, badge, open, done, unsent, isDefaultStart, hasStart, onMoveStart }: {
+function ProfileView({ meName, region, sim, badge, open, done, unsent }: {
   meName: string; region: string; sim: number; badge: React.ReactNode; open: number; done: number; unsent: number;
-  isDefaultStart: boolean; hasStart: boolean; onMoveStart: () => void;
 }) {
   const initials = meName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '?';
   return (
@@ -636,12 +628,6 @@ function ProfileView({ meName, region, sim, badge, open, done, unsent, isDefault
           {unsent > 0 ? <span className="adj-tag amber">{unsent} waiting</span> : <span className="tail">None</span>}
         </div>
         <div className="adj-row"><span className="grow">Exercise time</span><span className="tail">{fmtT(sim)}</span></div>
-      </div>
-      <div className="adj-group">
-        <button type="button" className="adj-row" onClick={onMoveStart}>
-          <span className="grow stack"><span>Start position</span><span className="adj-muted">{!hasStart ? 'Not set' : isDefaultStart ? 'Default start' : 'Set on the map'}</span></span>
-          <span className="adj-link small">Move start</span>
-        </button>
       </div>
       <p className="adj-muted adj-tabnote">Demo data: synthetic households, areas not addresses. No real calls, texts or GPS.</p>
     </div>
@@ -720,11 +706,10 @@ function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
 }
 
 // ---- Screen 1: Tasks ----
-function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onSetStart, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
-  moving: boolean; setMoving: (on: boolean) => void;
-  open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; isDefaultStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
+function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
+  open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
   bannerFor: (t: Task) => D.Banner | null; myId?: Parameters<typeof D.taskBanner>[0]['me'];
-  nextBest: NextBest | null; accepting: boolean; onSetStart: (lat: number, lng: number) => void; onAccept: () => void; onRefresh: () => void;
+  nextBest: NextBest | null; accepting: boolean; onAccept: () => void; onRefresh: () => void;
   accepted?: Task; onDismissAccepted: () => void; onMessage: (id: string) => void;
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
@@ -771,8 +756,6 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
     }
   });
   const [whyOpen, setWhyOpen] = useState(false);
-  // Picking a start: only before the region has loaded (no default yet), or after "Move start".
-  const picking = !hasStart || moving;
   const showBest = hasStart && !!nextBest;
   const drag = useRef<{ y: number; moved: boolean } | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
@@ -808,8 +791,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
         areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
         padBottom={TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
         fallbackCenter={regionCenter}
-        onAreaClick={picking ? undefined : pickArea}
-        onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
+        onAreaClick={pickArea}
       />
       <header className="adj-header adj-glass">
         <div>
@@ -818,16 +800,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
         </div>
         {badge}
       </header>
-      {picking ? (
-        <div className="adj-pick" role="status">
-          <span>Tap the map to set your start</span>
-          {hasStart && <button type="button" className="adj-link small" onClick={() => setMoving(false)}>Cancel</button>}
-        </div>
-      ) : (
-        <span className="adj-demo adj-glass">
-          Demo data: areas, not addresses{isDefaultStart ? ' · default start' : ''} · <button type="button" className="adj-link small" onClick={() => setMoving(true)}>Move start</button>
-        </span>
-      )}
+      <span className="adj-demo adj-glass">Demo data: areas, not addresses</span>
 
       <section ref={sheetRef} className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : ''}`} aria-label="Tasks">
         <button
