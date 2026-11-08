@@ -349,7 +349,7 @@ Purpose: let the adjuster and the policyholder talk about one task inside the ap
 **Policyholder replies**
 - Text typed on the reply page appears as a `policyholder` row (`submit_raw_reply`). It still goes to the Claude parser, so a danger message escalates normally and the 2.6 banner shows once it is parsed. The thread itself does not detect danger.
 - Button replies are not in the thread; they show only through 2.6.
-- iMessage replies are not read, so the iMessage asks the policyholder to reply in the app.
+- Replies to the iMessage reach the system only while the bridge can read this Mac's Messages database (Full Disk Access). They go to the household of the newest notice.
 
 Data: `SELECT * FROM chat_message WHERE household_id = X`; `SELECT * FROM imessage_outbox WHERE household_id = X`.
 

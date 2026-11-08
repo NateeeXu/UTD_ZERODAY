@@ -1,6 +1,7 @@
 // Sends "adjuster assigned" notices as real iMessages from this Mac's Messages app, to one demo phone.
 // Apple has no public API for this. All households are synthetic, so every notice goes to the one number
-// set in the environment; the recipient never comes from the database. One-way: iMessage replies are not read.
+// set in the environment; the recipient never comes from the database. Replies from that number are read by
+// imessage-inbox.ts and go to the household of the newest notice, through the same path as the reply page.
 // Only notices created after the bridge starts are sent, at most MAX_SENDS per run.
 //
 //   IMESSAGE_DEMO_TO=<phone or Apple ID> node --env-file=.env scripts/imessage-bridge.ts [--db X] [--host Y]
@@ -9,7 +10,8 @@
 // Joins as a manager with STAFF_PASSCODE (env).
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { connect, DB, errText, HOST, STAFF_PASSCODE, subscribe } from './lib.ts';
+import { connect, DB, errText, HOST, REPLY_PASSCODE, STAFF_PASSCODE, subscribe } from './lib.ts';
+import { startInbox } from './imessage-inbox.ts';
 import type { ImessageOutbox } from '../bindings/types.ts';
 
 const run = promisify(execFile);
@@ -72,9 +74,22 @@ async function main() {
     if (!ready || row.status !== 'queued') return;
     chain = chain.then(() => handle(row)).catch(e => log(`#${row.id} error: ${errText(e)}`));
   });
-  await subscribe(conn, ["SELECT * FROM imessage_outbox WHERE status = 'queued'"]);
+  await subscribe(conn, ['SELECT * FROM imessage_outbox']);
   ready = true;
   log(`iMessage bridge on ${DB} @ ${HOST}${DRY_RUN ? ' (dry run)' : `, sending to ${masked}`}`);
+
+  if (!DRY_RUN) {
+    await startInbox(TO, async text => {
+      const newest = [...conn.db.imessageOutbox.iter()].reduce<ImessageOutbox | null>((a, r) => (!a || r.id > a.id ? r : a), null);
+      if (!newest) return log(`reply from ${masked} ignored: no notice has been sent yet`);
+      try {
+        await conn.reducers.submitRawReply({ householdId: newest.householdId, text, passcode: REPLY_PASSCODE });
+        log(`reply from ${masked} recorded for ${newest.householdId}`);
+      } catch (e) {
+        log(`reply from ${masked} failed: ${errText(e)}`);
+      }
+    }, log);
+  }
 
   const shutdown = async () => {
     await chain;
