@@ -74,6 +74,11 @@ export interface Household {
   nearestSchoolId?: string;        // 最近学校的 Facility.id，用于家庭团聚信息和避难所转介
 }
 
+// v3：灾害本身的几何信息，给地图画登陆点 / 路径 / 震中 / 破裂线
+export type HazardGeometry =
+  | { kind: 'hurricane'; landfall: { lat: number; lng: number }; track: { lat: number; lng: number }[]; headingDeg: number; vmaxMph: number; category: number; rmaxKm: number }
+  | { kind: 'earthquake'; epicenter: { lat: number; lng: number }; rupture: [{ lat: number; lng: number }, { lat: number; lng: number }] | null; magnitude: number; faultName: string };
+
 export interface World {
   eventId: string;          // 例如 "live" 或 "backtest-1"
   name: string;             // 虚构地名，例如 "Harbor Bend, TX"
@@ -82,6 +87,7 @@ export interface World {
   hexes: HexCell[];
   households: Household[];
   // v2 可选字段
+  hazardGeometry?: HazardGeometry; // v3：登陆点和路径，或震中和破裂线（Harbor Bend 没有）
   region?: string;          // 例如 "tx-corpus-christi"、"ca-bay-area"
   hazardType?: HazardType;  // 旧数据没有这个字段，视为 hurricane
   facilities?: Facility[];

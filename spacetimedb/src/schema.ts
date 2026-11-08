@@ -114,6 +114,7 @@ export const world = table(
     eventLocalHour: t.option(t.u8()),
     eventWeekday: t.option(t.bool()),
     dataSourcesJson: t.string(), // JSON array of source/licence strings ('[]' when none)
+    hazardGeometryJson: t.string(), // JSON HazardGeometry: hurricane landfall + track, or quake epicentre + rupture ('' when none)
     // engine WorldContext derived at seed time (engine worldContext())
     localHour: t.u8(),
     weekday: t.bool(),
@@ -600,6 +601,7 @@ export const WorldInput = t.object('WorldInput', {
   eventLocalHour: t.option(t.u8()),
   eventWeekday: t.option(t.bool()),
   dataSources: t.array(t.string()),
+  hazardGeometry: t.string(),
 });
 
 export const HexInput = t.object('HexInput', {

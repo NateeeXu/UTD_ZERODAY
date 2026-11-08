@@ -104,6 +104,12 @@ From the outside these all look like silence. The carrier receipt separates them
 - Simulated staff calls to a household whose texts were not delivered go to the emergency contact (lower answer rate).
 - Counts (`hex_stats` / `metrics`): `undeliveredUnaccounted`, `deliveredNoReply` (both among households not heard from yet). Show them next to "Unaccounted".
 
+### Hazard on the map
+
+`world.hazardGeometryJson` (JSON string, '' when none): draw the event itself on the map.
+- Hurricane: `{ kind: 'hurricane', landfall: {lat, lng}, track: [{lat, lng}, ...], headingDeg, vmaxMph, category, rmaxKm }`: landfall marker + storm track line (160 km offshore to 200 km inland).
+- Earthquake: `{ kind: 'earthquake', epicenter: {lat, lng}, rupture: [{lat, lng}, {lat, lng}] | null, magnitude, faultName }`: epicentre marker + rupture line (`null` for USGS ShakeMap scenarios).
+
 ### Uncertainty on the map
 
 - `hex_stats.severeLo` / `severeHi`: 90 % interval for the number of severely damaged households in the cell (show as "6–11"); `expectedSevere` is the point estimate. `severeVar` is its variance.

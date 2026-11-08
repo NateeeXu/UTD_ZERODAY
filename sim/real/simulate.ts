@@ -5,7 +5,7 @@
 import { greatCircleDistance } from 'h3-js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Damage, EventBundle, HexCell, HexId, Peril, SimEvent, TruthRow } from '../../shared/types.ts';
+import type { Damage, EventBundle, HazardGeometry, HexCell, HexId, Peril, SimEvent, TruthRow } from '../../shared/types.ts';
 import { Rng, subSeed } from '../src/rng.ts';
 import type { RegionData } from './load.ts';
 import type { BaseWorld, CellInfo } from './world.ts';
@@ -126,6 +126,17 @@ export interface SimOptions {
   dataSources: string[];
 }
 
+/** Straight track through the landfall point along the heading: 160 km offshore to 200 km inland. */
+function hurricaneGeometry(sc: HurricaneScenario): HazardGeometry {
+  const h = (sc.headingDeg * Math.PI) / 180;
+  const kmLng = 111.32 * Math.cos((sc.landfall.lat * Math.PI) / 180);
+  const track = [];
+  for (let d = -160; d <= 200; d += 40) track.push({ lat: round(sc.landfall.lat + (d * Math.cos(h)) / 111.32, 4), lng: round(sc.landfall.lng + (d * Math.sin(h)) / kmLng, 4) });
+  const v = sc.vmaxMph;
+  const category = v >= 157 ? 5 : v >= 130 ? 4 : v >= 111 ? 3 : v >= 96 ? 2 : 1;
+  return { kind: 'hurricane', landfall: sc.landfall, track, headingDeg: sc.headingDeg, vmaxMph: v, category, rmaxKm: sc.rmaxKm };
+}
+
 export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: SimOptions): { bundle: EventBundle; meta: SimMeta } {
   const hazardRng = new Rng(subSeed(sc.seed, 'hazard'));
   const truthRng = new Rng(subSeed(sc.seed, 'truth'));
@@ -145,6 +156,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
   // ---- hazard per cell ----
   const wind = new Map<HexId, number>(), flood = new Map<HexId, number>(), mmi = new Map<HexId, number>();
   let track: HurricaneTrack | null = null;
+  let quakeGeometry: HazardGeometry | undefined;
   if (sc.kind === 'hurricane') {
     track = new HurricaneTrack(sc, base);
     // rain pockets centred on real low-lying inland cells
@@ -174,10 +186,12 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       const d = distanceToSegmentKm({ lat: c.lat, lng: c.lng }, ra, rb);
       mmi.set(c.hex, clamp(ipeMmi(q.magnitude, d) + hazardRng.normal(0, 0.15), 1, 10));
     }
+    quakeGeometry = { kind: 'earthquake', epicenter: q.epicenter, rupture: [ra, rb], magnitude: q.magnitude, faultName: q.faultName };
     notes.push(`Parametric M${q.magnitude} on ${q.faultName}: epicentre ${q.epicenter.lat},${q.epicenter.lng}, strike ${q.strikeDeg} deg, rupture ${len.toFixed(0)} km, depth ${q.depthKm} km.`);
   } else {
     const g = parseShakeMapGrid(readFileSync(join(RAW_DIR, 'usgs', `grid_${sc.usgsEventId}.xml`), 'utf8'));
     for (const c of cells) mmi.set(c.hex, clamp(g.grid.sample(c.lat, c.lng), 1, 10));
+    quakeGeometry = { kind: 'earthquake', epicenter: { lat: g.lat, lng: g.lon }, rupture: null, magnitude: g.magnitude, faultName: sc.name };
     notes.push(`USGS ShakeMap ${sc.usgsEventId}: "${g.description}", M${g.magnitude}, epicentre ${g.lat},${g.lon}.`);
   }
   const scoreOf = (c: CellInfo) => (isQuake ? quakeScore(mmi.get(c.hex)!, c.liquefaction) : hurricaneScore(wind.get(c.hex)!, flood.get(c.hex)!));
@@ -464,6 +478,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       households,
       region: r.id,
       hazardType: sc.kind,
+      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
       facilities: base.facilities,
       dataSources: opt.dataSources,
       eventLocalHour,

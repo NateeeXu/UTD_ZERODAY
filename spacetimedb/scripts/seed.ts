@@ -205,6 +205,7 @@ async function main() {
         eventLocalHour: world.eventLocalHour,
         eventWeekday: world.eventWeekday,
         dataSources: world.dataSources ?? [],
+        hazardGeometry: world.hazardGeometry ? JSON.stringify(world.hazardGeometry) : '',
       },
     })
   );
