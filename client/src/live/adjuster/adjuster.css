@@ -44,57 +44,70 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
-/* Map pins: white pills, next stop black, done with a green check */
+/* Map pins: small white pills, next stop black, done with a green check. 44 px hit area from ::after. */
 .adj-pin { background: none; border: none; }
 .adj-pin span {
-  position: absolute; transform: translate(-50%, -50%); height: 28px; min-width: 28px; padding: 0 10px;
-  border-radius: 999px; background: #fff; color: #222; font: 700 13px Inter, system-ui, sans-serif;
-  display: flex; align-items: center; justify-content: center; white-space: nowrap; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  position: absolute; transform: translate(-50%, -50%); height: 22px; min-width: 22px; padding: 0 6px;
+  border-radius: 11px; background: #fff; color: var(--t); font: 700 11.5px Inter, system-ui, sans-serif;
+  display: flex; align-items: center; justify-content: center; white-space: nowrap; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
 }
-.adj-pin span.dark { background: #222; color: #fff; height: 30px; min-width: 30px; }
-.adj-pin span.done { color: var(--ok); padding: 0; width: 28px; }
+.adj-pin span::after { content: ''; position: absolute; inset: -11px; }
+.adj-pin span.dark { background: var(--t); color: #fff; }
+.adj-pin span.done { color: var(--ok); padding: 0; width: 22px; }
 
-/* Header, live badge, demo label */
+/* Header, live badge, demo label: one 44 px glass bar */
 .adj-header {
-  position: absolute; left: 12px; right: 12px; top: calc(12px + var(--top)); z-index: 800; height: 60px;
-  padding: 0 10px 0 18px; display: flex; align-items: center; justify-content: space-between; border-radius: 22px;
+  position: absolute; left: 10px; right: 10px; top: calc(8px + var(--top)); z-index: 800; height: 44px;
+  padding: 0 8px 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: var(--r-card);
+  background: rgba(255, 255, 255, 0.8);
 }
-.adj-header strong { display: block; font-size: 17px; font-weight: 700; }
-.adj-header .sub { font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.adj-header strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-name); font-weight: 700; line-height: 18px; }
+.adj-head-main { flex: 1; min-width: 0; }
+.adj-header .sub { display: flex; gap: 4px; font-size: 11.5px; line-height: 14px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.adj-header .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adj-header .clock { flex-shrink: 0; }
+.adj-head-side { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 .adj-live {
-  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; background: #fff;
-  font-size: 13px; font-weight: 600; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; background: #fff;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
 }
-.adj-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.adj-header .adj-live { height: auto; padding: 0; background: none; }
+.adj-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .adj-live.reconnecting i, .adj-live.connecting i { background: var(--p1); }
 .adj-live.offline i { background: #9a9a9a; }
 .adj-live .unsent { color: #8a4b0f; }
-.adj-demo { position: absolute; left: 12px; top: calc(82px + var(--top)); z-index: 700; padding: 5px 11px; border-radius: 999px; font-size: 12px; color: #444; }
+.adj-demo { font-size: var(--fs-tiny); color: var(--t2); white-space: nowrap; }
 
-/* Floating glass sheet (Tasks) */
+/* Floating glass sheet (Tasks): one surface, rows split by hairlines */
 .adj-sheet {
-  position: absolute; left: 8px; right: 8px; bottom: calc(8px + var(--bot)); z-index: 800; padding: 4px 12px 12px; border-radius: 30px;
-  display: flex; flex-direction: column; gap: 10px; max-height: calc(100% - 100px - var(--top) - var(--bot)); overflow-y: auto;
-  background: rgba(255, 255, 255, 0.76);
+  position: absolute; left: 8px; right: 8px; bottom: calc(8px + var(--bot)); z-index: 800; padding: 0 6px 4px; border-radius: var(--r-sheet);
+  display: flex; flex-direction: column; max-height: calc(100% - 68px - var(--top) - var(--bot)); overflow-y: auto;
+  background: rgba(255, 255, 255, 0.93);
 }
 /* Children keep their size and the sheet scrolls; without this, a short phone screen squeezed the
-   Next up card to 0 px (it has overflow: hidden, so its min-height is 0) and the list was clipped. */
+   Next best strip to 0 px and the list was clipped. */
 .adj-sheet > * { flex-shrink: 0; }
 .adj-sheet { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .adj-handle {
-  height: 24px; flex-shrink: 0; border: none; background: none; padding: 0; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; border: none; background: none; padding: 0; display: flex; align-items: center; justify-content: center;
   cursor: grab; touch-action: none;
-  /* Stays at the top while the cards scroll, so the sheet can always be dragged. It spans the sheet's padding
-     (same place in the flow) and turns into a frosted band once the cards scroll under it. */
-  position: sticky; top: -4px; z-index: 2; height: 28px; margin: -4px -12px 0; padding-top: 4px;
+  /* Stays at the top while the rows scroll, so the sheet can always be dragged. It spans the sheet's padding
+     and turns into a frosted band once the rows scroll under it. */
+  position: sticky; top: 0; z-index: 2; height: 16px; margin: 0 -6px;
 }
-.adj-sheet[data-scrolled] .adj-handle { background: linear-gradient(rgba(250, 250, 250, 0.97) 75%, rgba(250, 250, 250, 0)); }
-.adj-handle span { width: 40px; height: 5px; border-radius: 3px; background: rgba(0, 0, 0, 0.2); }
-.adj-rowhead { display: flex; justify-content: space-between; align-items: baseline; padding: 0 6px; }
+.adj-handle::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 28px; } /* easier to grab than it looks */
+.adj-sheet[data-scrolled] .adj-handle { background: rgba(250, 250, 250, 0.97); }
+.adj-handle span { width: 32px; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.2); }
+/* Small controls in the sheet reach a full 44 px hit area. */
+.adj-sheet .adj-iconbtn::after, .adj-sheet .adj-btn.small::after { inset: -7px -3px; }
+.adj-sheet .adj-btn.small { padding: 0 12px; border-radius: 9px; }
+.adj-rowhead { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 6px 3px; font-size: var(--fs-meta); font-weight: 600; }
+.adj .adj-rowhead h2 { font-size: inherit; font-weight: inherit; }
+.adj-rowhead span { color: var(--t2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.adj-rowhead .adj-link.small, .adj-banner .adj-link.small { position: relative; flex-shrink: 0; font-size: var(--fs-meta); }
+.adj-rowhead .adj-link.small::after, .adj-banner .adj-link.small::after { content: ''; position: absolute; inset: -14px -6px; }
 .adj h2 { font-size: 19px; font-weight: 700; }
 .adj-card { background: #fff; border-radius: 22px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); }
-.adj-next { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-.adj-next .adj-title { font-size: 21px; }
 .adj-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .adj-p { display: inline-block; flex-shrink: 0; width: 24px; height: 18px; line-height: 18px; border-radius: 5px; font-size: 10.5px; font-weight: 700; text-align: center; color: #fff; }
 .adj-p.P0 { background: var(--p0); } .adj-p.P1 { background: var(--p1); } .adj-p.P2 { background: var(--p2); color: #222; }
@@ -105,6 +118,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-need { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 5px 11px; border-radius: 999px; background: var(--chip); }
 .adj-actions { display: flex; gap: 8px; margin-top: 4px; }
 .adj-empty { padding: 18px 8px; text-align: center; color: var(--t2); }
+.adj-sheet .adj-empty { padding: 12px 6px; font-size: var(--fs-meta); }
 
 .adj-btn {
   position: relative; height: var(--ctl); padding: 0 12px; border: none; border-radius: var(--r-ctl); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -122,51 +136,57 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-link { background: none; border: none; padding: 0; font: inherit; font-size: 15px; font-weight: 600; color: #222; text-decoration: underline; cursor: pointer; }
 .adj-link.small { font-size: 14px; }
 
-/* Task cards (one card = task row + optional update strip across the bottom) */
-.adj-list { display: flex; flex-direction: column; gap: 8px; }
-.adj-taskcard { border-radius: 20px; background: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06); overflow: hidden; }
-.adj-taskcard.done { background: rgba(255, 255, 255, 0.6); box-shadow: none; }
-.adj-task { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-.adj-num { width: 26px; height: 26px; border-radius: 50%; background: #222; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+/* Task rows (name and meta, icon actions, small Open, optional update strip below): at most 60 px */
+.adj-list { display: flex; flex-direction: column; }
+.adj-taskcard { border-top: 1px solid var(--line); }
+.adj-taskrow { display: flex; align-items: center; gap: 6px; min-height: 54px; padding: 6px 4px 6px 6px; }
+.adj-task { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 0; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.adj-num { width: 18px; height: 18px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .adj-num.done { background: var(--ok); }
-.adj-task-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.adj-task-main > span:not(.adj-tag) { font-size: 13px; color: var(--t2); }
-.adj-task-main > .adj-tag { align-self: flex-start; margin-top: 4px; }
+.adj-task-top { display: flex; align-items: center; gap: 6px; min-width: 0; line-height: 18px; }
+.adj-task-top b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 600; }
+.adj-task-sub { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-meta); line-height: 16px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.adj-taskcard.done .adj-task-top b { color: var(--t2); }
+.adj-task-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 /* Pull-up list: always rendered, height animates via grid rows */
-.adj-more { display: grid; grid-template-rows: 0fr; opacity: 0; margin-top: -10px; }
-.adj-more.open { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.adj-more { display: grid; grid-template-rows: 0fr; opacity: 0; }
+.adj-more.open { grid-template-rows: 1fr; opacity: 1; }
 /* No transition on the list: opening and closing animate the sheet's height (sheetDrag.ts), which reveals it.
    data-view (set during a drag or a snap) overrides which content shows: */
-.adj-sheet[data-view="next"] .adj-more { grid-template-rows: 0fr; opacity: 0; margin-top: -10px; }
-.adj-sheet[data-view="all"] .adj-more { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
+.adj-sheet[data-view="next"] .adj-more { grid-template-rows: 0fr; opacity: 0; }
+.adj-sheet[data-view="all"] .adj-more { grid-template-rows: 1fr; opacity: 1; }
 .adj-more-inner { min-height: 0; overflow: hidden; }
-/* Pulled-up list sections, "Open · N" then "Done · M"; the done header sits back like its rows (.adj-taskcard.done). */
-.adj-listsec { padding-top: 4px; }
-.adj-listsec + .adj-listsec { padding-top: 14px; }
-.adj .adj-listhead { margin: 0 0 6px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--t); }
+/* Pulled-up list sections, "Open · N" then "Done · M"; the done header sits back like its rows. */
+.adj .adj-listhead { margin: 0; padding: 9px 6px 3px; font-size: var(--fs-meta); font-weight: 600; color: var(--t); }
 .adj-listhead span { color: var(--t2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .adj-listsec.done .adj-listhead { color: var(--t2); }
 .adj-peekline .adj-peek-done { font-size: inherit; font-weight: 500; color: var(--t2); }
 .adj-sheet { transition: box-shadow 0.2s ease; }
-/* "Next best" card (above Next up) */
-.adj-best { display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+/* Next best: the screen's one dark strip, with a red rail. At most 56 px while "Why" is closed. */
+.adj-best { position: relative; flex-shrink: 0; border-radius: var(--r-card); background: var(--t); color: #fff; }
+.adj-best::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: var(--r-card) 0 0 var(--r-card); background: var(--brand); }
 .adj-best-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.adj-best-main b { font-weight: 700; font-variant-numeric: tabular-nums; }
-.adj-best-main span { font-size: 13px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adj-best-top { display: flex; align-items: center; gap: 6px; line-height: 18px; }
+.adj-best-top b { font-size: 14.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adj-best-sub { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; font-size: var(--fs-meta); line-height: 16px; color: #bcbcc2; }
+.adj-best-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adj-best .adj-iconbtn { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.adj-best .adj-btn:disabled { opacity: 0.5; cursor: default; }
 .adj-iconbtn { position: relative; width: var(--ctl-sm); height: var(--ctl-sm); flex-shrink: 0; border: none; border-radius: 50%; background: var(--chip); color: var(--t); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .adj-notice { font-size: 13px; font-weight: 600; text-align: center; color: #7a271a; }
 .adj-watchdog .adj-notice { color: #fff; }
-.adj-task-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
 .adj-tag { font-size: var(--fs-tiny); font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--chip); color: #333; white-space: nowrap; }
 .adj-tag.red { background: #fff1f0; color: #b42318; }
 .adj-tag.amber { background: #fff4e5; color: #8a4b0f; }
-.adj-banner { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; background: var(--soft); border-top: 1px solid var(--line); }
-.adj-banner.help { background: #fff1f0; }
-.adj-banner .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13.5px; line-height: 1.3; }
-.adj-banner .txt span { color: var(--t2); }
+/* Update strip under a task row; the Home page shows the same strip floating (.float) */
+.adj-banner { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px 6px; }
+.adj-banner.help { margin: 0 0 4px; padding: 6px 6px 6px 8px; border-radius: var(--r-ctl); background: #fff1f0; }
+.adj-banner .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: var(--fs-meta); line-height: 15px; }
+.adj-banner .txt span { font-size: var(--fs-tiny); line-height: 14px; color: var(--t2); }
 .adj-banner.help .txt b { color: #b42318; font-weight: 700; }
 .adj-banner.help .txt span { color: #7a271a; }
-.adj-banner.float { border-top: none; border-radius: 16px; }
+.adj-banner.float { margin: 0; padding: 8px 8px 8px 12px; border-radius: var(--r-card); }
+.adj-banner.float:not(.help) { background: var(--soft); }
 
 /* Home */
 .adj-hero { position: absolute; left: 0; right: 0; top: 0; height: 46dvh; min-height: 290px; }
@@ -281,27 +301,25 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-btn.t44 { height: var(--ctl); }
 .adj-tag.ok { background: #e7f4ee; color: var(--ok); }
 
-/* Next best: "Why this task" expander */
-.adj-best-row { display: flex; align-items: center; gap: 8px; padding: 12px 10px 6px 14px; }
+/* Next best: row layout, inline "Why" control and its list */
+.adj-best-row { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 8px 8px 13px; }
 .adj-why-toggle {
-  display: flex; align-items: center; gap: 6px; min-height: 44px; width: 100%; padding: 0 14px; border: none; background: none;
-  font: inherit; font-size: 13.5px; font-weight: 600; color: #222; text-align: left; cursor: pointer;
+  position: relative; flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; padding: 0; border: none; background: none;
+  font: inherit; font-size: 12px; font-weight: 600; color: #fff; cursor: pointer;
 }
+.adj-why-toggle::after { content: ''; position: absolute; inset: -14px -6px; }
 .adj-why-toggle svg { transition: transform 0.2s ease; }
 .adj-why-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
-.adj-why { margin: 0; padding: 0 14px 14px 36px; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.35; color: var(--t); }
+.adj-why { margin: 0; padding: 0 8px 9px 13px; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-meta); line-height: 16px; color: #fff; }
 .adj-why li { font-variant-numeric: tabular-nums; }
-.adj-why li.adj-why-note { color: var(--t2); padding-top: 2px; }
+.adj-why li.adj-why-note { color: #bcbcc2; }
 
-/* "Customer notified" after Accept */
-.adj-notified { padding: 14px 14px 14px 16px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
-.adj-notified-top { display: flex; align-items: center; gap: 12px; }
+/* After Accept: one dismissible row, so the task list stays on screen */
+.adj-notified { display: flex; align-items: center; gap: 8px; padding: 7px 4px 7px 6px; flex-shrink: 0; }
 .adj-notified-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.adj-notified-main b { font-weight: 700; }
-.adj-notified-main span { font-size: 13px; color: var(--t2); }
-.adj-notified .adj-chips { padding-left: 40px; }
-.adj-notified .adj-actions { margin-top: 0; }
-.adj-okdot { width: 28px; height: 28px; border-radius: 50%; background: var(--ok); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.adj-notified-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 600; line-height: 18px; }
+.adj-notified .adj-chips { gap: 4px; margin-top: 3px; flex-wrap: nowrap; }
+.adj-okdot { width: 20px; height: 20px; border-radius: 50%; background: var(--ok); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .adj-irow .adj-chips { margin-top: 4px; }
 .adj-irow .stack { display: flex; flex-direction: column; }
 
@@ -330,38 +348,37 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-count { align-self: flex-end; font-variant-numeric: tabular-nums; }
 .adj-msgbtn { width: 48px; padding: 0; flex-shrink: 0; }
 
-/* Tab bar (Tasks, Messages, Profile): a floating Apple-style glass capsule over the map */
-.adj { --tabbar: 64px; }
+/* Tab bar (Tasks, Messages, Profile): 48 px, nearly opaque so it reads the same over any map */
+.adj { --tabbar: 48px; }
 .adj-tabbar {
-  position: absolute; left: 14px; right: 14px; bottom: calc(10px + var(--bot)); z-index: 850; height: var(--tabbar); padding: 6px;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; border-radius: 999px;
-  background: rgba(255, 255, 255, 0.6);
-  -webkit-backdrop-filter: blur(28px) saturate(190%); backdrop-filter: blur(28px) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  position: absolute; left: 14px; right: 14px; bottom: calc(10px + var(--bot)); z-index: 850; height: var(--tabbar); padding: 4px;
+  display: grid; grid-template-columns: repeat(3, 1fr); border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
 }
 .adj-tab {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: none; border-radius: 999px;
-  background: none; font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; color: #77777c; cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; border: none;
+  background: none; font: inherit; font-size: 10px; font-weight: 600; line-height: 13px; color: #77777c; cursor: pointer;
+  transition: color 0.2s ease;
 }
-.adj-tab.on { color: #222; background: rgba(0, 0, 0, 0.07); }
+.adj-tab.on { color: var(--brand); }
 .adj-tab:active { transform: scale(0.96); }
 .adj-tab .ico { position: relative; display: flex; }
 .adj-badge {
-  position: absolute; top: -5px; left: calc(100% - 9px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
-  background: #222; color: #fff; font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; border: 1.5px solid #fff;
+  position: absolute; top: -4px; left: calc(100% - 5px); min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px;
+  background: var(--brand); color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center;
 }
 /* The Tasks sheet sits above the tab bar */
 .adj.has-tabs .adj-sheet {
   bottom: calc(18px + var(--tabbar) + var(--bot));
-  max-height: min(var(--cap-next), calc(100% - 118px - var(--tabbar) - var(--top) - var(--bot)));
+  max-height: min(var(--cap-next), calc(100% - 78px - var(--tabbar) - var(--top) - var(--bot)));
 }
-/* Open heights are capped so the map stays in view: 'next' at most 55% of the screen, 'all' at most 65%.
+/* Open heights are capped so the map stays in view: 'next' at most 40% of the screen, 'all' at most 65%.
    The rest scrolls inside the sheet. While dragged or snapping (data-free) the height is set inline. */
-.adj-sheet { --cap-next: 55dvh; --cap-all: 65dvh; }
+.adj-sheet { --cap-next: 40dvh; --cap-all: 65dvh; }
 .adj.has-tabs .adj-sheet.all:not([data-view]), .adj.has-tabs .adj-sheet[data-view="all"] {
-  max-height: min(var(--cap-all), calc(100% - 118px - var(--tabbar) - var(--top) - var(--bot)));
+  max-height: min(var(--cap-all), calc(100% - 78px - var(--tabbar) - var(--top) - var(--bot)));
 }
 .adj-sheet[data-free], .adj.has-tabs .adj-sheet[data-free] { max-height: none; overflow: hidden; }
 
@@ -406,15 +423,14 @@ button.adj-row:active { background: var(--soft); }
 /* Tasks sheet swiped down to one line: everything but the handle and the summary is hidden.
    The whole peek sheet is a drag surface (nothing in it scrolls). */
 .adj-sheet.peek { touch-action: none; }
-.adj-sheet.peek:not([data-view]), .adj-sheet[data-view="peek"] { gap: 4px; padding-bottom: 10px; }
 .adj-sheet.peek:not([data-view]) > :not(.adj-handle):not(.adj-peekline),
 .adj-sheet[data-view="peek"] > :not(.adj-handle):not(.adj-peekline) { display: none; }
 .adj-sheet[data-view="next"] > .adj-peekline, .adj-sheet[data-view="all"] > .adj-peekline { display: none; }
 .adj-peekline {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: 0 8px 4px;
-  border: 0; background: none; font: inherit; text-align: left; color: #222; cursor: pointer;
+  display: flex; flex-direction: column; align-items: flex-start; min-height: 38px; padding: 0 6px 4px;
+  border: 0; background: none; font: inherit; text-align: left; color: var(--t); cursor: pointer;
 }
-.adj-peekline b { font-size: 16px; }
+.adj-peekline b { font-size: 14.5px; line-height: 18px; }
 .adj-sheet.peek .adj-peekline, .adj-sheet:not(.peek) > :not(.adj-handle) { animation: adj-sheet-fade 260ms ease-out; }
 /* Dragging up out of peek: the cards fade in (same animation name, so it does not restart on release). */
 .adj-sheet.peek[data-view="all"] > :not(.adj-handle) { animation: adj-sheet-fade 200ms ease-out; }
@@ -422,4 +438,4 @@ button.adj-row:active { background: var(--soft); }
 @media (prefers-reduced-motion: reduce) {
   .adj-sheet.peek .adj-peekline, .adj-sheet:not(.peek) > :not(.adj-handle), .adj-sheet.peek[data-view="all"] > :not(.adj-handle) { animation: none; }
 }
-.adj-peekline span { font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.adj-peekline span { font-size: var(--fs-meta); line-height: 16px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }

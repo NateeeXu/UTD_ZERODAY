@@ -16,7 +16,7 @@ import type {
 } from '../rows';
 import * as D from './derive';
 import { useChatFor, useFollowupsFor, useHexRows, useImessageFor, useRepliesFor, useReportsFor, useSentFor, type ChatRow, type ImessageRow } from './data';
-import { ChatScreen, NotifiedCard, NotifiedChips } from './Chat';
+import { ChatScreen } from './Chat';
 import { useOutbox, type Draft, type ReportMode, type SentRecord } from './outbox';
 import { PhoneMap, type MapArea } from './PhoneMap';
 import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget } from './ReportFlow';
@@ -276,8 +276,8 @@ function Field({ meName }: { meName: string }) {
       return {
         a, id, hex: a.hex, open: a.status === 'assigned', number: 0, label: homeLabel(id),
         hh: householdBy.get(id), est, cell, hexRow: hexBy.get(a.hex), priority: prio(cell?.priority ?? 'P2'), type, job: D.jobFor(est, type),
-        // Same cell label as the manager's dashboard ("District 90 · 7"), so a task maps to the area panel.
-        district: labeler.cell(a.hex), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
+        // The manager's dashboard labels this cell "District 90 · 7" (7th area of the district); spelled out here.
+        district: labeler.cell(a.hex).replace(' · ', ', area '), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
         replies, reports, sent, followup, silent: D.silentHours(est, sim, replies, sent),
         banner: D.taskBanner({ a, replies, reports, followup, me: myId, type }), unsent: unsentIds.has(id),
         notice: imessageBy.get(id),
@@ -537,7 +537,7 @@ function Field({ meName }: { meName: string }) {
 }
 
 // ---- Tab bar (Tasks, Messages, Profile): floating Apple-style glass, on the three main screens only ----
-const TAB_SPACE = 82; // tab bar height + its gap, kept clear on the Tasks map
+const TAB_SPACE = 66; // tab bar height + its gaps, kept clear on the Tasks map
 const CHAT_SEEN_KEY = 'adj-chat-seen-v1';
 function loadChatSeen(): Record<string, string> {
   try {
@@ -560,7 +560,7 @@ function TabBar({ tab, unread, onTab }: { tab: Tab; unread: number; onTab: (k: T
       {TABS.map((x) => (
         <button key={x.key} type="button" className={`adj-tab${tab === x.key ? ' on' : ''}`} aria-current={tab === x.key ? 'page' : undefined} onClick={() => onTab(x.key)}>
           <span className="ico">
-            <Icon name={x.icon} size={23} stroke={tab === x.key ? 2.2 : 1.8} />
+            <Icon name={x.icon} size={19} stroke={tab === x.key ? 2.2 : 1.8} />
             {x.key === 'messages' && unread > 0 && <span className="adj-badge" aria-label={`${unread} unread`}>{unread}</span>}
           </span>
           <span className="lbl">{x.label}</span>
@@ -655,14 +655,14 @@ function BannerStrip({ b, onOpen, onDismiss, onSkip, glass }: {
       <span className="txt"><b>{b.title}</b>{b.detail && <span>{b.detail}</span>}</span>
       {b.kind === 'help' && (onOpen
         ? <button type="button" className="adj-btn dark small" onClick={onOpen}>Open home</button>
-        : <button type="button" className="adj-btn dark small" onClick={onDismiss}>OK</button>)}
+        : <button type="button" className="adj-btn outline small" onClick={onDismiss}>OK</button>)}
       {(b.kind === 'visited' || b.kind === 'safe') && (
         <>
-          <button type="button" className="adj-btn dark small" onClick={onDismiss}>Still go</button>
+          <button type="button" className="adj-btn outline small" onClick={onDismiss}>Still go</button>
           {onSkip && <button type="button" className="adj-link small" onClick={onSkip}>Skip</button>}
         </>
       )}
-      {b.kind === 'closed' && <button type="button" className="adj-btn dark small" onClick={onDismiss}>OK</button>}
+      {b.kind === 'closed' && <button type="button" className="adj-btn outline small" onClick={onDismiss}>OK</button>}
     </div>
   );
 }
@@ -677,36 +677,97 @@ function doneTag(t: Task): { text: string; tone: '' | 'red' | 'amber' } {
   return { text: t.est?.accounted ? 'Everyone safe' : 'Reported', tone: '' };
 }
 
-function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
-  t: Task; myId?: Parameters<typeof D.taskBanner>[0]['me']; banner: D.Banner | null;
-  onOpen: () => void; onDismiss: () => void; onSkip: () => void;
+/** Plain wording for how long a home has been quiet (never "Silent 0 h"). */
+function silenceText(t: Task): string | null {
+  if (t.silent == null) return null;
+  if (t.replies.length) return t.silent < 1 ? 'replied < 1 h ago' : `last reply ${t.silent} h ago`;
+  return t.silent < 1 ? 'no reply yet' : `no reply ${t.silent} h`;
+}
+
+const JOB_ROW: Partial<Record<D.Job, string>> = { Inspect: 'Inspection' };
+/** The line under the home name: job, distance, then the one fact that changes how you act. */
+function taskMeta(t: Task): string {
+  const need = D.listNeeds(t.hh)[0];
+  const severe = t.type === 'Property inspection' && D.damageLevel(t.est?.pSevere ?? 0) === 'High' ? 'likely severe' : null;
+  const fact = need ? need.charAt(0).toLowerCase() + need.slice(1) : silenceText(t) ?? severe;
+  return [JOB_ROW[t.job] ?? D.JOB_LABEL[t.job], t.miles != null ? D.fmtMiles(t.miles) : null, fact].filter(Boolean).join(', ');
+}
+
+function TaskCard({ t, myId, banner, primary, onOpen, onGo, onMessage, onDismiss, onSkip }: {
+  t: Task; myId?: Parameters<typeof D.taskBanner>[0]['me']; banner: D.Banner | null; primary?: boolean;
+  onOpen: () => void; onGo: () => void; onMessage: () => void; onDismiss: () => void; onSkip: () => void;
 }) {
-  const needs = D.listNeeds(t.hh);
-  const sub = t.open ? [t.job !== 'Visit' ? D.JOB_LABEL[t.job] : null, ...needs].filter(Boolean).join(' · ') || t.district : null;
   const tag = t.open ? null : doneTag(t);
   const mine = t.reports.filter((r) => myId && r.ingestedBy.isEqual(myId));
   const reportedAt = mine.length ? Math.max(...mine.map((r) => r.t)) : null;
   return (
     <div className={`adj-taskcard${t.open ? '' : ' done'}`}>
-      <button type="button" className="adj-task" onClick={onOpen}>
-        <span className={`adj-num${t.open ? '' : ' done'}`}>{t.open ? t.number : <Icon name="check" size={13} stroke={3} />}</span>
-        {t.open && <span className={`adj-p ${t.priority}`}>{t.priority}</span>}
-        <span className="adj-task-main">
-          <b style={t.open ? undefined : { color: 'var(--t2)' }}>{t.label}</b>
-          {sub && <span>{sub}</span>}
-          {tag && <span className={`adj-tag ${tag.tone}`}>{tag.text}</span>}
+      <div className="adj-taskrow">
+        <button type="button" className="adj-task" onClick={onOpen}>
+          <span className="adj-task-top">
+            {t.open
+              ? <span className={`adj-p ${t.priority}`}>{t.priority}</span>
+              : <span className="adj-num done"><Icon name="check" size={11} stroke={3} /></span>}
+            <b>{t.label}</b>
+            {t.unsent && <span className="adj-tag amber">Unsent</span>}
+          </span>
+          {tag
+            ? <span className="adj-task-sub"><span className={`adj-tag ${tag.tone}`}>{tag.text}</span>{reportedAt != null && ` ${fmtT(reportedAt)}`}</span>
+            : <span className="adj-task-sub">{taskMeta(t)}</span>}
+        </button>
+        <span className="adj-task-acts">
+          <button type="button" className="adj-iconbtn" aria-label={`Go to area, ${t.label}`} title="Go to area" onClick={onGo}><Icon name="nav" size={16} stroke={1.9} /></button>
+          <button type="button" className="adj-iconbtn" aria-label={`Message, ${t.label}`} title="Message" onClick={onMessage}><Icon name="talk" size={16} stroke={1.9} /></button>
+          <button type="button" className={`adj-btn small ${primary ? 'dark' : 'outline'}`} aria-label={`Open ${t.label}`} onClick={onOpen}>Open</button>
         </span>
-        <span className="adj-task-side">
-          {t.unsent && <span className="adj-tag amber">Unsent</span>}
-          {t.open ? (t.miles != null ? D.fmtMiles(t.miles) : null) : reportedAt != null ? fmtT(reportedAt) : null}
-        </span>
-      </button>
+      </div>
       {banner && <BannerStrip b={banner} onOpen={onOpen} onDismiss={onDismiss} onSkip={t.open ? onSkip : undefined} />}
     </div>
   );
 }
 
+/**
+ * iMessage state of the accept notice, from the household's latest imessage_outbox row.
+ * 'failed' can be a timed-out send that still arrives, so it never claims the message did not go.
+ * Without the bridge rows stay 'queued', so anything else reads as simulated (docs/ADJUSTER_APP.md).
+ */
+function imessageState(row: ImessageRow | undefined): { text: string; tone: '' | 'ok' | 'amber' } | null {
+  if (!row) return null;
+  if (row.status === 'sent') return { text: 'iMessage sent', tone: 'ok' };
+  if (row.status === 'failed') return { text: 'iMessage not confirmed', tone: 'amber' };
+  return { text: 'iMessage simulated', tone: '' };
+}
+
+/** "In-app sent" holds because the accept reducer writes the notice to the thread when it creates the assignment. */
+function NotifiedChips({ imessage }: { imessage: ImessageRow | undefined }) {
+  const im = imessageState(imessage);
+  return (
+    <span className="adj-chips" aria-label="Customer notified by">
+      <span className="adj-tag ok">In-app sent</span>
+      {im && <span className={`adj-tag ${im.tone}`}>{im.text}</span>}
+    </span>
+  );
+}
+
+/** One row after Accept, so the task list stays on screen. */
+function NotifiedRow({ label, imessage, onOpen, onDismiss }: {
+  label: string; imessage: ImessageRow | undefined; onOpen: () => void; onDismiss: () => void;
+}) {
+  return (
+    <article className="adj-notified" aria-label={`${label} added`} aria-live="polite">
+      <span className="adj-okdot"><Icon name="check" size={12} stroke={3} /></span>
+      <span className="adj-notified-main">
+        <b>{label} added</b>
+        <NotifiedChips imessage={imessage} />
+      </span>
+      <button type="button" className="adj-btn dark small" aria-label={`Open ${label}`} onClick={onOpen}>Open</button>
+      <button type="button" className="adj-iconbtn" aria-label="Dismiss" title="Dismiss" onClick={onDismiss}><Icon name="close" size={16} stroke={1.9} /></button>
+    </article>
+  );
+}
+
 // ---- Screen 1: Tasks ----
+const TOP_ROWS = 3; // task rows in the default sheet; the rest wait in the pulled-up list
 function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
   open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
   bannerFor: (t: Task) => D.Banner | null; myId?: Parameters<typeof D.taskBanner>[0]['me'];
@@ -714,7 +775,7 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
   accepted?: Task; onDismissAccepted: () => void; onMessage: (id: string) => void;
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
-  // Sheet: 'peek' = one line so the map shows, 'next' = Next best + Next up, 'all' = the whole list.
+  // Sheet: 'peek' = one line so the map shows, 'next' = Next best + the top rows, 'all' = the whole list.
   const [sheet, setSheet] = useStickySheet();
   const expanded = sheet === 'all';
   // Drag the handle (or the peek sheet) and the top edge follows the finger; release snaps to peek / next / all.
@@ -724,7 +785,7 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
   const showBest = hasStart && !!nextBest;
   const [selId, setSelId] = useState<string | null>(null);
   const all = useMemo(() => [...open, ...done], [open, done]);
-  // The card shows the task picked on the map, else the next one up.
+  // The first row is the task picked on the map, else the next one up.
   const next = (selId ? all.find((t) => t.id === selId) : undefined) ?? open[0];
   const isNextUp = !!next && next === open[0];
 
@@ -734,8 +795,8 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
   ], [open, done, next]);
   const route = useMemo(() => (me && open.length ? [me, ...open.map((t) => D.cellCenter(t.hex))] : undefined), [me, open]);
   const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}`;
-  const nb = next ? bannerFor(next) : null;
-  const rest = all.filter((t) => t !== next);
+  const top = next ? [next, ...open.filter((t) => t !== next)].slice(0, TOP_ROWS) : [];
+  const rest = all.filter((t) => !top.includes(t));
   // The pulled-up list: open first (route order), then done (newest first), each under a small header.
   const sections = [
     { key: 'open', title: 'Open', list: rest.filter((t) => t.open) },
@@ -748,23 +809,35 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
     const i = next ? here.indexOf(next) : -1;
     setSelId(here[(i + 1) % here.length].id);
   };
+  const renderRow = (t: Task, primary = false) => {
+    const b = bannerFor(t);
+    return (
+      <TaskCard
+        key={t.id} t={t} myId={myId} banner={b} primary={primary}
+        onOpen={() => onOpen(t.id)} onGo={() => onGo(t.id)} onMessage={() => onMessage(t.id)}
+        onDismiss={() => b && onDismiss(t, b)} onSkip={() => onSkip(t)}
+      />
+    );
+  };
 
   return (
     <>
       <PhoneMap
-        areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
-        padBottom={TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
+        areas={areas} me={me} route={route} fitKey={fitKey} padTop={68}
+        padBottom={TAB_SPACE + 44 + (expanded ? 460 : Math.max(top.length, 1) * 54) + (showBest ? (whyOpen ? 120 : 56) : 0) + (accepted ? 54 : 0)}
         fallbackCenter={regionCenter}
         onAreaClick={pickArea}
       />
       <header className="adj-header adj-glass">
-        <div>
+        <div className="adj-head-main">
           <strong>Field tasks</strong>
-          <span className="sub">{meName} · {fmtT(sim)}</span>
+          <span className="sub"><span className="who">{meName},</span><span className="clock">{fmtT(sim)}</span></span>
         </div>
-        {badge}
+        <div className="adj-head-side">
+          <span className="adj-demo">Demo areas</span>
+          {badge}
+        </div>
       </header>
-      <span className="adj-demo adj-glass">Demo data: areas, not addresses</span>
 
       <section ref={sheetRef} className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : sheet === 'all' ? ' all' : ''}`} aria-label="Tasks" {...sheetDrag}>
         <button
@@ -776,38 +849,39 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
         {sheet === 'peek' && (
           <button type="button" className="adj-peekline" onClick={() => setSheet('next')}>
             <b>
-              {open.length ? (done.length ? `${open.length} open` : `${open.length} open task${open.length > 1 ? 's' : ''}`) : done.length ? 'All done' : 'No tasks yet'}
-              {done.length > 0 && <span className="adj-peek-done"> · {done.length} done</span>}
+              {open.length ? `${open.length} open` : done.length ? 'All done' : 'No tasks yet'}
+              {open.length > 0 && done.length > 0 && <span className="adj-peek-done"> · {done.length} done</span>}
             </b>
             <span>
               {next
-                ? <>{isNextUp ? 'Next up' : next.open ? `Task ${next.number}` : 'Done'} · {next.label}{next.district ? ` · ${next.district}` : ''}</>
-                : 'New tasks appear here automatically.'}
+                ? <>{isNextUp ? 'Next up' : next.open ? `Task ${next.number}` : 'Done'} · {next.label}</>
+                : 'New tasks appear here'}
             </span>
           </button>
         )}
 
         {accepted && (
-          <NotifiedCard
-            label={accepted.label} imessage={accepted.notice} onDismiss={onDismissAccepted}
-            onMessage={() => onMessage(accepted.id)} onOpen={() => onOpen(accepted.id)}
-          />
+          <NotifiedRow label={accepted.label} imessage={accepted.notice} onDismiss={onDismissAccepted} onOpen={() => onOpen(accepted.id)} />
         )}
 
         {showBest && nextBest && (
-          <article className="adj-card adj-best" aria-label="Next best">
+          <article className="adj-best" aria-label="Next best">
             <div className="adj-best-row">
-              <span className={`adj-p ${prio(nextBest.priority)}`}>{prio(nextBest.priority)}</span>
               <span className="adj-best-main">
-                <b>Next best · {recMiles(nextBest.distanceKm)}</b>
-                <span>{nextBest.reason}</span>
+                <span className="adj-best-top">
+                  <span className={`adj-p ${prio(nextBest.priority)}`}>{prio(nextBest.priority)}</span>
+                  <b>Next best, {recMiles(nextBest.distanceKm)}</b>
+                </span>
+                <span className="adj-best-sub">
+                  <span>{nextBest.reason}</span>
+                  <button type="button" className="adj-why-toggle" aria-label="Why this task" aria-expanded={whyOpen} aria-controls="adj-why" onClick={() => setWhyOpen((x) => !x)}>
+                    Why<Icon name="down" size={12} stroke={2.2} />
+                  </button>
+                </span>
               </span>
-              <button type="button" className="adj-iconbtn t44" aria-label="Refresh suggestions" onClick={onRefresh}><Icon name="refresh" size={18} stroke={2} /></button>
-              <button type="button" className="adj-btn dark small t44" disabled={accepting} onClick={onAccept}>Accept</button>
+              <button type="button" className="adj-iconbtn" aria-label="Refresh suggestions" title="Refresh" onClick={onRefresh}><Icon name="refresh" size={16} stroke={1.9} /></button>
+              <button type="button" className="adj-btn small" disabled={accepting} onClick={onAccept}>Accept</button>
             </div>
-            <button type="button" className="adj-why-toggle" aria-expanded={whyOpen} aria-controls="adj-why" onClick={() => setWhyOpen((x) => !x)}>
-              <Icon name="down" size={16} stroke={2.2} />Why this task
-            </button>
             {whyOpen && (
               <ul id="adj-why" className="adj-why">
                 <li>{prio(nextBest.priority)} area · {nextBest.reason}</li>
@@ -823,38 +897,13 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
             <div className="adj-rowhead">
               <h2>{isNextUp ? 'Next up' : next.open ? `Task ${next.number}` : 'Done'}</h2>
               {isNextUp
-                ? <span className="adj-muted">1 of {open.length}</span>
+                ? <span>{open.length} open</span>
                 : open.length > 0 && <button type="button" className="adj-link small" onClick={() => setSelId(null)}>Back to next up</button>}
             </div>
-            <article className="adj-card" style={{ overflow: 'hidden' }}>
-              <div className="adj-next">
-                <div className="adj-badges">
-                  <span className={`adj-p ${next.priority}`}>{next.priority}</span>
-                  <span className="adj-pill">{D.JOB_LABEL[next.job]}</span>
-                  {next.silent != null && <span className="adj-pill fill">Silent {next.silent} h</span>}
-                  {!next.open && <span className={`adj-tag ${doneTag(next).tone}`}>{doneTag(next).text}</span>}
-                  {next.unsent && <span className="adj-tag amber">Unsent</span>}
-                </div>
-                <strong className="adj-title">{next.label}</strong>
-                <span className="adj-sub">
-                  {[next.district, next.miles != null ? D.fmtMiles(next.miles) : null, `Help: ${D.helpLevel(next.est?.pNeedsHelp ?? 0)}`].filter(Boolean).join(' · ')}
-                </span>
-                {D.listNeeds(next.hh).length > 0 && (
-                  <div className="adj-needs">
-                    {D.listNeeds(next.hh).map((n) => <span key={n} className="adj-need"><Icon name={needIcon(n)} size={14} stroke={2} />{n}</span>)}
-                  </div>
-                )}
-                <div className="adj-actions">
-                  <button type="button" className="adj-btn outline" onClick={() => onGo(next.id)}><Icon name="nav" size={16} stroke={2} />Go to area</button>
-                  <button type="button" className="adj-btn outline adj-msgbtn" aria-label="Message" title="Message" onClick={() => onMessage(next.id)}><Icon name="talk" size={18} stroke={2} /></button>
-                  <button type="button" className="adj-btn dark grow" onClick={() => onOpen(next.id)}>Open home</button>
-                </div>
-              </div>
-              {nb && <BannerStrip b={nb} onOpen={() => onOpen(next.id)} onDismiss={() => onDismiss(next, nb)} onSkip={() => onSkip(next)} />}
-            </article>
+            {top.map((t, i) => renderRow(t, i === 0))}
           </>
         ) : (
-          <div className="adj-card adj-empty">{done.length ? 'All tasks done.' : 'No tasks yet. New tasks appear here automatically.'}</div>
+          <div className="adj-empty">{done.length ? 'All tasks done' : 'No tasks yet'}</div>
         )}
 
         {rest.length > 0 && (
@@ -864,12 +913,7 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
               {sections.map(({ key, title, list }) => (
                 <div key={key} className={`adj-listsec ${key}`} role="group" aria-label={`${title}, ${list.length}`}>
                   <h3 className="adj-listhead">{title}<span> · {list.length}</span></h3>
-                  <div className="adj-list">
-                    {list.map((t) => {
-                      const b = bannerFor(t);
-                      return <TaskCard key={t.id} t={t} myId={myId} banner={b} onOpen={() => onOpen(t.id)} onDismiss={() => b && onDismiss(t, b)} onSkip={() => onSkip(t)} />;
-                    })}
-                  </div>
+                  <div className="adj-list">{list.map((t) => renderRow(t))}</div>
                 </div>
               ))}
             </div>
