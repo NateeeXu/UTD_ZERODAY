@@ -50,7 +50,7 @@ function validate(file: string, b: EventBundle): void {
   const w = b.world;
   if (Object.keys(b).sort().join() !== 'events,truth,world') fail(file, 'bundle keys mismatch');
   const wk = Object.keys(w).sort().join();
-  if (wk !== 'center,dataSources,eventId,eventLocalHour,eventWeekday,facilities,hazardType,hexes,households,landfallIso,name,region') fail(file, `world keys ${wk}`);
+  if (wk !== 'center,dataSources,eventId,eventLocalHour,eventWeekday,facilities,hazardGeometry,hazardType,hexes,households,landfallIso,name,region') fail(file, `world keys ${wk}`);
   if (!Number.isInteger(w.eventLocalHour) || w.eventLocalHour! < 0 || w.eventLocalHour! > 23 || typeof w.eventWeekday !== 'boolean') fail(file, 'bad eventLocalHour/eventWeekday');
   if (Number.isNaN(Date.parse(w.landfallIso))) fail(file, 'bad landfallIso');
   if (!w.region || !w.hazardType || !w.dataSources?.length) fail(file, 'region/hazardType/dataSources missing');

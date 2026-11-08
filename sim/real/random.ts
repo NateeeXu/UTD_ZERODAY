@@ -8,8 +8,10 @@
 //                          [--preset <id>] [--households 30000] [--out <file>]
 //   node real/random.ts list            # presets and faults
 // A fully random draw is redrawn until at least 3 % of households are severely damaged (--any to keep any draw).
+// Keeps only the area the event hits (--full-county for the whole county).
 // Writes data/real/<region>/scenarios/<eventId>.json (gitignored) and prints the path on the last line.
 
+import { gridDisk } from 'h3-js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Rng } from '../src/rng.ts';
@@ -24,6 +26,7 @@ import { dataSources, serialize } from './bundle-io.ts';
 import { OUT_DIR } from './sources.ts';
 import { HURRICANE_PRESETS, HURRICANE_SPEC, QUAKE_PRESETS, QUAKE_SPEC } from './random-spec.ts';
 import type { Tri } from './random-spec.ts';
+import type { EventBundle } from '../../shared/types.ts';
 
 const argv = process.argv.slice(2);
 const flag = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
@@ -174,6 +177,48 @@ for (;;) {
   seed = (seed + 7919) % 1_000_000;
   rng = new Rng(seed * 7919 + 17);
 }
+// Footprint: keep only the area this event actually hits (hazard index >= max(0.2, 40 % of the event's peak),
+// plus one ring of neighbours), so every disaster has its own shape on the map. --full-county keeps it all.
+const MIN_CELLS = 40;
+const MIN_KEPT_HOUSEHOLDS = 12000;
+const MAX_HOUSEHOLDS = 60000;
+function footprintHexes(b: EventBundle): Set<string> {
+  const hexes = b.world.hexes;
+  const peak = Math.max(...hexes.map((h) => h.hazardIndex ?? 0));
+  const cutoff = Math.max(0.2, 0.4 * peak);
+  let core = hexes.filter((h) => (h.hazardIndex ?? 0) >= cutoff).map((h) => h.hex);
+  if (core.length < MIN_CELLS) core = [...hexes].sort((a, c) => (c.hazardIndex ?? 0) - (a.hazardIndex ?? 0)).slice(0, MIN_CELLS).map((h) => h.hex);
+  const all = new Set(hexes.map((h) => h.hex));
+  const keep = new Set<string>();
+  for (const h of core) for (const n of gridDisk(h, 1)) if (all.has(n)) keep.add(n);
+  return keep;
+}
+function applyFootprint(b: EventBundle, keep: Set<string>): EventBundle {
+  const households = b.world.households.filter((h) => keep.has(h.hex));
+  const ids = new Set(households.map((h) => h.id));
+  const hexes = b.world.hexes.filter((h) => keep.has(h.hex));
+  const center = { lat: hexes.reduce((a, h) => a + h.lat, 0) / hexes.length, lng: hexes.reduce((a, h) => a + h.lng, 0) / hexes.length };
+  return {
+    ...b,
+    world: { ...b.world, center, hexes, households, ...(b.world.facilities ? { facilities: b.world.facilities.filter((f) => keep.has(f.hex)) } : {}) },
+    events: b.events.filter((e) => ids.has(e.householdId)),
+    truth: b.truth.filter((t) => ids.has(t.householdId)),
+  };
+}
+let footprintNote = '';
+if (!argv.includes('--full-county')) {
+  let keep = footprintHexes(result.bundle);
+  let kept = result.bundle.world.households.filter((h) => keep.has(h.hex)).length;
+  if (kept < MIN_KEPT_HOUSEHOLDS) {
+    // Same event (hazard does not depend on the household count), denser households, so the numbers stay at scale.
+    const scaled = Math.min(MAX_HOUSEHOLDS, Math.round((households * MIN_KEPT_HOUSEHOLDS) / Math.max(1, kept)));
+    result = simulate(base, data, sc, { regionPrefix: region.id.slice(0, 2), households: scaled, fieldReports: false, dataSources: sources });
+    keep = footprintHexes(result.bundle);
+    kept = result.bundle.world.households.filter((h) => keep.has(h.hex)).length;
+  }
+  footprintNote = `  footprint: ${keep.size} of ${result.bundle.world.hexes.length} cells, ${kept} households (--full-county keeps the whole county)`;
+  result = { ...result, bundle: applyFootprint(result.bundle, keep) };
+}
 const { bundle, meta } = result;
 const text = serialize(bundle);
 JSON.parse(text);
@@ -183,7 +228,8 @@ writeFileSync(out, text);
 const lt = localTime(sc.landfallIso, region.tz);
 const severe = bundle.truth.filter((r) => r.damage >= 2).length;
 console.log(`[${region.id}] ${sc.name}`);
-console.log(`  ${lt.weekday ? 'weekday' : 'weekend'} ${String(lt.hour).padStart(2, '0')}:00 local; ${households} households, ${bundle.events.length} events, true severe ${severe} (${((100 * severe) / households).toFixed(1)}%)`);
+if (footprintNote) console.log(footprintNote);
+console.log(`  ${lt.weekday ? 'weekday' : 'weekend'} ${String(lt.hour).padStart(2, '0')}:00 local; ${bundle.world.households.length} households, ${bundle.events.length} events, true severe ${severe} (${((100 * severe) / bundle.world.households.length).toFixed(1)}%)`);
 for (const n of meta.notes ?? []) console.log(`  ${n}`);
 if (redraws > 0) console.log(`  redrew ${redraws} time(s): skipped random events with under ${MIN_SEVERE * 100}% severe households (--any keeps them)`);
 console.log(`  ${(text.length / 1e6).toFixed(1)} MB in ${Date.now() - t0} ms`);

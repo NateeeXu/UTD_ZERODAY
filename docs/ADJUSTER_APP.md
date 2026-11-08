@@ -262,7 +262,7 @@ renters 的区块内容：
 
 - 备注框：不显示标签（只给读屏的 `<label>`），placeholder "Why? (required)"，至少 3 个字符（后端也会检查）。
 - 底部两个按钮："Cancel"，以及主按钮。主按钮文案跟着选项变：选 Can't get there 时是 "Skip task"，其余是 "Close home"。没选选项或备注不够 3 个字符时置灰。
-- `close_household` 成功后，如果派单还是 `assigned`，再调 `updateAssignment({ id, status: 'done' })`（待后端确认它会不会自己做）。
+- `close_household`（带 reason）成功后，后端会把这户 `assigned` 的派单自动改成 `done`，前端不用再调 `updateAssignment`。
 - 成功后回到 Tasks，toast "Home #006142 closed" 或 "Task skipped"。
 - 失败时在面板里显示后端返回的原文，面板不关。
 
@@ -359,5 +359,4 @@ Maincloud 整个不可用时：切到本地服务器加笔记本热点（`SPACET
 2. 联系尝试次数（`staff_contact` 是私有表）。现在显示 "Texted T+… · no reply"。
 3. `update_assignment` 带 note，用来记录 "Can't get there" 的原因。
 4. `submit_field_report` 的服务端 `opId` 去重。现在靠客户端按条数查重。
-5. `close_household` 是否自动完成派单。现在由前端补调一次 `update_assignment(done)`。
-6. renters 的 contents / 今晚能不能住、Couldn't assess 的原因，目前都写在 note 的第一行；后端可以考虑改成独立字段。
+5. renters 的 contents / 今晚能不能住、Couldn't assess 的原因，目前都写在 note 的第一行；后端可以考虑改成独立字段。

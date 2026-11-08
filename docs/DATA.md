@@ -1,4 +1,4 @@
-# Data card: Triage Loop
+# Data card: Saviu
 
 What is real, what is simulated, every assumption the simulator makes, and what we can honestly claim.
 Data files: `data/live.json` + `data/backtest/` (Harbor Bend, fictional), `data/real/tx-corpus-christi/`, `data/real/ca-bay-area/` (real geography).
@@ -151,11 +151,11 @@ The Bay Area is a weekday-daytime earthquake: most people are away when it hits,
 
 **Region total (`metrics.severeTotalLo/Hi`)** = the sum of the cell bounds. Within one event every cell can be off in the same direction (the Bay Area live event is under-predicted by about 12 % before any field report), so adding cell variances as if independent was overconfident (it excluded the true total); summed bounds include it at every time we checked.
 
-**Live honesty check (`metrics.intervalCoverageLive`)**: share of cells whose interval contains the simulated true count. Measured with simulated staff on: Harbor Bend 96 % → 98 % (t = 0 → 72 h), Bay Area 73 % → 82 % → 91 % (0 / 24 / 72 h). Early in a harder-than-history event the model is biased; coverage recovers as field reports correct it. Summed cell width falls 69 % (HB) and 56 % (Bay Area) over 72 h, from new information (calls, visits, property inspections), not from narrower assumptions.
+**Live honesty check (`metrics.intervalCoverageLive`)**: share of cells whose interval contains the simulated true count. Measured with simulated staff on: Harbor Bend 96 % → 98 % (t = 0 → 72 h), Bay Area 73 % → 79 % → 85 % (0 / 24 / 72 h). Early in a harder-than-history event the model is biased; coverage recovers as field reports correct it. Summed cell width falls 69 % (HB) and 53 % (Bay Area) over 72 h, from new information (calls, visits, property inspections), not from narrower assumptions.
 
 **Model metrics** (leave-one-event-out, 95 % cell-cluster bootstrap CI; the range across events is the real event-to-event spread):
 
-| | Severe Brier [CI] (range) | AUC [CI] | ECE | Brier skill vs hazard-only (range) |
+| | Severe Brier [CI] (range) | AUC [CI] | ECE | Brier skill vs baseline without live signals (hazard + static attributes) (range) |
 |---|---|---|---|---|
 | Harbor Bend (10 events) | 0.058 [0.055, 0.062] (0.013–0.084) | 0.954 [0.949, 0.957] | 0.017 | 0.25 (0.20–0.30) |
 | Corpus Christi (8) | 0.042 [0.040, 0.043] (0.005–0.123) | 0.931 [0.925, 0.935] | 0.004 | 0.21 (0.15–0.27) |
@@ -189,6 +189,8 @@ Two random runs, simulated staff on (true severe count vs the live range):
 **Verified parameters** (Opus research agents, sources fetched): hurricane category mix from 55 Texas landfalls in HURDAT2 (42/25/19/13 % for Cat 1–4; no Texas Cat 5 on record, kept as a 1 % tail), radius of maximum wind and forward speed from HURDAT2 landfall fixes, surge by category from NHC / NWS reports (Celia, Allen, Carla, Harvey, Hanna; Cat 2 and Cat 5 surge interpolated). Earthquakes: Atkinson & Wald (2007) California coefficients and Wells & Coppersmith (1994) strike-slip length verified against the papers; fault traces from the USGS Quaternary fault database; weights from the USGS 2014–2043 Bay Area forecast (Hayward 33 %, Calaveras 26 %, San Andreas 22 %, Concord–Green Valley 16 %, San Gregorio 6 %; Greenville and Mount Diablo 3 %). Known weakness: AW07 likely overpredicts close to the fault above M6.
 
 **Presets** (`--preset <id>`, all labeled "hypothetical, inspired by"): `celia-type-direct-hit` (Celia 1970, compact Cat 4, weekday 16:00), `harvey-type-stall` (Harvey 2017, stalling Cat 4 north of the county, weekday 22:00), `hanna-type-cat1` (Hanna 2020, Cat 1, weekend 17:00; landfall moved north into the region), `haywired-m705` (USGS HayWired M7.05 under Oakland, weekday 16:00), `hayward-1868-night` (1868 Hayward M6.8 replayed at 03:00; real time 7:53 am), `calaveras-north-m686` (USGS northern Calaveras M6.86, weekend 14:00).
+
+**Footprint**: each generated event keeps only the area it hits (cells with hazard index ≥ max(0.2, 40 % of the event's peak), plus one ring of neighbours), so every disaster has its own shape (72 to 581 cells in tests); households are made denser when few would remain (target about 12,000, generation capped at 60,000). `--full-county` keeps the whole county. The shape stays inside the two counties with data.
 
 **Fully random draws** are redrawn until at least 3 % of households are severely damaged (many real Bay Area quakes barely affect Alameda County; a demo should not land on one). Any explicit option, preset or `--seed` is honoured exactly; `--any` keeps every draw.
 

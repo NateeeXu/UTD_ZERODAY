@@ -1,4 +1,4 @@
-# Triage Loop 数据类型参考（DATA_TYPES）
+# Saviu 数据类型参考（DATA_TYPES）
 
 > 读者：项目负责人和队友。解释用简体中文，所有标识符（类型、字段、表、列、reducer 名）保留英文原样。
 > 依据的代码（2026-11-07 的工作区）：`shared/types.ts`、`spacetimedb/src/schema.ts`、`spacetimedb/src/reducers/*.ts`、`spacetimedb/src/{ingest,state,staff,index}.ts`、`spacetimedb/src/fusion/*`、`engine/src/{infer,interval,features,config}.ts`、`engine/scripts/calibrate.ts`、`docs/DATA.md`、`data/**`。文中的数量是对 `data/` 里的实际文件计数得到的。
@@ -175,7 +175,7 @@ Harbor Bend（`data/live.json` 和 `data/backtest/`）是虚构小镇，**所有
 | `disability?` | `boolean` | 残障或行动不便 | ACS B18101 |
 | `noVehicle?` | `boolean` | 家里没车，难以撤离 | ACS B08201 |
 | `limitedEnglish?` | `boolean` | 英语能力有限 | ACS C16002 |
-| `primaryLanguage?` | `string` | 外联短信用的语言，也是自由文本回复的语言 | `en es zh vi tl ko fr de ru ar other-ie other-api other`（见第 7 节） |
+| `primaryLanguage?` | `string` | 住户的主要语言，也是自由文本回复的语言（模拟的问候短信只用英语，按此语言外联在路线图上） | `en es zh vi tl ko fr de ru ar other-ie other-api other`（见第 7 节） |
 | `mobileHome?` | `boolean` | 住移动房屋（风灾下最脆弱） | ACS B25024 |
 | `policyType?` | `'homeowners' \| 'renters' \| 'condo'` | 保单类型。租户只保财物和临时住宿，房屋结构归房东的保险 | ACS B25003；condo 是用多户住宅比例做的代理估计 |
 | `schoolAgeChildren?` | `number` | 5–17 岁的孩子人数 | 整数 ≥ 0 |
@@ -491,7 +491,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `silence` | f64 | 0–1 | 模型输出 |
 | `expectedSevere` | f64 | 预计严重受损的户数 | 模型输出 |
 | `severeLo`, `severeHi` | f64 | 严重户数的 90% 区间（engine/src/interval.ts）；stub 估计器下两者都等于 expectedSevere | 模型输出 |
-| `severeVar` | f64 | 这个计数的方差（地区总数把各格的方差相加） | 模型输出 |
+| `severeVar` | f64 | 这个计数的方差（地区总数不用它，见 `metrics.severeTotalLo/Hi`） | 模型输出 |
 | `maxPNeedsHelp` | f64 | 0–1 | 模型输出 |
 | `hazard` | f64 | 验证规则用的 0–1 灾害分（有 hazardIndex 就用它） | 模型输出 |
 | `silenceCause` | string | `away`/`trapped`/`outage`/`unknown`/`''`（不沉默） | 模型输出 |
@@ -604,7 +604,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `longestWaitMin` | f64 | 各格的最大值 | 演示状态 |
 | `openReferrals`, `overdueReferrals`, `membersMissing`, `closedNoContact`, `recheckDue`, `callContacts`, `assistanceRequests`, `inspectionRequests`, `locateDue` | u32 | 各格之和（含义同 hex_stats） | 演示状态 |
 | `expectedSevereTotal` | f64 | 全地区严重户数 = Σ 各格 expectedSevere | 模型输出 |
-| `severeTotalLo`, `severeTotalHi` | f64 | 地区总数的 90% 区间：sd = √Σ severeVar，下界 `max(Σlo, floor(mean − 1.645·sd))`，上界 `min(Σhi, ceil(mean + 1.645·sd))`（固定用 z = 1.645） | 模型输出 |
+| `severeTotalLo`, `severeTotalHi` | f64 | 地区总数的范围：各格上下界直接相加（Σ severeLo、Σ severeHi）。同一事件里各格的误差相关，按独立方差相加会过于自信（`spacetimedb/src/fusion/index.ts`，`docs/DATA.md` 第 8 节） | 模型输出 |
 | `severeIntervalWidth` | f64 | 各格区间宽度之和 = Σhi − Σlo | 模型输出 |
 | `intervalCoverageLive` | f64 | **新增**：区间诚实度检查。在所有有住户的格子里，"90% 严重户数区间包含模拟的真实严重户数（sim_truth 中 damage ≥ 2 的户数）"的格子所占比例，应接近 0.9 | 模型输出对比合成真相 |
 | `intervalCellsLive` | u32 | **新增**：参加上面这项检查的格子数（hex_stats.households > 0 的格子） | 演示状态 |
@@ -877,7 +877,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 1. **精确部分**：格内未核实住户的严重户数 S = Σ Bernoulli(p_i)（p_i 是邻居更新后的 pSevere）。它的精确分布是 Poisson-binomial，用动态规划算（格子只有几十户）。取两侧尾概率各为 `tail` 的分位数 [q_lo, q_hi]。
 2. **为共享误差放宽**：同一格的住户有共同的误差（例如整格的灾害估计偏了），所以并不完全独立。共享方差 `shared = τ² × μ² × 2/(2 + k)`，τ² = `ModelParams.cellOverdispersion`（缺省 0.1），μ = Σp_i，k = 格内有现场报告的户数（报告越多，共享误差越小）。放宽系数 `w = √(1 + shared / Σp(1−p))`；每一侧按它到均值的距离乘以 (w − 1) 往外扩，四舍五入到整户。所有 p 都是 0 或 1 时，退化为正态近似。
 3. **已核实户**：pSevere ≥ 0.5 的算已知的严重户，只平移区间，不贡献方差。结果先截到 [0, 未核实户数]，再加上已知严重户数。
-4. **`severeVar`** = Σp(1−p) + shared。数据库用它把各格加成全地区的总数（`metrics.severeTotalLo/Hi`，见 5.3）。
+4. **`severeVar`** = Σp(1−p) + shared。数据库把它存在 `hex_stats`；全地区的总数（`metrics.severeTotalLo/Hi`，见 5.3）不用它，而是把各格上下界直接相加。
 
 **尾概率的校准**（`engine/scripts/calibrate.ts`）：
 - τ² 用矩估计：`Σ((y − μ)² − Σp(1−p)) / Σμ²`，下限为 0。数据是留出事件在各个快照时间（6/12/24/48 h）上的每个格子，k = 0。
@@ -935,7 +935,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 
 ## 附录 B：不一致或不清楚的地方
 
-1. `data/README.md` 写 Harbor Bend 的回测是 `backtest-1 … backtest-6`，实际有 10 个（`data/model.json` 的 `trainedOn` 也是 10 个）。
+1. （已修正）`data/README.md` 的回测表原来只列到 `backtest-6`，现在列全 10 个（`data/model.json` 的 `trainedOn` 也是 10 个）。
 2. `schema.ts` 里 `claim.peril` 的注释写 `'wind' | 'flood'`，但 Bay Area 的理赔是 `earthquake`，`seed_staged_events` 也接受 `earthquake`。
 3. `metrics.accounted` 的注释写 "reply, claim or field report"。实际规则（`accountFor`）还包括失联报告、进行中的转介和记录在案的关闭；而 safety 为 `unsure` 的现场报告不算人已联系上。
 4. `hex_stats.claims`、`fieldReports`、`severeReplies`、`helpReplies` 是**条数**，而 `HexEstimate.counts` 是按户去重的数；数据库没有单独存 `HexEstimate.counts`。
@@ -948,7 +948,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 11. `TruthRow.returnMin` 只出现在 Bay Area live 的 `away` 行；其他文件里没有这个字段（数据库存 −1）。
 12. `ModelParams.calibration.baseline` 的类型注释写"只看灾害强度"，代码实际用的是 hazard + static 两组特征。
 13. CDC SVI 在 `dataSources` 里只给了署名要求，没说是否属于公有领域。
-14. Bay Area live 的发生时间说法不一：`docs/SPACETIME_API.md` 写 "Thu 10:00"，`data/real/README.md` 写 "10:40 Friday"。bundle 里 `landfallIso = 2026-11-06T18:40:00.000Z`（按 PST 换算是周五 10:40），`eventLocalHour = 10`，`eventWeekday = true`。
+14. （已修正）Bay Area live 的发生时间：`docs/SPACETIME_API.md` 原来写 "Thu 10:00"，现在和 `data/real/README.md` 一致，都是周五 10:40。bundle 里 `landfallIso = 2026-11-06T18:40:00.000Z`（按 PST 换算是周五 10:40），`eventLocalHour = 10`，`eventWeekday = true`。
 
 ## 附：短信送达回执（v3 增量）
 

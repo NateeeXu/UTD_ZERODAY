@@ -1,4 +1,4 @@
-# Triage Loop: SpacetimeDB API
+# Saviu: SpacetimeDB API
 
 Reference for the frontend (manager dashboard, adjuster phone, policyholder SMS page) and anyone
 running the backend. The module lives in `spacetimedb/`. **One database per world**: the same module
@@ -8,7 +8,7 @@ is published under different names and seeded with one bundle each.
 |---|---|---|---|---|
 | Harbor Bend, TX (fictional) | `data/live.json` + `data/model.json` | 331 / 3,000 / 4,620 | hurricane (night) | `triage-loop` |
 | Corpus Christi, TX | `data/real/tx-corpus-christi/{live,model}.json` | 449 / 20,000 / 33,249 | hurricane (Sat 02:00) | `triage-loop-tx` |
-| Bay Area (Hayward Fault), CA | `data/real/ca-bay-area/{live,model}.json` | 611 / 30,000 / 35,994 | earthquake (Thu 10:00: daytime + school hours) | `triage-loop-ca` |
+| Bay Area (Hayward Fault), CA | `data/real/ca-bay-area/{live,model}.json` | 611 / 30,000 / 35,994 | earthquake (Fri 10:40 local: daytime + school hours) | `triage-loop-ca` |
 
 > All households, events and outcomes are synthetic. The real-geography worlds use real public
 > geography, demographics, facilities and hazard inputs (see `world.dataSourcesJson`). The
@@ -47,7 +47,7 @@ Five guarantees, each backed by data the frontend can show:
 2. **Everyone has a next step**: every household has an `escalation`, and the ladder ends with a person at the door (low-risk households too, after 48 h).
 3. **Nobody starves in the queue**: `unaccounted_queue` ranks by risk x waiting time, so every hour of silence raises a household.
 4. **"Safe" expires for vulnerable people**: a vulnerable household whose last contact is older than 24 h goes back to the queue as `recheck` (daily welfare check; ranks below never-contacted households).
-5. **Life-safety reports cannot stall**: a needs-help reply, an adjuster finding someone who needs help, or a missing member opens a referral with timers (not referred in 30 min, or not acknowledged in 60 min → `referral_overdue`).
+5. **Life-safety reports cannot stall**: a life-safety reply, an adjuster finding someone who needs help, or a missing member opens a referral with timers (not referred in 30 min, or not acknowledged in 60 min → `referral_overdue`).
 
 | Where | Columns |
 |---|---|
@@ -56,14 +56,14 @@ Five guarantees, each backed by data the frontend can show:
 | `household_estimate`, `inspection_candidate` | `accounted` (bool), `escalation` |
 | `household_followup` | per household: `memberMissing`, `reportedSimMinutes`, `referralStatus` (`''` / `referred` / `acknowledged` / `resolved`), `referralSimMinutes` (when referred, or when resolved), `closureReason` (`vacant` / `not_in_area` / `unreachable_after_visit`), `closureNote` (why; required with a reason), `closedBy` |
 | `unaccounted_queue` | top 5 per cell that still need contact: `rank`, `weight`, `waitSinceMin`, `escalation`, `vulnerable`, `cellPriority` |
-| `staff_sim` (singleton) | `enabled`, `callsPerHour`, `visitsPerHour`, `lastRunMin`, counters (see below) |
+| `staff_sim` (singleton) | `enabled`, `callsPerHour`, `visitsPerHour`, `inspectionsPerHour`, `lastRunMin`, counters (see below) |
 
 `escalation` values:
 - **Not heard from** (high-risk = vulnerable, pNeedsHelp ≥ 0.3, or a P0 cell; the step never moves backwards):
   - high-risk: `sms_sent` → `sms_resend` (30 min) → `agent_call` (90 min) → `field_visit` (4 h)
   - standard: `sms_sent` → `sms_resend` (2 h) → `agent_call` (6 h) → `field_visit` (12 h; 48 h for low-risk P2 cells)
   - no phone on file: `agent_call` (agent / emergency contact) → `field_visit`
-- **Needs help** (reply or missing member, until resolved): `emergency_referral` → `referral_pending` → `referral_acknowledged`; `referral_overdue` when a timer runs out. Pick the button from `household_followup.referralStatus`: `''` → "Refer to 911 / local agency", `referred` → "Agency acknowledged", `acknowledged` → "Resolved".
+- **Life safety** (life-safety reply, adjuster found `needs_help`, or missing member, until resolved): `emergency_referral` → `referral_pending` → `referral_acknowledged`; `referral_overdue` when a timer runs out. Pick the button from `household_followup.referralStatus`: `''` → "Refer to 911 / local agency", `referred` → "Agency acknowledged", `acknowledged` → "Resolved".
 - **Heard from**: `accounted`, `recheck` (vulnerable, last contact > 24 h ago), `verified` (field report), `closed` (documented reason).
 
 Queue score (rank across cells on the client; rows only change when the ranking changes):
@@ -76,9 +76,9 @@ Reducers:
 | Reducer | Who | Effect |
 |---|---|---|
 | `report_member_missing(householdId, passcode)` | reply page (policyholder_demo, manager, or reply passcode) | "Someone in my household is unaccounted for": opens a referral (a repeat report keeps the original clock) |
-| `update_referral(householdId, status)` | manager | `referred` / `acknowledged` / `resolved`; a needs-help reply after `resolved` opens a new referral |
+| `update_referral(householdId, status)` | manager | `referred` / `acknowledged` / `resolved`; a life-safety reply after `resolved` opens a new referral |
 | `close_household(householdId, reason, note)` | manager or adjuster | `vacant`, `not_in_area`, `unreachable_after_visit` (needs a field report with safety `unsure` for the household first), or `''` to reopen. `note` (≥ 3 chars) is required with a reason and stored in `closureNote`; closing marks the household's open assignments `done`; reopening clears the note and leaves assignments alone |
-| `set_staff_sim(enabled, callsPerHour, visitsPerHour)` | manager | simulated staff on/off and capacity (0 = default) |
+| `set_staff_sim(enabled, callsPerHour, visitsPerHour, inspectionsPerHour)` | manager | simulated staff on/off and capacity (0 = default) |
 
 Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
 Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", the outreach queue with one action button per `escalation`, a referrals panel (overdue in red), and `accountedRate` vs `vulnerableAccountedRate` side by side.
@@ -104,6 +104,12 @@ From the outside these all look like silence. The carrier receipt separates them
 - Simulated staff calls to a household whose texts were not delivered go to the emergency contact (lower answer rate).
 - Counts (`hex_stats` / `metrics`): `undeliveredUnaccounted`, `deliveredNoReply` (both among households not heard from yet). Show them next to "Unaccounted".
 
+### Hazard on the map
+
+`world.hazardGeometryJson` (JSON string, '' when none): draw the event itself on the map.
+- Hurricane: `{ kind: 'hurricane', landfall: {lat, lng}, track: [{lat, lng}, ...], headingDeg, vmaxMph, category, rmaxKm }`: landfall marker + forecast center line (`track`). `cone: { polygon: [{lat, lng}, ...], issuedHoursBeforeLandfall, radiusAtLandfallKm }` is an NHC-style forecast cone issued 24 h before landfall (2026 Atlantic two-thirds probability radii: 25 / 39 / 49 / 62 n mi at 12 / 24 / 36 / 48 h): narrow at the storm's position when issued, wider with lead time; draw it under the cells with low opacity and a thin outline.
+- Earthquake: `{ kind: 'earthquake', epicenter: {lat, lng}, rupture: [{lat, lng}, {lat, lng}] | null, magnitude, faultName }`: epicentre marker + rupture line (`null` for USGS ShakeMap scenarios).
+
 ### Uncertainty on the map
 
 - `hex_stats.severeLo` / `severeHi`: 90 % interval for the number of severely damaged households in the cell (show as "6–11"); `expectedSevere` is the point estimate. `severeVar` is its variance.
@@ -114,22 +120,22 @@ From the outside these all look like silence. The carrier receipt separates them
 ### Simulated staff (`staff_sim`, on by default)
 
 So the numbers move during the demo without anyone clicking, simulated staff work the queues every 30 sim minutes (src/staff.ts). Outcomes come from the private sim truth, never from the model.
-- **Referral desk** (no limit): refers every new needs-help report at the next step; the agency acknowledges after 30 min and resolves after 6 h.
+- **Referral desk** (no limit): refers every new life-safety report (including missing members) at the next step; the agency acknowledges after 30 min and resolves after 6 h. Assistance requests go to customer care, not 911.
 - **Agents** (`callsPerHour`, default 2% of households): call the top of `unaccounted_queue` once the text has had an hour; retry after 2 h, at most 3 tries. P(answer) = 0.75 (0.4 via emergency contact when no phone) × 0.5 if they really need help × 0.8 limited English × 0.7 destroyed home. Phones travel with people. A reached call is an `sms_reply` with `channel = 'call'` and `source = 'staff_sim'`; people away when it hit cannot say how the house is (damage unknown).
 - **Adjusters** (`visitsPerHour`, default 0.3%): visit queue households after two failed calls, or one failed call and 4 h of silence (a re-check only if the person was last known at home). A visit always inspects the house (`field_report` from `sim-adjuster`, feeds trust learning); the people are seen only if they are home at that time (away people get home 4–12 h after it hit; badly damaged homes are empty). Nobody home → `locate`: up to 3 emergency-contact tries, then closed as `unreachable_after_visit` by `sim-staff`.
 - Counters in `staff_sim`: `callsMade`, `callsReached`, `visitsMade`, `referralsMade`, `referralsResolved`, `helpFound` (people who needed help, found by a call or visit).
-- `set_staff_sim(enabled, callsPerHour, visitsPerHour)` (manager; 0 = default). Turn it off to show "no staff" vs "staff working the queue". Settings survive `reset_demo`.
+- `set_staff_sim(enabled, callsPerHour, visitsPerHour, inspectionsPerHour)` (manager; 0 = default). Turn it off to show "no staff" vs "staff working the queue". Settings survive `reset_demo`.
 
-Measured, 72 h replays (v3 data):
+Measured, 72 h replays (v3 data with SMS delivery receipts and the coverage-aware inspection queue; local server, default capacity, `jump_to` in 24 h steps):
 | | no staff | staff on |
 |---|---|---|
-| Harbor Bend accounted at 24 h / 48 h | 1,590 / 1,693 of 3,000 | 2,364 / **3,000** |
-| Harbor Bend high-risk unaccounted at 24 h | 760 | 64 |
+| Harbor Bend accounted at 24 h / 48 h | 1,590 / 1,693 of 3,000 | 2,264 / **3,000** |
+| Harbor Bend high-risk unaccounted at 24 h | 760 | 107 |
 | Harbor Bend overdue 911 referrals | 7 | 0 |
-| Bay Area accounted at 24 h / 72 h | 8,138 / 8,981 of 30,000 | 16,174 / **29,362** |
+| Bay Area accounted at 24 h / 72 h | 8,138 / 8,981 of 30,000 | 15,326 / **27,598** |
 | Bay Area overdue 911 referrals | 65 | 0 |
 
-Splitting life safety from assistance cut Harbor Bend's 911 referrals from 55 to 7 (the rest are assistance or inspection requests). In the Bay Area (weekday-daytime quake) 61% of staff visits find nobody home: the visited homes are the badly damaged ones, and their people have already left, so the next step is `locate`, not more door-knocking.
+Splitting life safety from assistance cut Harbor Bend's 911 referrals from 55 to 7 (the rest are assistance or inspection requests). In the Bay Area (weekday-daytime quake) 65% of staff visits find nobody home (4,021 of 6,210 over 72 h): the visited homes are the badly damaged ones, and their people have already left, so the next step is `locate`, not more door-knocking.
 
 Cost: one staff step for the Bay Area is ~80 ms. The running replay does one step per tick; `step_replay(240)` takes ~1 s on Maincloud; a Bay Area `jump_to(1440)` takes ~4 s, so fast-forward big regions with repeated `step_replay(240)` calls (the UI also updates between them).
 Holdout metrics now score only households without a field report (verified households are known, not predicted).
@@ -334,7 +340,7 @@ Extra fields:
 | claims, fieldReports | u32 | event counts |
 | verifiedHouseholds | u32 | distinct households with a field report |
 | **priority** | string | `P0` / `P1` / `P2` (color). A high-hazard silent cell is floored at P0 ("suspected P0") |
-| **verification** | string | `verified` / `needs_verification` (hatching) |
+| **verification** | string | `verified` / `needs_verification` (on the map: opacity = `confidence`, plus a pulse ring on silent high-hazard cells) |
 | severity | f64 0–1 | `1 - (1 - severeShare)(1 - maxPNeedsHelp)` |
 | confidence | f64 0–1 | evidence coverage x decidedness |
 | silence | f64 0–1 | expected signal that is missing (hazard-weighted; baselines account for coverage, renters, limited English, people away) |
@@ -358,7 +364,7 @@ Extra fields:
 
 ### `inspection_candidate`: the verification queue without downloading every household
 The top 3 unverified households of each cell by `inspectScore` (the engine's `perCellCap`): at most 3 × cells rows (≤ 1,833 in the Bay Area). Sorting this table by `inspectScore` gives exactly the engine's `recommendInspections()` order (checked by `parity.ts`).
-**Coverage-aware:** only houses whose policy covers this event's peril (homeowners / condo / no policy type, and hurricane: `windCovered` or `floodPolicy`, earthquake: `earthquakeEndorsement`) or that filed a claim are eligible; renters only via a claim (`src/fusion/coverage.ts`). Everyone else still gets estimates, accounting, escalation and counts in `hex_stats`; only this queue (and the staff sim's property inspections) skips them. Bay Area: 1,815 → 1,283 rows at t = 0 (1,419 at 24 h, as claims arrive); only 6.8 % of its households carry an earthquake endorsement.
+**Coverage-aware:** only houses whose policy covers this event's peril (homeowners / condo / no policy type, and hurricane: `windCovered` or `floodPolicy`, earthquake: `earthquakeEndorsement`) or that filed a claim are eligible; renters only via a claim (`src/fusion/coverage.ts`). Everyone else still gets estimates, accounting, escalation and counts in `hex_stats`; only this queue (and the staff sim's property inspections) skips them. Bay Area: 1,815 → 1,283 rows at t = 0 (1,419 at 24 h without staff, as claims arrive); 12.2 % of its households carry an earthquake endorsement, and 6.8 % are endorsed non-renters (the ones eligible before any claim).
 
 | field | type | meaning |
 |---|---|---|
@@ -382,7 +388,7 @@ The top 3 unverified households of each cell by `inspectScore` (the engine's `pe
 | modelVersion, engine | `engine` = real fusion engine; `stub` = temporary rules |
 
 ### `model_state` (singleton, id = 0)
-`loaded`, `version`, `paramsJson`: the ModelParams JSON. Parse it for `region`, `hazardType`, calibration Brier/ECE/AUC and the hazard-only baseline. Trust fields:
+`loaded`, `version`, `paramsJson`: the ModelParams JSON. Parse it for `region`, `hazardType`, calibration Brier/ECE/AUC and the baseline without live signals (hazard + static attributes). Trust fields:
 - `baseTrust*`: trust at calibration.
 - `trust*`: current trust.
 - `trustUpdates`.
@@ -459,7 +465,7 @@ Subscribe once per screen. With React, `useTable(tables.hexStats)` subscribes an
 ```sql
 SELECT * FROM world                -- name, hazard type, daytime / school-hours flags, data sources
 SELECT * FROM hex
-SELECT * FROM hex_stats            -- map color (priority) + hatching (verification) + tooltip (reason, silenceCause)
+SELECT * FROM hex_stats            -- map color (priority) + opacity (confidence) + pulse ring (silent high-hazard cells) + tooltip (reason, silenceCause)
 SELECT * FROM facility             -- schools / hospitals / fire stations / masts layer
 SELECT * FROM metrics              -- verified coverage, holdout error, source trust, P0/P1/P2 counts
 SELECT * FROM replay_state         -- clock, progress, play/pause state
@@ -495,7 +501,7 @@ Re-subscribe when `my_assignments` changes. The form calls `submit_field_report`
 SELECT * FROM household WHERE id = 'ca-live-h000552'
 SELECT * FROM sms_reply WHERE household_id = 'ca-live-h000552'
 ```
-- Write the outreach text in `household.primaryLanguage`.
+- The simulator assumes an English-only check-in text (limited-English households reply less). Outreach in `household.primaryLanguage` is a roadmap item; replies can already be in any language.
 - SAFE / HELP and 0–3 call `submit_sms_reply(householdId, safety, damage, code)`.
 - A free-text reply calls `submit_raw_reply(householdId, text, code)`; the Claude worker (`npm run worker`) parses it into `submit_parsed_reply` within a few seconds. Watch `SELECT * FROM reply_inbox WHERE household_id = '…'` for its status.
 - The reply lands on the manager map within one round trip.

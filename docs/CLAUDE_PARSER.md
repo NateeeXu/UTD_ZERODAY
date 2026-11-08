@@ -29,7 +29,8 @@ Error asymmetry: calling someone safe who is not is the worst error; an unnecess
 ```
 What is actually sent as `output_config.format` (`OUTPUT_SCHEMA` in `scripts/parser.ts`) differs in two ways, because structured outputs reject them: no `minimum` / `maximum` (damage 0–3 and confidence 0–1 are checked in code instead), and `evidence` has fixed keys `life_safety`, `safety`, `damage`, `needs` (every object needs `additionalProperties: false`).
 
-## System prompt (v1)
+## System prompt (v2)
+Copied from `SYSTEM_PROMPT` in `scripts/parser.ts` (`PROMPT_VERSION = 'v2'`). The 800-case numbers under Results were measured on v1; v2 adds the lines on children, dependents and requests to check on people, and has not been re-run on the full set.
 ```text
 You read one reply to a post-disaster check-in text from State Farm (an insurer, not an emergency
 service). It may be in any language, misspelled, mixed-language, or emoji. Your output decides whether
@@ -41,6 +42,10 @@ Return only the extraction.
    CPAP, dialysis, ventilator) without power, or a generic plea for help ("help", "SOS", "send someone",
    "ayuda", "救命", "tulong", "도와주세요", "cứu"). A reassuring phrase does not cancel a danger cue
    ("we're fine but grandma can't breathe" -> true). Offering help to others is not a plea.
+   Also life safety: a child, or someone who cannot look after themselves (bedbound, cannot walk,
+   frail), alone or out of reach of their caregiver ("my 9 yr old is home alone and I can't get to
+   him"); and a request to check on PEOPLE ("can someone check on us", "come check on my mom"), which
+   is a welfare plea. A request to check the HOUSE or the damage is an inspection, not a plea.
 2. safety: "needs_help" if life_safety or they ask for help for themselves (medical, power, shelter,
    water/food, transport, other); "safe" if they say they are OK and nothing contradicts it (an
    inspection request alone keeps "safe"); otherwise "unsure". Never guess "safe".
@@ -63,7 +68,7 @@ Return only the extraction.
 ## Guardrails in code (not in the prompt)
 - **Schema validation** of every response; invalid → treat as a failure.
 - **Keyword net (escalate only).** Multilingual danger words (help/SOS/trapped/gas/fire/oxygen/CPAP/can't breathe, ayuda/atrapado/gas/oxígeno, 救命/被困/煤气/氧气, tulong/naipit/gas, 도와/갇혔/가스/산소, cứu/kẹt/ga/oxy) force `life_safety = true` and human review if Claude said false. The net can never lower anything Claude flagged.
-- **Failure or timeout (> 10 s)** → `safety = unsure`, `life_safety = false`, `damage = null`, and the household goes to the agent-call queue (a person reads the text).
+- **Failure or timeout (> 10 s)** → `safety = unsure`, `life_safety = false`, `damage = null`. It is submitted as needs help without life safety, so the household gets `assistance`: it counts as accounted and customer care calls back (a person reads the text).
 - **Human review** when `confidence < 0.6`, when `safety = unsure`, or when Claude and the keyword net disagree.
 - **Button replies stay buttons**: if the reply page has explicit buttons, the parser only adds fields; it never overrides what the policyholder clicked.
 
@@ -81,7 +86,7 @@ Return only the extraction.
 ## Implementation (spacetimedb/scripts)
 | File | What it does |
 |---|---|
-| `scripts/parser.ts` | `parseReply(text): Promise<ParsedReply>`: one call to **`claude-sonnet-5-5`** via the official SDK (`@anthropic-ai/sdk`, devDependency of `spacetimedb/`, scripts only: the module never imports it), `output_config: { effort: 'low', format: json_schema }`, adaptive thinking left at its default, `max_tokens` 2048, server-side refusal fallback on (`fallbacks: 'default'`, beta `server-side-fallback-2026-07-01`; `CLAUDE_PARSER_FALLBACK=off` disables it). Then schema validation, the keyword net, the consistency rules and `toReducerArgs`. `PROMPT_VERSION = 'v1'` |
+| `scripts/parser.ts` | `parseReply(text): Promise<ParsedReply>`: one call to **`claude-sonnet-5-5`** via the official SDK (`@anthropic-ai/sdk`, devDependency of `spacetimedb/`, scripts only: the module never imports it), `output_config: { effort: 'low', format: json_schema }`, adaptive thinking left at its default, `max_tokens` 2048, server-side refusal fallback on (`fallbacks: 'default'`, beta `server-side-fallback-2026-07-01`; `CLAUDE_PARSER_FALLBACK=off` disables it). Then schema validation, the keyword net, the consistency rules and `toReducerArgs`. `PROMPT_VERSION = 'v2'` |
 | `scripts/claude-worker.ts` | Subscribes to `reply_inbox WHERE status = 'pending'`, one reply at a time: `parseReply` → `submit_parsed_reply` (+ `report_member_missing`) → `mark_reply_parsed`. Joins as a manager named "Claude parser" with `STAFF_PASSCODE`, leaves on exit. One log line per reply, no text, no secrets |
 | `scripts/parser-eval.ts` | The eval below |
 | `scripts/parser-test.ts` | Offline checks with a stubbed SDK call: keyword net, validation, every fallback path, mapping |
@@ -115,7 +120,7 @@ End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply 
 - **Sets**: (a) 80 sampled template replies from the regenerated `data/real/*/live.json` (labels from the simulator, relabeled by hand where the template is ambiguous); (b) `data/eval/sms_parse_adversarial.jsonl` (40 hand-written hard cases in en/es/zh/vi/tl/ko).
 - **Pass**: life-safety recall **100 %** on both sets; false-safe rate (said `safe`, expected `needs_help`/`unsure`) ≤ 2 %; damage exact ≥ 70 % and within ±1 ≥ 95 % where expected damage is not null; `damage = null` correct ≥ 90 % where expected null; valid JSON 100 %.
 - **Loop**: run, read every failure, change one thing in the prompt, rerun both sets. A guardrail change counts too.
-- **Versioning**: the prompt text lives in `scripts/parser.ts` as `PROMPT_VERSION = 'v1'`; `parser-eval.ts --out` stores it with every result so a later prompt can be compared on the same messages. (The `sms_reply` row stores the text and language, not the version.)
+- **Versioning**: the prompt text lives in `scripts/parser.ts` as `PROMPT_VERSION = 'v2'`; `parser-eval.ts --out` stores it with every result so a later prompt can be compared on the same messages. (The `sms_reply` row stores the text and language, not the version.)
 - **Real-set sampling** (`parser-eval.ts`): 20 free-text replies per region (Bay Area, Corpus Christi), stratified and seeded (`--seed 7`): 5 life-safety, 5 other needs-help, 4 not-home, the rest safe at home, round-robin over languages, deduplicated by text. Simulator labels that contradict rule 2 are relabeled by rule and marked in the output: an inspection request alone is `safe`, not `needs_help` (5 of the 40 with seed 7). False-safe rate = said `safe` / expected `needs_help` or `unsure`.
 
 ## Results

@@ -80,6 +80,7 @@ export const seedWorld = spacetimedb.reducer({ name: 'seed_world' }, { world: Wo
     eventLocalHour: w.eventLocalHour,
     eventWeekday: w.eventWeekday,
     dataSourcesJson: JSON.stringify(w.dataSources),
+    hazardGeometryJson: w.hazardGeometry,
     localHour: wc.localHour,
     weekday: wc.weekday,
     daytime: wc.daytime,

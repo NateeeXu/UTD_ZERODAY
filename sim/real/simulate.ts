@@ -5,7 +5,7 @@
 import { greatCircleDistance } from 'h3-js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Damage, EventBundle, HexCell, HexId, Peril, SimEvent, TruthRow } from '../../shared/types.ts';
+import type { Damage, EventBundle, HazardGeometry, HexCell, HexId, Peril, SimEvent, TruthRow } from '../../shared/types.ts';
 import { Rng, subSeed } from '../src/rng.ts';
 import type { RegionData } from './load.ts';
 import type { BaseWorld, CellInfo } from './world.ts';
@@ -126,6 +126,52 @@ export interface SimOptions {
   dataSources: string[];
 }
 
+/** NHC Atlantic 2026 two-thirds probability circles: forecast lead (h) -> radius (n mi). */
+const NHC_CONE_NM: [number, number][] = [[0, 0], [12, 25], [24, 39], [36, 49], [48, 62]];
+const CONE_ISSUED_H_BEFORE_LANDFALL = 24;
+function coneRadiusKm(leadH: number): number {
+  for (let i = 1; i < NHC_CONE_NM.length; i++) {
+    const [h0, r0] = NHC_CONE_NM[i - 1]!, [h1, r1] = NHC_CONE_NM[i]!;
+    if (leadH <= h1) return (r0 + ((r1 - r0) * (leadH - h0)) / (h1 - h0)) * 1.852;
+  }
+  return NHC_CONE_NM[NHC_CONE_NM.length - 1]![1] * 1.852;
+}
+
+/** Landfall, centre line and an NHC-style forecast cone issued 24 h before landfall, reaching 24 h past it. */
+function hurricaneGeometry(sc: HurricaneScenario): HazardGeometry {
+  const h = (sc.headingDeg * Math.PI) / 180;
+  const ux = Math.sin(h), uy = Math.cos(h);
+  const kmLng = 111.32 * Math.cos((sc.landfall.lat * Math.PI) / 180);
+  // s km along the track (+ = after landfall), d km to its right
+  const at = (s: number, d: number) => ({
+    lat: round(sc.landfall.lat + (s * uy - d * ux) / 111.32, 4),
+    lng: round(sc.landfall.lng + (s * ux + d * uy) / kmLng, 4),
+  });
+  const issued = CONE_ISSUED_H_BEFORE_LANDFALL;
+  const sAt = (lead: number) => sc.forwardKmh * (lead - issued);
+  const track = [];
+  for (let lead = 0; lead <= 48; lead += 6) track.push(at(sAt(lead), 0));
+  const left = [], right = [];
+  for (let lead = 0; lead <= 48; lead += 3) {
+    const r = coneRadiusKm(lead);
+    left.push(at(sAt(lead), -r));
+    right.unshift(at(sAt(lead), r));
+  }
+  // Rounded end of the cone: half circle around the last forecast point.
+  const cap = [];
+  const rEnd = coneRadiusKm(48), sEnd = sAt(48);
+  for (let a = -75; a <= 75; a += 15) {
+    const t = (a * Math.PI) / 180;
+    cap.push(at(sEnd + rEnd * Math.cos(t), rEnd * Math.sin(t)));
+  }
+  const v = sc.vmaxMph;
+  const category = v >= 157 ? 5 : v >= 130 ? 4 : v >= 111 ? 3 : v >= 96 ? 2 : 1;
+  return {
+    kind: 'hurricane', landfall: sc.landfall, track, headingDeg: sc.headingDeg, vmaxMph: v, category, rmaxKm: sc.rmaxKm,
+    cone: { polygon: [...left, ...cap, ...right], issuedHoursBeforeLandfall: issued, radiusAtLandfallKm: Math.round(coneRadiusKm(issued)) },
+  };
+}
+
 export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: SimOptions): { bundle: EventBundle; meta: SimMeta } {
   const hazardRng = new Rng(subSeed(sc.seed, 'hazard'));
   const truthRng = new Rng(subSeed(sc.seed, 'truth'));
@@ -145,6 +191,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
   // ---- hazard per cell ----
   const wind = new Map<HexId, number>(), flood = new Map<HexId, number>(), mmi = new Map<HexId, number>();
   let track: HurricaneTrack | null = null;
+  let quakeGeometry: HazardGeometry | undefined;
   if (sc.kind === 'hurricane') {
     track = new HurricaneTrack(sc, base);
     // rain pockets centred on real low-lying inland cells
@@ -174,10 +221,12 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       const d = distanceToSegmentKm({ lat: c.lat, lng: c.lng }, ra, rb);
       mmi.set(c.hex, clamp(ipeMmi(q.magnitude, d) + hazardRng.normal(0, 0.15), 1, 10));
     }
+    quakeGeometry = { kind: 'earthquake', epicenter: q.epicenter, rupture: [ra, rb], magnitude: q.magnitude, faultName: q.faultName };
     notes.push(`Parametric M${q.magnitude} on ${q.faultName}: epicentre ${q.epicenter.lat},${q.epicenter.lng}, strike ${q.strikeDeg} deg, rupture ${len.toFixed(0)} km, depth ${q.depthKm} km.`);
   } else {
     const g = parseShakeMapGrid(readFileSync(join(RAW_DIR, 'usgs', `grid_${sc.usgsEventId}.xml`), 'utf8'));
     for (const c of cells) mmi.set(c.hex, clamp(g.grid.sample(c.lat, c.lng), 1, 10));
+    quakeGeometry = { kind: 'earthquake', epicenter: { lat: g.lat, lng: g.lon }, rupture: null, magnitude: g.magnitude, faultName: sc.name };
     notes.push(`USGS ShakeMap ${sc.usgsEventId}: "${g.description}", M${g.magnitude}, epicentre ${g.lat},${g.lon}.`);
   }
   const scoreOf = (c: CellInfo) => (isQuake ? quakeScore(mmi.get(c.hex)!, c.liquefaction) : hurricaneScore(wind.get(c.hex)!, flood.get(c.hex)!));
@@ -464,6 +513,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       households,
       region: r.id,
       hazardType: sc.kind,
+      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
       facilities: base.facilities,
       dataSources: opt.dataSources,
       eventLocalHour,
