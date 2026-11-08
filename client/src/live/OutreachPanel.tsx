@@ -2,8 +2,8 @@
 //   Not heard from — unaccounted_queue, ranked across cells by risk × waiting time
 //   Needs help     — people who asked for help / reported a missing member (referrals)
 //   Feed           — latest SMS replies, claims, field reports
-// The P0 / P1 / P2 switch puts that priority's rows first.
-import { useMemo, useState } from 'react';
+// The P0 / P1 / P2 switch puts that priority's rows first, on every tab.
+import { useCallback, useMemo, useState } from 'react';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings/index.ts';
 import { useHouseholdsById } from './hooks';
@@ -73,6 +73,12 @@ export function OutreachPanel(p: Props) {
       .slice(0, 40);
   }, [queue, p.simMinutes, rankOf]);
 
+  // Feed: chosen priority first, newest first within it (sort is stable).
+  const cellPrio = useCallback((hex: string) => prio(p.cellBy.get(hex)?.priority ?? 'P2'), [p.cellBy]);
+  const feedRows = useMemo(
+    () => [...p.feed].sort((a, b) => rankOf(cellPrio(a.hex)) - rankOf(cellPrio(b.hex))),
+    [p.feed, cellPrio, rankOf],
+  );
 
   const ids = useMemo(
     () => (open && tab === 'unacc' ? queueRows.map((q) => q.householdId) : []),
@@ -103,7 +109,7 @@ export function OutreachPanel(p: Props) {
         </div>
         <label className="p2-sort" title="Sort: show this priority first">
           <span className="sr-only">Show this priority first</span>
-          <select value={first} onChange={(e) => { setFirst(e.target.value as Priority); setOpen(true); }} disabled={tab !== 'unacc'}>
+          <select value={first} onChange={(e) => { setFirst(e.target.value as Priority); setOpen(true); }}>
             {ORDER.map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
@@ -126,7 +132,7 @@ export function OutreachPanel(p: Props) {
           )}
           {p.assignError && <p className="form-error small p2-pad">{p.assignError}</p>}
           {tab === 'help' && (
-            <ReferralList simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onSelectHex={p.onSelectHex} />
+            <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onSelectHex={p.onSelectHex} />
           )}
           {tab !== 'help' && <ul className="p2-list">
             {tab === 'unacc' && queueRows.map((q) => {
@@ -149,13 +155,13 @@ export function OutreachPanel(p: Props) {
                 </li>
               );
             })}
-            {tab === 'feed' && p.feed.map((f) => (
+            {tab === 'feed' && feedRows.map((f) => (
               <li key={f.key}>
                 <button className={`feed-item ${f.kind}`} onClick={() => p.onSelectHex(f.hex)}>
                   <span className="muted small num">{fmtT(f.t)}</span>
                   <span className="feed-main">
                     <span className={f.help ? 'danger-text' : ''}>{f.text}</span>
-                    <span className="muted small">{p.labeler.cell(f.hex)}{f.live ? ' · live' : ''}</span>
+                    <span className="muted small"><span className={`chip mini chip-${cellPrio(f.hex)}`}>{cellPrio(f.hex)}</span>{p.labeler.cell(f.hex)}{f.live ? ' · live' : ''}</span>
                   </span>
                 </button>
               </li>

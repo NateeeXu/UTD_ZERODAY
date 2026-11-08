@@ -9,6 +9,7 @@ import { useHouseholdsById } from './hooks';
 import { fmtHM, riskFlags } from './accounting';
 import type { Labeler } from './labels';
 import { homeLabel } from '../format';
+import type { Priority } from './mapModel';
 
 const REFERRAL_STEPS = ['emergency_referral', 'referral_pending', 'referral_acknowledged', 'referral_overdue'];
 const referralRows = tables.householdEstimate.where((r) =>
@@ -22,7 +23,9 @@ const NEXT: Record<string, { status: 'referred' | 'acknowledged' | 'resolved'; l
 };
 const STATUS_TEXT: Record<string, string> = { '': 'Not referred yet', referred: 'Referred · waiting for agency', acknowledged: 'Agency on it' };
 
-export function ReferralList({ simMinutes, labeler, fictional, canAct, onNeedJoin, onSelectHex }: {
+export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional, canAct, onNeedJoin, onSelectHex }: {
+  rankOf: (p: string) => number; // the P0/P1/P2 "show first" switch
+  cellPrio: (hex: string) => Priority;
   simMinutes: number;
   labeler: Labeler;
   fictional: boolean;
@@ -41,10 +44,11 @@ export function ReferralList({ simMinutes, labeler, fictional, canAct, onNeedJoi
     const rank = (esc: string, status: string) => (esc === 'referral_overdue' ? 0 : status === '' ? 1 : status === 'referred' ? 2 : 3);
     return [...rows]
       .map((e) => ({ e, f: followBy.get(e.householdId) }))
-      .sort((a, b) => rank(a.e.escalation, a.f?.referralStatus ?? '') - rank(b.e.escalation, b.f?.referralStatus ?? '')
+      .sort((a, b) => rankOf(cellPrio(a.e.hex)) - rankOf(cellPrio(b.e.hex))
+        || rank(a.e.escalation, a.f?.referralStatus ?? '') - rank(b.e.escalation, b.f?.referralStatus ?? '')
         || (a.f?.reportedSimMinutes ?? 0) - (b.f?.reportedSimMinutes ?? 0))
       .slice(0, 40);
-  }, [rows, followBy]);
+  }, [rows, followBy, rankOf, cellPrio]);
   const householdBy = useHouseholdsById(useMemo(() => list.map((x) => x.e.householdId), [list]));
 
   const act = async (householdId: string, status: 'referred' | 'acknowledged' | 'resolved') => {
@@ -72,6 +76,7 @@ export function ReferralList({ simMinutes, labeler, fictional, canAct, onNeedJoi
           const flags = riskFlags(householdBy.get(e.householdId));
           return (
             <li key={e.householdId} className={`p2-row${late ? ' late' : ''}`}>
+              <span className={`chip chip-${cellPrio(e.hex)}`}>{cellPrio(e.hex)}</span>
               <button className="p2-main" onClick={() => onSelectHex(e.hex)}>
                 <b>{homeLabel(e.householdId, fictional)} <span className="muted small">· {labeler.cell(e.hex)}</span></b>
                 <span className="small">
