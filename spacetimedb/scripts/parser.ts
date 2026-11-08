@@ -15,7 +15,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const MODEL = 'claude-sonnet-5-5';
-export const PROMPT_VERSION = 'v1';
+export const PROMPT_VERSION = 'v2';
 export const TIMEOUT_MS = 10_000;
 
 export const NEEDS = ['medical', 'power_for_device', 'shelter', 'water_food', 'transport', 'inspection', 'other'] as const;
@@ -65,6 +65,10 @@ Return only the extraction.
    CPAP, dialysis, ventilator) without power, or a generic plea for help ("help", "SOS", "send someone",
    "ayuda", "救命", "tulong", "도와주세요", "cứu"). A reassuring phrase does not cancel a danger cue
    ("we're fine but grandma can't breathe" -> true). Offering help to others is not a plea.
+   Also life safety: a child, or someone who cannot look after themselves (bedbound, cannot walk,
+   frail), alone or out of reach of their caregiver ("my 9 yr old is home alone and I can't get to
+   him"); and a request to check on PEOPLE ("can someone check on us", "come check on my mom"), which
+   is a welfare plea. A request to check the HOUSE or the damage is an inspection, not a plea.
 2. safety: "needs_help" if life_safety or they ask for help for themselves (medical, power, shelter,
    water/food, transport, other); "safe" if they say they are OK and nothing contradicts it (an
    inspection request alone keeps "safe"); otherwise "unsure". Never guess "safe".
@@ -241,6 +245,7 @@ const NET_RULES: NetRule[] = [
     id: 'medical_device',
     re: W('oxygen|o2 (?:tank|machine|concentrator)|concentrator|cpap|bipap|ventilator|dialysis|nebuli[sz]er|feeding pump'),
   },
+  { id: 'check_on_people', re: W('check on (?:us|me|my \\w+|him|her|them|our \\w+)|(?:home|house) (?:alone|by (?:him|her|them)sel(?:f|ves))|bed ?bound|bedridden') },
   {
     id: 'send_someone',
     re: W('send (?:someone|somebody|help|an ambulance|ambulance|rescue|the fire department)|call 911|911|ambulance|emergency'),
