@@ -97,11 +97,27 @@ export interface TruthRow {
   damage: Damage;
   safety: 'safe' | 'needs_help';
   peril: Peril | 'none';
+  // v3：需要帮助的类型。life_safety = 现在就有危险（转 911 / 当地机构）；assistance = 需要协助（住所、供电、药品、交通），由 State Farm 客服跟进
+  needType?: NeedType;
+  // v3：人在哪里（灾后响应期间）。home = 在家；away = 灾害发生时不在家（上班 / 上学），看不到房子；displaced = 因房屋受损已离开（知道损失）
+  location?: Whereabouts;
+  // v3：away 的人回到家的时间（模拟分钟）。回家后房子损失 ≥ 2 的人会再离开（displaced，知道损失），否则在家
+  returnMin?: number;
 }
+
+export type NeedType = 'life_safety' | 'assistance' | 'none';
+export type Whereabouts = 'home' | 'away' | 'displaced';
+export type Need = 'medical' | 'power_for_device' | 'shelter' | 'water_food' | 'transport' | 'inspection' | 'other';
+// Need 的取值：medical, power_for_device, shelter, water_food, transport, inspection, other（types-only 文件，不放常量）
 
 export type SimEvent =
   | { kind: 'sms_sent'; t: Minutes; householdId: string }
-  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help'; damage: Damage;
+  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help';
+      damage: Damage | null; // v3：null = 回复没有描述房子（例如人不在家），损失未知
+      lifeSafety?: boolean;  // v3：有生命危险的信号（被困、受伤、煤气、医疗设备断电、泛泛的"救命"）
+      needs?: Need[];        // v3：具体需求（不是生命危险）
+      notHome?: boolean;     // v3：回复的人不在房子里（人和房子分开：人安全 ≠ 房子已查勘）
+      channel?: 'sms' | 'call'; // v3：call = 坐席电话联系上
       text?: string;       // v2：自由文本回复（可能是多语言），由 Claude 解析成 safety/damage/needs
       language?: string }  // v2：回复所用语言
   | { kind: 'claim'; t: Minutes; householdId: string; peril: Peril; reportedDamage: Damage }
@@ -126,7 +142,21 @@ export interface ModelParams {
     auc?: number;                                          // v2 可选
     needsHelp?: { brier: number; ece: number; auc: number };
     baseline?: { brier: number; ece: number; auc: number }; // 只看灾害强度的基线
+    // v3 区间：按格子做聚类 bootstrap 的 95% 置信区间（留一事件预测汇总）
+    brierCI?: [number, number];
+    aucCI?: [number, number];
+    eceCI?: [number, number];
+    brierRange?: [number, number];   // 各次留一事件的最小 / 最大值（事件之间的真实差异，不是抽样误差）
+    bss?: number;                    // Brier skill score = 1 - brier / 基线 brier（不受事件强度影响，更可比）
+    bssRange?: [number, number];
+    // 格子严重户数 90% 区间在留出事件上的实际覆盖率（应接近 0.9）和平均宽度
+    cellIntervalCoverage?: number;
+    cellIntervalMeanWidth?: number;
   };
+  // v3：格子层面的共享误差方差（超出二项分布的部分，相对于未核实户预期严重数的平方），由留一事件回测估计
+  cellOverdispersion?: number;
+  // v3：区间每侧的尾部概率，由回测校准：在留出事件上覆盖率仍 ≥ 90% 的最大值（越大区间越窄）
+  cellIntervalTail?: number;
   region?: string;      // v2：这个模型对应的地区
   hazardType?: HazardType;
   trainedOn: string[];  // 用了哪些回测事件
@@ -145,6 +175,8 @@ export interface HexEstimate {
   hex: HexId;
   households: number;
   expectedSevere: number;   // 预计严重受损的户数
+  severeLo?: number;        // v3：严重受损户数的 90% 区间下界
+  severeHi?: number;        // v3：90% 区间上界
   maxPNeedsHelp: number;
   severity: number;         // 0–1
   confidence: number;       // 0–1

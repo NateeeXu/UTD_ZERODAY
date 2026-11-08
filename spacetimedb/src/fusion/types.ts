@@ -25,7 +25,16 @@ export interface SourceTrust {
 export interface HouseholdSignals {
   household: Household;
   smsSentT: number | null; // first time a text was sent
-  reply: { t: number; safety: 'safe' | 'needs_help'; damage: Damage } | null;
+  /** Latest reply (SMS or agent call). damage null = the reply does not describe the home. */
+  reply: {
+    t: number;
+    safety: 'safe' | 'needs_help';
+    damage: Damage | null;
+    lifeSafety: boolean;
+    needs: string[];
+    notHome: boolean;
+    channel: 'sms' | 'call';
+  } | null;
   claim: { t: number; peril: Peril; reportedDamage: Damage } | null;
   field: { t: number; safety: Safety; damage: Damage; adjusterId: string } | null;
 }
@@ -67,7 +76,9 @@ export interface HouseholdOutput extends HouseholdEstimate {
 
 export interface CellOutput {
   households: HouseholdOutput[];
-  hex: HexEstimate; // includes hazard, reason, silenceCause (v2)
+  hex: HexEstimate; // includes hazard, reason, silenceCause (v2), severeLo / severeHi (v3)
+  /** variance of the cell's severe-household count (engine only; region totals add these) */
+  severeVar?: number;
 }
 
 /**

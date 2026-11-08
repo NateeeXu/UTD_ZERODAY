@@ -16,11 +16,13 @@ import {
   SINGLETON,
   touchWorld,
 } from '../state';
-import { baseTrust, clearDemoState, emptyStats, rebuildAll, refreshHoldoutMetrics } from '../ingest';
+import { baseTrust, clearDemoState, emptyStats, NEEDS, parseNeeds, rebuildAll, refreshHoldoutMetrics } from '../ingest';
 
 const KINDS = new Set(['sms_sent', 'sms_reply', 'claim', 'field_report']);
 const SAFETY = new Set(['safe', 'needs_help', 'unsure']);
 const PERILS = new Set(['wind', 'flood', 'earthquake']);
+const NEED_TYPES = new Set(['life_safety', 'assistance', 'none']);
+const LOCATIONS = new Set(['home', 'away', 'displaced']);
 const HAZARD_TYPES = new Set(['hurricane', 'earthquake']);
 const FACILITY_KINDS = new Set(['school', 'university', 'hospital', 'shelter', 'fire_station', 'mast']);
 const POLICY_TYPES = new Set(['homeowners', 'renters', 'condo']);
@@ -147,6 +149,8 @@ export const seedTruth = spacetimedb.reducer(
     for (const r of rows) {
       checkDamage(r.damage, r.householdId);
       if (r.safety !== 'safe' && r.safety !== 'needs_help') throw new SenderError(`${r.householdId}: bad safety`);
+      if (!NEED_TYPES.has(r.needType)) throw new SenderError(`${r.householdId}: bad needType ${r.needType}`);
+      if (!LOCATIONS.has(r.location)) throw new SenderError(`${r.householdId}: bad location ${r.location}`);
       if (ctx.db.simTruth.householdId.find(r.householdId)) ctx.db.simTruth.householdId.update(r);
       else ctx.db.simTruth.insert(r);
     }
@@ -166,6 +170,11 @@ export const seedStagedEvents = spacetimedb.reducer(
       if (e.kind === 'claim' && !PERILS.has(e.peril)) throw new SenderError(`seq ${e.seq}: bad peril`);
       checkDamage(e.damage, `seq ${e.seq}`);
       checkDamage(e.reportedDamage, `seq ${e.seq}`);
+      if (e.kind === 'sms_reply') {
+        if (e.channel !== 'sms' && e.channel !== 'call') throw new SenderError(`seq ${e.seq}: bad channel ${e.channel}`);
+        for (const n of parseNeeds(e.needs))
+          if (!(NEEDS as readonly string[]).includes(n)) throw new SenderError(`seq ${e.seq}: unknown need ${n}`);
+      }
       if (ctx.db.stagedEvent.seq.find(e.seq)) ctx.db.stagedEvent.seq.update(e);
       else ctx.db.stagedEvent.insert(e);
     }

@@ -1,4 +1,4 @@
-// Generates data/live.json, data/backtest/backtest-{1..6}.json and data/sim-meta.json.
+// Generates data/live.json, data/backtest/backtest-{1..10}.json and data/sim-meta.json.
 // Usage: node src/main.ts   (from sim/)
 
 import { mkdirSync, writeFileSync } from 'node:fs';

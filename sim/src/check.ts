@@ -1,3 +1,4 @@
+import { locationAt } from './needs.ts';
 // Validates every generated bundle against the shared contract and prints a summary table.
 // Usage: node src/check.ts   (from sim/). Exits non-zero on any failure.
 
@@ -13,28 +14,39 @@ const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'data
 const errors: string[] = [];
 const fail = (file: string, msg: string) => errors.push(`${file}: ${msg}`);
 
-type Shape = Record<string, 'string' | 'number' | 'boolean' | 'object'>;
+type Shape = Record<string, 'string' | 'number' | 'boolean' | 'object' | 'number|null'>;
 const HEX_SHAPE: Shape = { hex: 'string', lat: 'number', lng: 'number', windMph: 'number', floodDepthFt: 'number', towerOutagePct: 'number', analystZone: 'number' };
 const HH_SHAPE: Shape = { id: 'string', hex: 'string', lat: 'number', lng: 'number', age65: 'boolean', livesAlone: 'boolean', medicalDevice: 'boolean', windCovered: 'boolean', floodPolicy: 'boolean', earthquakeEndorsement: 'boolean', phoneOnFile: 'boolean', holdout: 'boolean' };
-const TRUTH_SHAPE: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string' };
+const TRUTH_SHAPE: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string', needType: 'string', location: 'string' };
 const EVENT_SHAPES: Record<string, Shape> = {
   sms_sent: { kind: 'string', t: 'number', householdId: 'string' },
-  sms_reply: { kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number' },
+  sms_reply: { kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number|null', lifeSafety: 'boolean', needs: 'object', notHome: 'boolean', channel: 'string' },
   claim: { kind: 'string', t: 'number', householdId: 'string', peril: 'string', reportedDamage: 'number' },
   field_report: { kind: 'string', t: 'number', householdId: 'string', adjusterId: 'string', safety: 'string', damage: 'number' },
 };
 const DAMAGES = new Set([0, 1, 2, 3]);
+const NEEDS = new Set(['medical', 'power_for_device', 'shelter', 'water_food', 'transport', 'inspection', 'other']);
 
 function checkShape(file: string, what: string, obj: unknown, shape: Shape): boolean {
   if (typeof obj !== 'object' || obj === null) { fail(file, `${what} is not an object`); return false; }
   const o = obj as Record<string, unknown>;
   const keys = Object.keys(o);
   for (const [k, t] of Object.entries(shape)) {
-    if (typeof o[k] !== t) { fail(file, `${what}.${k} should be ${t}, got ${typeof o[k]}`); return false; }
+    const ok = t === 'number|null' ? o[k] === null || typeof o[k] === 'number' : typeof o[k] === t;
+    if (!ok) { fail(file, `${what}.${k} should be ${t}, got ${typeof o[k]}`); return false; }
   }
   const extra = keys.filter((k) => !(k in shape));
   if (extra.length) { fail(file, `${what} has unexpected keys ${extra.join(',')}`); return false; }
   return true;
+}
+
+/** v3 label summary: needType / location counts and reply label shares. */
+function summary(file: string, b: EventBundle): void {
+  const cnt = (xs: (string | undefined)[]) => Object.entries(xs.reduce<Record<string, number>>((m, x) => ((m[x ?? '-'] = (m[x ?? '-'] ?? 0) + 1), m), {})).map(([k, v]) => `${k} ${v}`).join(', ');
+  const replies = b.events.filter((e) => e.kind === 'sms_reply');
+  const help = replies.filter((e) => e.kind === 'sms_reply' && e.safety === 'needs_help');
+  const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '-');
+  console.log(`  ${file.split('/').slice(-2).join('/')}: needType {${cnt(b.truth.map((t) => t.needType))}}; location {${cnt(b.truth.map((t) => t.location))}}; replies ${replies.length}, needs_help ${help.length} (lifeSafety ${pct(help.filter((e) => e.kind === 'sms_reply' && e.lifeSafety).length, help.length)}), notHome ${pct(replies.filter((e) => e.kind === 'sms_reply' && e.notHome).length, replies.length)}, damage null ${pct(replies.filter((e) => e.kind === 'sms_reply' && e.damage === null).length, replies.length)}`);
 }
 
 function validate(file: string, b: EventBundle, isLive: boolean): void {
@@ -71,6 +83,13 @@ function validate(file: string, b: EventBundle, isLive: boolean): void {
     if (!['wind', 'flood', 'none'].includes(t.peril)) fail(file, `bad peril ${t.peril}`);
     if ((t.peril === 'none') !== (t.damage === 0)) fail(file, `peril/damage mismatch for ${t.householdId}`);
   }
+  const truthOf = new Map(b.truth.map((t) => [t.householdId, t]));
+  for (const t of b.truth) {
+    if (!['life_safety', 'assistance', 'none'].includes(t.needType ?? '')) fail(file, `bad needType ${t.needType}`);
+    if ((t.needType === 'none') !== (t.safety === 'safe')) fail(file, `needType/safety mismatch ${t.householdId}`);
+    if (!['home', 'away', 'displaced'].includes(t.location ?? '')) fail(file, `bad location ${t.location}`);
+  }
+  summary(file, b);
   let prevT = -Infinity;
   for (const [i, e] of b.events.entries()) {
     const shape = EVENT_SHAPES[e.kind];
@@ -80,7 +99,14 @@ function validate(file: string, b: EventBundle, isLive: boolean): void {
     prevT = e.t;
     if (e.t < 0 || e.t > 4320 || !Number.isInteger(e.t)) fail(file, `bad t ${e.t}`);
     if (!hhIds.has(e.householdId)) fail(file, `event for unknown household ${e.householdId}`);
-    if (e.kind === 'sms_reply' && (!DAMAGES.has(e.damage) || !['safe', 'needs_help'].includes(e.safety))) fail(file, `bad sms_reply ${JSON.stringify(e)}`);
+    if (e.kind === 'sms_reply') {
+      if ((e.damage !== null && !DAMAGES.has(e.damage)) || !['safe', 'needs_help'].includes(e.safety)) fail(file, `bad sms_reply ${JSON.stringify(e)}`);
+      if (e.lifeSafety && e.safety !== 'needs_help') fail(file, `lifeSafety on a safe reply ${e.householdId}`);
+      if (!(e.needs ?? []).every((n) => NEEDS.has(n))) fail(file, `bad needs ${JSON.stringify(e.needs)}`);
+      if (e.damage === null && !e.notHome) fail(file, `unknown damage while at home ${e.householdId}`);
+      const tl = truthOf.get(e.householdId);
+      if (tl && e.notHome !== (locationAt(tl, e.t) !== 'home')) fail(file, `notHome disagrees with truth location ${e.householdId}`);
+    }
     if (e.kind === 'claim' && (!DAMAGES.has(e.reportedDamage) || !['wind', 'flood'].includes(e.peril))) fail(file, `bad claim ${JSON.stringify(e)}`);
     if (e.kind === 'field_report' && (!DAMAGES.has(e.damage) || !['safe', 'needs_help', 'unsure'].includes(e.safety))) fail(file, `bad field_report ${JSON.stringify(e)}`);
   }

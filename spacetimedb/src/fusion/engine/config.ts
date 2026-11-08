@@ -103,6 +103,11 @@ export interface TriageConfig {
    * gain 0 disables the update.
    */
   neighbourUpdate: { gainSevere: number; gainHelp: number; shrinkageCount: number };
+  /** 90% cell interval for the number of severe households (src/interval.ts). */
+  interval: {
+    /** cell-level overdispersion used when the model has no backtest estimate (ModelParams.cellOverdispersion) */
+    defaultOverdispersion: number;
+  };
   thresholds: {
     /** P0 if any household in the cell has pNeedsHelp >= this ... */
     p0HelpProb: number;
@@ -213,6 +218,7 @@ export const DEFAULT_CONFIG: TriageConfig = {
   },
   verifiedValues: { high: 0.98, low: 0.02 },
   neighbourUpdate: { gainSevere: 2, gainHelp: 2, shrinkageCount: 2 },
+  interval: { defaultOverdispersion: 0.1 },
   thresholds: {
     p0HelpProb: 0.5,
     p0SevereShare: 0.5,

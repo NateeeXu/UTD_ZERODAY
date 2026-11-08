@@ -15,6 +15,7 @@ export default __t.row({
   enabled: __t.bool(),
   callsPerHour: __t.u32().name("calls_per_hour"),
   visitsPerHour: __t.u32().name("visits_per_hour"),
+  inspectionsPerHour: __t.u32().name("inspections_per_hour"),
   lastRunMin: __t.f64().name("last_run_min"),
   callsMade: __t.u32().name("calls_made"),
   callsReached: __t.u32().name("calls_reached"),
@@ -22,5 +23,7 @@ export default __t.row({
   referralsMade: __t.u32().name("referrals_made"),
   referralsResolved: __t.u32().name("referrals_resolved"),
   helpFound: __t.u32().name("help_found"),
+  visitsNobodyHome: __t.u32().name("visits_nobody_home"),
+  inspectionsMade: __t.u32().name("inspections_made"),
   updatedAt: __t.timestamp().name("updated_at"),
 });

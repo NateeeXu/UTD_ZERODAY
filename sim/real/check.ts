@@ -1,3 +1,4 @@
+import { locationAt } from '../src/needs.ts';
 // Validates the real-geography bundles (data/real/<region>/*.json) against the shared contract and
 // prints a summary per bundle, plus the top silent-severe cells of each live world with nearby real
 // facilities. Usage (from sim/): node real/check.ts   Exits non-zero on any failure.
@@ -12,7 +13,7 @@ import { hexStats } from '../src/stats.ts';
 const errors: string[] = [];
 const fail = (file: string, msg: string) => errors.push(`${file}: ${msg}`);
 
-type T = 'string' | 'number' | 'boolean' | 'object';
+type T = 'string' | 'number' | 'boolean' | 'object' | 'number|null';
 type Shape = Record<string, T>;
 const HEX_REQ: Shape = { hex: 'string', lat: 'number', lng: 'number', windMph: 'number', floodDepthFt: 'number', towerOutagePct: 'number', analystZone: 'number' };
 const HEX_OPT: Shape = { hazardIndex: 'number', shakingMmi: 'number', liquefaction: 'number', tractGeoid: 'string', daytimeWorkers: 'number', residentWorkers: 'number', k12Enrollment: 'number', collegeEnrollment: 'number' };
@@ -20,19 +21,23 @@ const HH_REQ: Shape = { id: 'string', hex: 'string', lat: 'number', lng: 'number
 const HH_OPT: Shape = { tractGeoid: 'string', childrenUnder18: 'boolean', awayDaytime: 'boolean', age75: 'boolean', disability: 'boolean', noVehicle: 'boolean', limitedEnglish: 'boolean', primaryLanguage: 'string', mobileHome: 'boolean', policyType: 'string', schoolAgeChildren: 'number', collegeStudent: 'boolean', nearestSchoolId: 'string' };
 const FAC_REQ: Shape = { id: 'string', kind: 'string', name: 'string', lat: 'number', lng: 'number', hex: 'string', source: 'string' };
 const FAC_OPT: Shape = { enrollment: 'number', capacity: 'number' };
-const TRUTH: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string' };
+const TRUTH: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string', needType: 'string', location: 'string' };
 const EV: Record<string, [Shape, Shape]> = {
   sms_sent: [{ kind: 'string', t: 'number', householdId: 'string' }, {}],
-  sms_reply: [{ kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number' }, { text: 'string', language: 'string' }],
+  sms_reply: [{ kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number|null', lifeSafety: 'boolean', needs: 'object', notHome: 'boolean', channel: 'string' }, { text: 'string', language: 'string' }],
   claim: [{ kind: 'string', t: 'number', householdId: 'string', peril: 'string', reportedDamage: 'number' }, {}],
   field_report: [{ kind: 'string', t: 'number', householdId: 'string', adjusterId: 'string', safety: 'string', damage: 'number' }, {}],
 };
 const DAMAGES = new Set([0, 1, 2, 3]);
+const NEEDS = new Set(['medical', 'power_for_device', 'shelter', 'water_food', 'transport', 'inspection', 'other']);
 
 function shape(file: string, what: string, obj: unknown, req: Shape, opt: Shape = {}): boolean {
   if (typeof obj !== 'object' || obj === null) { fail(file, `${what} is not an object`); return false; }
   const o = obj as Record<string, unknown>;
-  for (const [k, t] of Object.entries(req)) if (typeof o[k] !== t) { fail(file, `${what}.${k} should be ${t}, got ${typeof o[k]}`); return false; }
+  for (const [k, t] of Object.entries(req)) {
+    const ok = t === 'number|null' ? o[k] === null || typeof o[k] === 'number' : typeof o[k] === t;
+    if (!ok) { fail(file, `${what}.${k} should be ${t}, got ${typeof o[k]}`); return false; }
+  }
   for (const k of Object.keys(o)) {
     if (k in req) continue;
     if (!(k in opt)) { fail(file, `${what} has unexpected key ${k}`); return false; }
@@ -87,12 +92,18 @@ function validate(file: string, b: EventBundle): void {
   }
   if (b.truth.length !== w.households.length) fail(file, 'truth rows != households');
   for (const [i, t] of b.truth.entries()) {
-    if (!shape(file, `truth[${i}]`, t, TRUTH)) break;
+    if (!shape(file, `truth[${i}]`, t, TRUTH, { returnMin: "number" })) break;
     if (!ids.has(t.householdId)) fail(file, `truth for unknown ${t.householdId}`);
     if (!DAMAGES.has(t.damage)) fail(file, 'bad damage');
     const perils = isQuake ? ['earthquake', 'none'] : ['wind', 'flood', 'none'];
     if (!perils.includes(t.peril)) fail(file, `bad peril ${t.peril}`);
     if ((t.peril === 'none') !== (t.damage === 0)) fail(file, `peril/damage mismatch ${t.householdId}`);
+  }
+  const truthOf = new Map(b.truth.map((t) => [t.householdId, t]));
+  for (const t of b.truth) {
+    if (!['life_safety', 'assistance', 'none'].includes(t.needType ?? '')) fail(file, `bad needType ${t.needType}`);
+    if ((t.needType === 'none') !== (t.safety === 'safe')) fail(file, `needType/safety mismatch ${t.householdId}`);
+    if (!['home', 'away', 'displaced'].includes(t.location ?? '')) fail(file, `bad location ${t.location}`);
   }
   let prev = -Infinity;
   const sent = new Map<string, number>();
@@ -107,7 +118,13 @@ function validate(file: string, b: EventBundle): void {
     if (e.kind === 'sms_sent') sent.set(e.householdId, e.t);
     if (e.kind === 'sms_reply') {
       if (!(sent.has(e.householdId) && sent.get(e.householdId)! <= e.t)) fail(file, `reply without sms_sent ${e.householdId}`);
-      if (!DAMAGES.has(e.damage) || !['safe', 'needs_help'].includes(e.safety)) fail(file, 'bad sms_reply');
+      if ((e.damage !== null && !DAMAGES.has(e.damage)) || !['safe', 'needs_help'].includes(e.safety)) fail(file, 'bad sms_reply');
+      if (e.lifeSafety && e.safety !== 'needs_help') fail(file, `lifeSafety on a safe reply ${e.householdId}`);
+      if (!(e.needs ?? []).every((n) => NEEDS.has(n))) fail(file, `bad needs ${JSON.stringify(e.needs)}`);
+      if (!e.lifeSafety && (e.needs ?? []).includes('power_for_device')) fail(file, `power_for_device outside life safety ${e.householdId}`);
+      const tl = truthOf.get(e.householdId);
+      if (tl && e.notHome !== (locationAt(tl, e.t) !== 'home')) fail(file, `notHome disagrees with truth location ${e.householdId}`);
+      if (e.damage === null && !e.notHome && e.text === undefined) fail(file, `unknown damage in a button reply while at home ${e.householdId}`);
       if ((e.text === undefined) !== (e.language === undefined)) fail(file, 'text/language must come together');
     }
     if (e.kind === 'claim' && (!DAMAGES.has(e.reportedDamage) || !(isQuake ? ['earthquake'] : ['wind', 'flood']).includes(e.peril))) fail(file, `bad claim ${JSON.stringify(e)}`);
@@ -210,6 +227,16 @@ for (const region of regions) {
     const byLang = new Map<string, string>();
     for (const e of sample) if (e.kind === 'sms_reply' && !byLang.has(e.language!)) byLang.set(e.language!, `[${e.language}] safety=${e.safety} damage=${e.damage}: "${e.text}"`);
     console.log('sample free-text replies:\n  ' + [...byLang.values()].join('\n  '));
+    {
+      const cnt = (xs: (string | undefined)[]) => Object.entries(xs.reduce<Record<string, number>>((m, x) => ((m[x ?? '-'] = (m[x ?? '-'] ?? 0) + 1), m), {})).map(([k, v]) => `${k} ${v}`).join(', ');
+      const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '-');
+      const reps = live.events.filter((e) => e.kind === 'sms_reply');
+      const help = reps.filter((e) => e.kind === 'sms_reply' && e.safety === 'needs_help');
+      const txt = reps.filter((e) => e.kind === 'sms_reply' && e.text);
+      console.log(`truth needType {${cnt(live.truth.map((t) => t.needType))}}; location {${cnt(live.truth.map((t) => t.location))}}`);
+      console.log(`replies ${reps.length}: needs_help ${help.length} (lifeSafety ${pct(help.filter((e) => e.kind === 'sms_reply' && e.lifeSafety).length, help.length)}), notHome ${pct(reps.filter((e) => e.kind === 'sms_reply' && e.notHome).length, reps.length)}, damage null ${pct(reps.filter((e) => e.kind === 'sms_reply' && e.damage === null).length, reps.length)} (text replies: ${pct(txt.filter((e) => e.kind === 'sms_reply' && e.damage === null).length, txt.length)}), needs {${cnt(reps.flatMap((e) => (e.kind === 'sms_reply' ? e.needs ?? [] : [])))}}`);
+      console.log(`text replies by language {${cnt(txt.map((e) => (e.kind === 'sms_reply' ? e.language : undefined)))}}`);
+    }
     const silent = silentSevere(live).slice(0, 8);
     console.log(`\nlive silent-severe cells (top ${silent.length}):`);
     console.table(silent.map(({ c, s }) => ({

@@ -6,7 +6,7 @@ import { SenderError, t } from 'spacetimedb/server';
 import { Identity } from 'spacetimedb';
 import spacetimedb, { type Ctx } from '../schema';
 import { isOwner, memberOf, requireAdjuster, requireManager, ROLES, SINGLETON, simNow, type Role } from '../state';
-import { onEvent } from '../ingest';
+import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
 
@@ -70,7 +70,17 @@ export const removeMember = spacetimedb.reducer(
 
 function smsReply(
   ctx: Ctx,
-  a: { householdId: string; safety: string; damage: number; passcode: string; text?: string; language?: string }
+  a: {
+    householdId: string;
+    safety: string;
+    damage: number; // 0..3, or DAMAGE_UNKNOWN
+    passcode: string;
+    text?: string;
+    language?: string;
+    lifeSafety: boolean;
+    needs: string[];
+    notHome: boolean;
+  }
 ) {
   const role = memberOf(ctx)?.role;
   const allowedByRole = role === 'policyholder_demo' || role === 'manager' || isOwner(ctx);
@@ -80,9 +90,11 @@ function smsReply(
       throw new SenderError('join as policyholder_demo or provide the reply passcode');
   }
   if (a.safety !== 'safe' && a.safety !== 'needs_help') throw new SenderError("safety must be 'safe' or 'needs_help'");
-  checkDamage(a.damage);
+  if (a.damage !== DAMAGE_UNKNOWN) checkDamage(a.damage);
   if (a.text !== undefined && a.text.length > 1000) throw new SenderError('text must be at most 1000 characters');
   if (a.language !== undefined && a.language.length > 16) throw new SenderError('language code too long');
+  for (const n of a.needs)
+    if (!(NEEDS as readonly string[]).includes(n)) throw new SenderError(`unknown need '${n}' (allowed: ${NEEDS.join(', ')})`);
   onEvent(
     ctx,
     {
@@ -90,32 +102,83 @@ function smsReply(
       t: simNow(ctx),
       householdId: a.householdId,
       safety: a.safety,
-      damage: a.damage as Damage,
+      damage: a.damage === DAMAGE_UNKNOWN ? null : (a.damage as Damage),
       text: a.text,
       language: a.language,
+      lifeSafety: a.lifeSafety,
+      needs: [...new Set(a.needs)],
+      notHome: a.notHome,
+      channel: 'sms',
     },
     'live'
   );
 }
 
-/** Policyholder SMS reply page. Allowed for policyholder_demo / manager members, or with the reply passcode. */
+/** damage value meaning "the reply does not describe the home" in submit_parsed_reply. */
+const DAMAGE_UNKNOWN = 255;
+
+/**
+ * Policyholder SMS reply page (buttons). Allowed for policyholder_demo / manager members, or with the
+ * reply passcode. The "I need help" button is a generic plea, so it counts as life safety (911 referral).
+ */
 export const submitSmsReply = spacetimedb.reducer(
   { name: 'submit_sms_reply' },
   { householdId: t.string(), safety: t.string(), damage: t.u8(), passcode: t.string() },
-  (ctx, args) => smsReply(ctx, args)
+  (ctx, args) => smsReply(ctx, { ...args, lifeSafety: args.safety === 'needs_help', needs: [], notHome: false })
 );
 
 /**
- * Same as submit_sms_reply, but also stores the original free-text reply and its language
- * (safety/damage are the values parsed from it, e.g. by Claude on the reply page).
+ * Same as submit_sms_reply, but also stores the original free-text reply and its language.
+ * Prefer submit_parsed_reply, which carries the full parse (life safety vs. needs, unknown damage, not home).
  */
 export const submitSmsTextReply = spacetimedb.reducer(
   { name: 'submit_sms_text_reply' },
   { householdId: t.string(), safety: t.string(), damage: t.u8(), text: t.string(), language: t.string(), passcode: t.string() },
-  (ctx, args) => smsReply(ctx, { ...args, text: args.text || undefined, language: args.language || undefined })
+  (ctx, args) =>
+    smsReply(ctx, {
+      ...args,
+      text: args.text || undefined,
+      language: args.language || undefined,
+      lifeSafety: args.safety === 'needs_help',
+      needs: [],
+      notHome: false,
+    })
 );
 
-/** Adjuster field report. Caller must be an `adjuster` member. Completes their open assignment for the household. */
+/**
+ * A free-text reply parsed by Claude (or another parser): the full structured result.
+ * damage: 0..3, or 255 when the reply does not describe the home (e.g. the sender is not there).
+ * lifeSafety: danger now -> 911 / local agency referral. needs: comma-separated subset of
+ * medical,power_for_device,shelter,water_food,transport,inspection,other ('' for none).
+ * Same access rule as submit_sms_text_reply.
+ */
+export const submitParsedReply = spacetimedb.reducer(
+  { name: 'submit_parsed_reply' },
+  {
+    householdId: t.string(),
+    safety: t.string(),
+    damage: t.u8(),
+    lifeSafety: t.bool(),
+    needs: t.string(),
+    notHome: t.bool(),
+    text: t.string(),
+    language: t.string(),
+    passcode: t.string(),
+  },
+  (ctx, args) =>
+    smsReply(ctx, {
+      ...args,
+      text: args.text || undefined,
+      language: args.language || undefined,
+      needs: parseNeeds(args.needs.replace(/\s+/g, '')),
+    })
+);
+
+/**
+ * Adjuster field report. Caller must be an `adjuster` member. Completes their open assignment for the household.
+ * safety: 'safe' / 'needs_help' = the occupants were seen; 'unsure' = the property was inspected but nobody
+ * was seen (the people stay unaccounted and move to 'locate'). damage is always the property finding.
+ */
 export const submitFieldReport = spacetimedb.reducer(
   { name: 'submit_field_report' },
   { householdId: t.string(), safety: t.string(), damage: t.u8(), note: t.string() },

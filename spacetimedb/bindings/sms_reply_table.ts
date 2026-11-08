@@ -22,4 +22,9 @@ export default __t.row({
   damage: __t.u8(),
   text: __t.option(__t.string()),
   language: __t.option(__t.string()),
+  damageKnown: __t.bool().name("damage_known"),
+  lifeSafety: __t.bool().name("life_safety"),
+  needs: __t.string(),
+  notHome: __t.bool().name("not_home"),
+  channel: __t.string(),
 });

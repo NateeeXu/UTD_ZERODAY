@@ -18,7 +18,7 @@ export const DEFAULT_TRUST: SourceTrust = { hazard: 0.6, sms: 0.7, claims: 0.65 
 export function sourceOpinions(cell: HexCell, before: HouseholdSignals) {
   return {
     hazard: hazardScore(cell, cfg),
-    sms: before.reply ? before.reply.damage / 3 : null,
+    sms: before.reply && before.reply.damage !== null ? before.reply.damage / 3 : null,
     claims: before.claim ? before.claim.reportedDamage / 3 : null,
   };
 }

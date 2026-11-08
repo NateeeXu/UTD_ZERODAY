@@ -51,6 +51,7 @@ export const FEATURE_NAMES = [
   // --- own SMS signal (source: sms) ---
   'smsReplied',
   'smsReplyDamage',
+  'smsReplyDamageUnknown',
   'smsReplyNeedsHelp',
   'smsNoReply',
   'smsNoReplyOutage',
@@ -108,6 +109,7 @@ export const FEATURE_SOURCE: Record<FeatureName, SourceGroup> = {
   timeNorm: 'static',
   smsReplied: 'sms',
   smsReplyDamage: 'sms',
+  smsReplyDamageUnknown: 'sms',
   smsReplyNeedsHelp: 'sms',
   smsNoReply: 'sms',
   smsNoReplyOutage: 'sms',
@@ -304,7 +306,8 @@ export function householdTraits(h: Household, cell: HexCell, ctx: WorldContext, 
 export interface ReplySignal {
   t: number;
   safety: 'safe' | 'needs_help';
-  damage: Damage;
+  /** null = the reply does not describe the home (e.g. the person is not there) */
+  damage: Damage | null;
 }
 export interface ClaimSignal {
   t: number;
@@ -516,7 +519,7 @@ export function addToAggregate(agg: CellAggregate, s: HouseholdSignals, tr: Hous
   }
   if (s.reply) {
     agg.replied += 1;
-    if (s.reply.damage >= 2) agg.severeReplies += 1;
+    if (s.reply.damage !== null && s.reply.damage >= 2) agg.severeReplies += 1;
     if (s.reply.safety === 'needs_help') agg.helpReplies += 1;
   }
   const exposure = agg.hazard * tr.coverageFactor;
@@ -712,8 +715,9 @@ export function householdFeatureRecord(h: Household, snap: Snapshot, cfg: Triage
 
   const sent = s.smsSent > 0 ? 1 : 0;
   const replied = s.reply ? 1 : 0;
-  const replyDamage = s.reply ? s.reply.damage / 3 : 0;
-  const replySevere = s.reply && s.reply.damage >= 2 ? 1 : 0;
+  const replyDamage = s.reply && s.reply.damage !== null ? s.reply.damage / 3 : 0;
+  const replyDamageUnknown = s.reply && s.reply.damage === null ? 1 : 0;
+  const replySevere = s.reply && s.reply.damage !== null && s.reply.damage >= 2 ? 1 : 0;
   const replyHelp = s.reply && s.reply.safety === 'needs_help' ? 1 : 0;
   const noReply = sent === 1 && replied === 0 ? 1 : 0;
 
@@ -773,6 +777,7 @@ export function householdFeatureRecord(h: Household, snap: Snapshot, cfg: Triage
     timeNorm: tn,
     smsReplied: replied,
     smsReplyDamage: replyDamage,
+    smsReplyDamageUnknown: replyDamageUnknown,
     smsReplyNeedsHelp: replyHelp,
     smsNoReply: noReply,
     smsNoReplyOutage: noReply * outage,

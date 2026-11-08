@@ -51,6 +51,31 @@ export const TX_SCENARIOS: HurricaneScenario[] = [
     landfallIso: '2021-09-02T22:00:00.000Z', landfall: { lat: 27.70, lng: -97.16 }, headingDeg: -78,
     vmaxMph: 88, rmaxKm: 26, forwardKmh: 9, surgeFt: 5, surgeInlandKm: 2.0, rainFt: 3.2, extraOutageClusters: 2,
   },
+  {
+    kind: 'hurricane', eventId: 'backtest-4', name: 'Hypothetical Cat-3 hurricane, Mustang Island landfall', seed: 48355404,
+    landfallIso: '2017-08-26T03:00:00.000Z', landfall: { lat: 27.72, lng: -97.12 }, headingDeg: -35,
+    vmaxMph: 120, rmaxKm: 16, forwardKmh: 12, surgeFt: 11, surgeInlandKm: 3.5, rainFt: 3.0, extraOutageClusters: 3,
+  },
+  {
+    kind: 'hurricane', eventId: 'backtest-5', name: 'Hypothetical Cat-1 hurricane, Baffin Bay landfall', seed: 48355505,
+    landfallIso: '2018-07-20T15:30:00.000Z', landfall: { lat: 27.30, lng: -97.36 }, headingDeg: -10,
+    vmaxMph: 85, rmaxKm: 28, forwardKmh: 22, surgeFt: 4, surgeInlandKm: 1.8, rainFt: 1.8, extraOutageClusters: 1,
+  },
+  {
+    kind: 'hurricane', eventId: 'backtest-6', name: 'Hypothetical Cat-2 hurricane, Matagorda Island track', seed: 48355606,
+    landfallIso: '2016-09-08T11:15:00.000Z', landfall: { lat: 28.10, lng: -96.80 }, headingDeg: -70,
+    vmaxMph: 100, rmaxKm: 20, forwardKmh: 14, surgeFt: 8, surgeInlandKm: 3.0, rainFt: 2.2, extraOutageClusters: 2,
+  },
+  {
+    kind: 'hurricane', eventId: 'backtest-7', name: 'Hypothetical Cat-4 hurricane, North Padre Island landfall', seed: 48355707,
+    landfallIso: '2015-10-01T23:45:00.000Z', landfall: { lat: 27.55, lng: -97.24 }, headingDeg: -50,
+    vmaxMph: 150, rmaxKm: 11, forwardKmh: 17, surgeFt: 16, surgeInlandKm: 4.2, rainFt: 2.6, extraOutageClusters: 3,
+  },
+  {
+    kind: 'hurricane', eventId: 'backtest-8', name: 'Hypothetical Cat-2 hurricane, slow stall over Copano Bay', seed: 48355808,
+    landfallIso: '2014-08-30T06:00:00.000Z', landfall: { lat: 27.98, lng: -97.02 }, headingDeg: -80,
+    vmaxMph: 96, rmaxKm: 24, forwardKmh: 7, surgeFt: 7, surgeInlandKm: 2.6, rainFt: 3.6, extraOutageClusters: 2,
+  },
 ];
 
 export const CA_SCENARIOS: QuakeScenario[] = [

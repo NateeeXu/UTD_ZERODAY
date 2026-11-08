@@ -2,7 +2,7 @@
 // Usage (from sim/):
 //   node real/main.ts tx [--households 20000] [--backtest-households 15000]
 //   node real/main.ts ca [--households 30000] [--backtest-households 15000]
-// Writes data/real/<region>/{live,backtest-1..N}.json (Texas: 3 backtests, Bay Area: 5) and sim-meta.json.
+// Writes data/real/<region>/{live,backtest-1..N}.json (Texas: 8 backtests, Bay Area: 5) and sim-meta.json.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
