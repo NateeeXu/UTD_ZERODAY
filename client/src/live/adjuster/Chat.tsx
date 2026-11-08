@@ -74,6 +74,8 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight + 2, 120)}px`; // + the 1 px borders (border-box)
+    // No scrollbar until the text actually outgrows the 120 px cap.
+    el.style.overflowY = el.scrollHeight + 2 > 120 ? 'auto' : 'hidden';
   }, [text]);
 
   const body = text.trim();

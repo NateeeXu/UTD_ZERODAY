@@ -287,7 +287,7 @@
 .adj-compose { gap: 8px; }
 .adj-compose .adj-caption { align-self: flex-start; }
 .adj-compose-row { display: flex; align-items: flex-end; gap: 8px; }
-.adj-compose-input { flex: 1; min-height: 48px; max-height: 120px; padding: 12px 14px; font-size: 16px; line-height: 1.4; }
+.adj-compose-input { flex: 1; min-height: 48px; max-height: 120px; padding: 12px 14px; font-size: 16px; line-height: 1.4; overflow-y: hidden; }
 .adj-send { height: 48px; min-width: 76px; }
 .adj-count { align-self: flex-end; font-variant-numeric: tabular-nums; }
 .adj-msgbtn { width: 48px; padding: 0; flex-shrink: 0; }
