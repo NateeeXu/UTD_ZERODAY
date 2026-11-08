@@ -53,25 +53,6 @@ export function NotifiedCard({ label, imessage, onMessage, onOpen, onDismiss }: 
 const fmtClock = (r: ChatRow) => r.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const codePoints = (s: string) => [...s].length;
 
-/** The automated notice, laid out line by line so the numbered damage levels hang cleanly when they wrap. */
-function NoticeText({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/\n{2,}/).map((block, b) => (
-        <div className="adj-notice-block" key={b}>
-          {block.split('\n').map((line, l) => {
-            const level = /^(\d) - (.*)$/.exec(line);
-            const bullet = /^- (.*)$/.exec(line);
-            if (level) return <p className="adj-notice-line list" key={l}><span className="n">{level[1]}</span><span>{level[2]}</span></p>;
-            if (bullet) return <p className="adj-notice-line list" key={l}><span className="bullet" aria-hidden="true">•</span><span>{bullet[1]}</span></p>;
-            return <p className={`adj-notice-line${/\b911\b/.test(line) ? ' safety' : ''}`} key={l}>{line}</p>;
-          })}
-        </div>
-      ))}
-    </>
-  );
-}
-
 export function ChatScreen({ householdId, label, meName, live, canSend, onBack }: {
   householdId: string; label: string; meName: string; live: React.ReactNode; canSend: boolean; onBack: () => void;
 }) {
@@ -158,19 +139,9 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
             : mine ? 'You' : m.senderName || 'Adjuster';
           const prev = rows[i - 1];
           const sameAsPrev = !!prev && prev.sender === m.sender && prev.senderName === m.senderName;
-          if (m.sender === 'system') {
-            return (
-              <div key={String(m.id)} className="adj-msg system">
-                <div className="adj-notice">
-                  <span className="adj-notice-head"><Icon name="bell" size={12} stroke={2.2} /><b>{who}</b>{fmtClock(m)}</span>
-                  <NoticeText text={m.text} />
-                </div>
-              </div>
-            );
-          }
           return (
             <div key={String(m.id)} className={`adj-msg ${mine ? 'mine' : m.sender}`}>
-              {!sameAsPrev && <span className="adj-msg-who">{who} · {fmtClock(m)}</span>}
+              {!sameAsPrev && <span className="adj-msg-who">{who}, {fmtClock(m)}</span>}
               <p className="adj-bubble">{m.text}</p>
             </div>
           );

@@ -275,6 +275,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-join { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 14px; background: #fff; text-align: center; }
 .adj-join strong { font-size: var(--fs-title) !important; } /* over the inline size set on the title */
 .adj-join .modal { text-align: left; } /* the join dialog's labels stay left-aligned with their inputs */
+.adj-join .modal input:not([type='checkbox']) { font-size: 16px; } /* smaller and iOS zooms in on focus, and the whole app stays zoomed after Join */
 
 /* 44 px tap targets for the Next best card, notices and the thread */
 /* t44 used to force 44 px visually; the hit area comes from ::after now, so it only keeps the shared control size. */
@@ -310,45 +311,36 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
    so it already ends above Safari's toolbar. --bot adds that toolbar strip for content drawn under it, which here
    would count it twice and float the composer over a blank band: this page only keeps clear of the home indicator. */
 .adj-page.adj-chat { --bot: env(safe-area-inset-bottom, 0px); position: fixed; top: var(--vv-top, 0px); bottom: auto; left: 0; right: 0; height: var(--vv-h, 100%); max-width: 480px; margin: 0 auto; }
-.adj-chat .adj-topbar { height: calc(44px + var(--top)); padding: var(--top) 12px 0 6px; }
-.adj-chat .adj-topbar .center { left: 52px; right: 52px; }
-.adj-chat .adj-topbar .center strong { font-size: var(--fs-name); font-weight: 600; line-height: 18px; }
-.adj-chat .adj-topbar .center span { font-size: var(--fs-tiny); line-height: 13px; }
-.adj-chat .adj-topbar .adj-circle { border: none; background: none; }
+.adj-chat .adj-topbar { height: calc(44px + var(--top)); padding: var(--top) 10px 0; }
+.adj-chat .adj-topbar .center { left: 60px; right: 60px; }
+.adj-chat .adj-topbar .center strong { font-size: var(--fs-name); font-weight: 700; line-height: 18px; }
+.adj-chat .adj-topbar .center span { font-size: 11.5px; line-height: 13px; }
 .adj-chat .adj-topbar .adj-circle::after { inset: -6px; }
-.adj-chat .adj-live { height: 24px; padding: 0 8px; font-size: var(--fs-tiny); }
-.adj-thread { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 12px; display: flex; flex-direction: column; gap: 3px; background: var(--soft); }
+.adj-chat .adj-live { height: auto; padding: 0; gap: 5px; background: none; font-size: 11.5px; }
+.adj-chat .adj-live i { width: 6px; height: 6px; }
+.adj-thread { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; display: flex; flex-direction: column; gap: 3px; background: var(--soft); }
 .adj-thread-empty { align-self: center; margin-top: 16px; }
-.adj-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 80%; }
+.adj-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 84%; }
 .adj-msg.mine { align-self: flex-end; align-items: flex-end; }
-.adj-msg-who { font-size: var(--fs-tiny); color: var(--t2); margin: 6px 4px 2px; }
-/* Grid centers a short reply ("3") in the minimum width; longer text fills the column and stays left-aligned. */
+.adj-msg-who { font-size: var(--fs-tiny); color: var(--t2); margin: 8px 4px 2px; }
 .adj-bubble {
-  display: grid; justify-items: center; min-width: 40px; padding: 6px 10px; border-radius: var(--r-card); background: #fff; border: 1px solid var(--line);
+  min-width: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; background: #fff;
   font-size: var(--fs-body); line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.adj-msg.mine .adj-bubble { background: var(--t); color: #fff; border-color: var(--t); border-bottom-right-radius: 4px; }
-.adj-msg:not(.mine) .adj-bubble { border-bottom-left-radius: 4px; }
-/* Automated notice: a full-width record, not a person's bubble */
-.adj-msg.system { align-self: stretch; align-items: stretch; max-width: none; margin: 4px 0; }
-.adj-notice { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--chip); font-size: var(--fs-meta); line-height: 1.4; color: var(--t); overflow-wrap: anywhere; }
-.adj-notice-head { display: flex; align-items: center; gap: 4px; font-size: var(--fs-tiny); color: var(--t2); }
-.adj-notice-head b { flex: 1; font-weight: 600; }
-.adj-notice-block { display: flex; flex-direction: column; gap: 2px; }
-.adj-notice-line { margin: 0; }
-.adj-notice-line.list { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
-.adj-notice-line .n { height: 16px; margin-top: 1px; border-radius: 4px; background: #fff; font-size: var(--fs-tiny); font-weight: 700; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
-.adj-notice-line .bullet { text-align: center; color: var(--t2); }
-.adj-notice-line.safety { font-weight: 600; }
-/* The chip is just a quiet line here. The input stays at 16 px: anything smaller makes iOS zoom the page on focus. */
-.adj-compose { gap: 4px; padding: 5px 10px calc(6px + var(--bot)); }
+.adj-msg.mine .adj-bubble { background: var(--t); color: #fff; border-color: var(--t); border-radius: 14px 14px 4px 14px; }
+/* Automated notice: a quiet gray block, no tail, so it can't be read as a person */
+.adj-msg.system { max-width: 92%; }
+.adj-msg.system .adj-bubble { border-color: #ececef; border-radius: 12px; background: #ececef; color: #333; font-size: 13px; }
+/* A plain line, not a chip. The input stays at 16 px: anything smaller makes iOS zoom the page on focus. */
+.adj-compose { gap: 5px; padding: 6px 12px calc(6px + var(--bot)); }
 .adj-chat[data-kb] .adj-compose { padding-bottom: 6px; } /* the keyboard covers the home indicator */
-.adj-compose .adj-caption { align-self: center; padding: 0; background: none; border-radius: 0; font-size: var(--fs-tiny); line-height: 13px; color: var(--t2); }
+.adj-compose .adj-caption { padding: 0; background: none; border-radius: 0; font-size: var(--fs-tiny); line-height: 13px; color: var(--t2); }
 .adj-compose .adj-warn { padding: 5px 10px; border-radius: 8px; font-size: var(--fs-meta); }
 .adj-compose-row { display: flex; align-items: flex-end; gap: 6px; }
-.adj-compose-input { flex: 1; min-width: 0; min-height: var(--ctl); max-height: 120px; padding: 7px 12px; border-radius: 18px; font-size: 16px; line-height: 20px; overflow-y: hidden; }
-.adj-btn.adj-send { flex-shrink: 0; width: 32px; height: 32px; margin-bottom: 2px; padding: 0; border-radius: 50%; }
-.adj-btn.adj-send::after { inset: -6px; }
+.adj-compose-input { flex: 1; min-width: 0; min-height: var(--ctl); max-height: 120px; padding: 7px 13px; border-radius: 18px; font-size: 16px; line-height: 20px; overflow-y: hidden; }
+.adj-compose-input:focus { outline: none; border-color: var(--t); }
+.adj-btn.adj-send { flex-shrink: 0; width: var(--ctl); height: var(--ctl); padding: 0; border-radius: 50%; }
+.adj-btn.adj-send::after { inset: -4px; }
 .adj-count { align-self: flex-end; font-size: var(--fs-tiny); font-variant-numeric: tabular-nums; }
 .adj-msgbtn { width: 48px; padding: 0; flex-shrink: 0; }
 
@@ -395,7 +387,8 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 }
 .adj-tabhead { position: sticky; top: 0; z-index: 1; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; height: calc(44px + var(--top)); padding: var(--top) 14px 0; background: #fff; border-bottom: 1px solid var(--line); }
 .adj-tabhead h1 { font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.01em; }
-.adj-tabhead .adj-live { height: 24px; padding: 0 8px; font-size: var(--fs-tiny); background: var(--chip); }
+.adj-tabhead .adj-live { height: auto; padding: 0; gap: 5px; background: none; font-size: 11.5px; }
+.adj-tabhead .adj-live i { width: 6px; height: 6px; }
 .adj-group { flex-shrink: 0; background: #fff; }
 .adj-group.adj-empty { padding: 24px 14px; font-size: var(--fs-meta); }
 .adj-row {
