@@ -47,6 +47,7 @@ export default __t.row({
   overdueReferrals: __t.u32().name("overdue_referrals"),
   membersMissing: __t.u32().name("members_missing"),
   closedNoContact: __t.u32().name("closed_no_contact"),
+  recheckDue: __t.u32().name("recheck_due"),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),
 });

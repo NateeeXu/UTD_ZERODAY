@@ -37,6 +37,7 @@ export default __t.row({
   overdueReferrals: __t.u32().name("overdue_referrals"),
   membersMissing: __t.u32().name("members_missing"),
   closedNoContact: __t.u32().name("closed_no_contact"),
+  recheckDue: __t.u32().name("recheck_due"),
   p0Cells: __t.u32().name("p_0_cells"),
   p1Cells: __t.u32().name("p_1_cells"),
   p2Cells: __t.u32().name("p_2_cells"),
