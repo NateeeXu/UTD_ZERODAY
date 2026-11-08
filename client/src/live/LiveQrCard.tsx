@@ -85,6 +85,9 @@ export function LiveQrCard({ household, region, large = false }: { household: Ho
 // from the address bar before connecting (config.consumeAdjusterHandoff).
 const qrKey = (db: string) => `triage-qr-adjuster-${db}`;
 let typedPasscode: string | null = null; // memory only, for this page session
+// The passcode remembered by the join dialog can be stale (e.g. after a rebuild with a new passcode).
+// Once the database refuses it, stop using it here and ask for the passcode instead.
+let savedRejected = false;
 
 type Member = { identity: { toHexString(): string }; name: string; role: string };
 
@@ -152,7 +155,7 @@ export function AdjusterQr({ db, region, members, managerName }: { db: string; r
   const ident = token ? tokenIdentity(token) : null;
   const member = ident ? members.find((m) => m.identity.toHexString() === ident && m.role === 'adjuster') : undefined;
   const url = token && member ? adjusterLink(window.location, region, token) : null;
-  const known = typedPasscode ?? savedPasscode();
+  const known = typedPasscode ?? (savedRejected ? null : savedPasscode());
 
   useEffect(() => {
     if (!url) return setSrc(null);
@@ -175,7 +178,10 @@ export function AdjusterQr({ db, region, members, managerName }: { db: string; r
       setPass('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (/wrong passcode/i.test(msg)) typedPasscode = null;
+      if (/wrong passcode/i.test(msg)) {
+        typedPasscode = null;
+        savedRejected = true; // show the passcode field on the next render
+      }
       setError(/wrong passcode/i.test(msg) ? 'Wrong staff passcode.' : msg);
     } finally {
       setBusy(false);
