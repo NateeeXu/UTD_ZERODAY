@@ -358,3 +358,12 @@ button.adj-row:active { background: var(--soft); }
 .adj-initials { width: 56px; height: 56px; border-radius: 50%; background: #222; color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .adj-me-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .adj-me-main b { font-size: 19px; font-weight: 700; }
+/* Tasks sheet swiped down to one line: everything but the handle and the summary is hidden. */
+.adj-sheet.peek { gap: 4px; padding-bottom: 10px; }
+.adj-sheet.peek > :not(.adj-handle):not(.adj-peekline) { display: none; }
+.adj-peekline {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 44px; padding: 0 8px 4px;
+  border: 0; background: none; font: inherit; text-align: left; color: #222; cursor: pointer;
+}
+.adj-peekline b { font-size: 16px; }
+.adj-peekline span { font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }

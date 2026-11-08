@@ -727,7 +727,11 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
   accepted?: Task; onDismissAccepted: () => void; onMessage: (id: string) => void;
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // Sheet: 'peek' = one line so the map shows, 'next' = Next best + Next up, 'all' = the whole list.
+  const [sheet, setSheet] = useState<'peek' | 'next' | 'all'>('next');
+  const expanded = sheet === 'all';
+  const up = () => setSheet((s) => (s === 'peek' ? 'next' : 'all'));
+  const down = () => setSheet((s) => (s === 'all' ? 'next' : 'peek'));
   const [whyOpen, setWhyOpen] = useState(false);
   // Picking a start: only before the region has loaded (no default yet), or after "Move start".
   const picking = !hasStart || moving;
@@ -744,7 +748,8 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
     ...open.map((t) => ({ hex: t.hex, color: COLOR[t.priority], pill: (t === next ? 'dark' : 'light') as 'dark' | 'light', label: String(t.number) })),
   ], [open, done, next]);
   const route = useMemo(() => (me && open.length ? [me, ...open.map((t) => D.cellCenter(t.hex))] : undefined), [me, open]);
-  const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}`;
+  // Refit when the sheet drops to (or rises from) peek, so the areas fill the freed map.
+  const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}:${sheet === 'peek' ? 'peek' : 'open'}`;
   const nb = next ? bannerFor(next) : null;
   const rest = all.filter((t) => t !== next);
   // Tap an area: select its task (tap again to cycle when one area holds several homes).
@@ -759,7 +764,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
     <>
       <PhoneMap
         areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
-        padBottom={TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
+        padBottom={sheet === 'peek' ? TAB_SPACE + 90 : TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
         fallbackCenter={regionCenter}
         onAreaClick={picking ? undefined : pickArea}
         onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
@@ -782,20 +787,30 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
         </span>
       )}
 
-      <section className="adj-sheet adj-glass" aria-label="Tasks">
+      <section className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : ''}`} aria-label="Tasks">
         <button
-          type="button" className="adj-handle" aria-expanded={expanded} aria-label={expanded ? 'Show next up only' : 'Show all tasks'}
+          type="button" className="adj-handle" aria-expanded={sheet !== 'peek'}
+          aria-label={sheet === 'peek' ? 'Show tasks' : expanded ? 'Show next up only' : 'Show all tasks'}
           onPointerDown={(e) => { drag.current = { y: e.clientY, moved: false }; e.currentTarget.setPointerCapture(e.pointerId); }}
           onPointerMove={(e) => {
             const d = drag.current;
             if (!d) return;
             const dy = e.clientY - d.y;
-            if (dy < -24) { setExpanded(true); d.moved = true; }
-            else if (dy > 24) { setExpanded(false); d.moved = true; }
+            // One step per swipe: up peek → next → all, down all → next → peek.
+            if (d.moved) return;
+            if (dy < -24) { up(); d.moved = true; }
+            else if (dy > 24) { down(); d.moved = true; }
           }}
-          onPointerUp={() => { const d = drag.current; drag.current = null; if (d && !d.moved) setExpanded((x) => !x); }}
-          onClick={(e) => { if (e.detail === 0) setExpanded((x) => !x); }}
+          onPointerUp={() => { const d = drag.current; drag.current = null; if (d && !d.moved) setSheet((s) => (s === 'next' ? 'all' : 'next')); }}
+          onClick={(e) => { if (e.detail === 0) setSheet((s) => (s === 'next' ? 'all' : 'next')); }}
         ><span /></button>
+
+        {sheet === 'peek' && (
+          <button type="button" className="adj-peekline" onClick={() => setSheet('next')}>
+            <b>{open.length ? `${open.length} open task${open.length > 1 ? 's' : ''}` : 'No open tasks'}</b>
+            {next && <span>{isNextUp ? 'Next up · ' : ''}{next.label}{next.district ? ` · ${next.district}` : ''}</span>}
+          </button>
+        )}
 
         {accepted && (
           <NotifiedCard
