@@ -8,12 +8,28 @@
   background: #ececec; color: var(--t); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   font-size: 15px; -webkit-font-smoothing: antialiased;
 }
+/* Edge to edge on phones (index.html has viewport-fit=cover): the root is the large viewport, so the map runs
+   under the status bar and under Safari's floating toolbar (iOS doesn't draw position: fixed content there).
+   100lvh - 100dvh is the strip the browser toolbar covers right now; --bot keeps the floating UI above it. */
+@supports (height: 100lvh) {
+  .adj { height: 100lvh; --bot: max(env(safe-area-inset-bottom, 0px), 100lvh - 100dvh); }
+}
+html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh root must not scroll the page */
+@media (max-width: 480px), (pointer: coarse) { /* any strip the app can't draw into matches the screen */
+  html:has(.adj) { background: #ececec; }
+  html:has(.adj-tabpage) { background: #f2f2f4; }
+  html:has(.adj-page) { background: #fff; }
+}
 .adj *, .adj *::before, .adj *::after { box-sizing: border-box; }
 .adj button, .adj a { -webkit-tap-highlight-color: transparent; }
 .adj h1, .adj h2, .adj p { margin: 0; }
 .adj b { font-weight: 600; }
 .adj-muted { color: var(--t2); font-size: 13px; }
 .adj-map { position: absolute; inset: 0; background: #ececec; }
+/* PhoneMap reads scroll-padding to keep the fitted view inside the safe areas; credits stay above the toolbar */
+.adj-map { scroll-padding: var(--top) 0 var(--bot); }
+.adj-hero { scroll-padding-top: var(--top); }
+.adj-map .leaflet-bottom { bottom: var(--bot); }
 .adj .leaflet-control-attribution { font-size: 9px; background: rgba(255, 255, 255, 0.6); }
 
 .adj-glass {
@@ -152,8 +168,8 @@
   color: #222; cursor: pointer; padding: 0;
 }
 .adj-chip-float { position: absolute; z-index: 800; height: 44px; padding: 0 14px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
-.adj-go { position: absolute; z-index: 800; right: 12px; bottom: calc(54dvh + 36px); height: 44px; padding: 0 16px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14.5px; font-weight: 600; color: #222; cursor: pointer; }
-.adj-hero-demo { position: absolute; z-index: 700; left: 12px; bottom: calc(54dvh + 42px); padding: 5px 11px; border-radius: 999px; font-size: 12px; color: #444; }
+.adj-go { position: absolute; z-index: 800; right: 12px; bottom: calc(100% - 46dvh + 36px); height: 44px; padding: 0 16px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14.5px; font-weight: 600; color: #222; cursor: pointer; }
+.adj-hero-demo { position: absolute; z-index: 700; left: 12px; bottom: calc(100% - 46dvh + 42px); padding: 5px 11px; border-radius: 999px; font-size: 12px; color: #444; }
 .adj-panel {
   position: absolute; left: 0; right: 0; top: calc(46dvh - 24px); bottom: calc(84px + var(--bot)); z-index: 750; padding: 20px 20px 16px;
   display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: #fff; border-radius: 26px 26px 0 0; box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);

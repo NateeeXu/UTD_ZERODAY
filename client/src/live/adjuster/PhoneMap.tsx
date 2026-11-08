@@ -93,7 +93,11 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
     if (lastFit.current !== fitKey && pts.length) {
       lastFit.current = fitKey;
       const b = L.latLngBounds(pts);
-      m.fitBounds(b, { paddingTopLeft: [24, padTop], paddingBottomRight: [24, padBottom], maxZoom: 15, animate: false });
+      // The map runs under the status bar and the browser toolbar: add the safe-area insets (adjuster.css sets them as scroll-padding).
+      const cs = el.current ? getComputedStyle(el.current) : null;
+      const inTop = parseFloat(cs?.scrollPaddingTop ?? '') || 0;
+      const inBot = parseFloat(cs?.scrollPaddingBottom ?? '') || 0;
+      m.fitBounds(b, { paddingTopLeft: [24, padTop + inTop], paddingBottomRight: [24, padBottom + inBot], maxZoom: 15, animate: false });
     } else if (lastFit.current !== fitKey && fallbackCenter) {
       lastFit.current = fitKey;
       m.setView(fallbackCenter, 11, { animate: false });
