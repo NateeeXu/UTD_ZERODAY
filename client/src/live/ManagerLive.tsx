@@ -15,6 +15,7 @@ import { cellToLatLng } from 'h3-js';
 import { COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import './cell-detail.css';
 import './live-toast.css';
+import './topbar.css';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
@@ -39,35 +40,34 @@ export function ManagerLive() {
 }
 
 // Shared top bar: product label, current scenario (world.name, which changes when a new disaster is
-// loaded), region switcher, right-hand slot.
-export function RegionHeader({ region, onRegion, fictional, scenario, children }: {
-  region: RegionConfig; onRegion: (r: RegionConfig) => void; fictional: boolean; scenario?: string; children?: ReactNode;
+// loaded), right-hand slot, then the region switcher pinned to the right edge (topbar.css) so it
+// stays put when the scenario name changes length.
+export function RegionHeader({ region, onRegion, scenario, children }: {
+  region: RegionConfig; onRegion: (r: RegionConfig) => void; scenario?: string; children?: ReactNode;
 }) {
   return (
-    <header className="topbar">
+    <header className="topbar region-bar">
       <div className="brand stacked">
         <div className="brand-line">
-          <strong>Triage Loop</strong>
+          <strong>Saviu</strong>
           {scenario && <span className="scenario" title={scenario}>{scenario}</span>}
         </div>
-        <span className="muted small">
-          {fictional ? 'Synthetic exercise · fictional town · no real customer data' : 'Synthetic exercise · real geography and census data · no real customer data'}
-        </span>
       </div>
+      <div className="topbar-right">{children}</div>
       <div className="segmented" role="group" aria-label="Region">
         {/* Dev regions (Harbor Bend) stay off the switcher; shown only while one is open via ?region=. */}
         {REGIONS.filter((r) => !r.dev || r.id === region.id).map((r) => {
           const available = !!(r.db || r.preview);
+          const label = `${r.label}${!r.db && r.preview ? ' · preview' : ''}`;
           return (
-            <button key={r.id} className={r.id === region.id ? 'on' : ''} disabled={!available}
+            <button key={r.id} className={r.id === region.id ? 'on' : ''} disabled={!available} data-label={label}
               title={r.db ? `Live · ${r.db}` : r.preview ? 'Preview snapshot (live database not published yet)' : 'Not available'}
               onClick={() => available && r.id !== region.id && onRegion(r)}>
-              {r.label}{!r.db && r.preview ? ' · preview' : ''}
+              {label}
             </button>
           );
         })}
       </div>
-      <div className="topbar-right">{children}</div>
     </header>
   );
 }
@@ -285,7 +285,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   return (
     <div className="manager live">
-      <RegionHeader region={region} onRegion={onRegion} fictional={fictional} scenario={world?.name}>
+      <RegionHeader region={region} onRegion={onRegion} scenario={world?.name}>
         <QrButton household={qrHousehold} region={region.id} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />

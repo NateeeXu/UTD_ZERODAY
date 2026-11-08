@@ -172,7 +172,6 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       <StaffActivity staff={staff} />
       <button className="btn ghost" onClick={run(() => reset())} disabled={busy}>Reset</button>
       {error && <span className="form-error small">{error}</span>}
-      {replay?.running && <span className="muted small energy">Running uses Maincloud energy — pause when not demoing</span>}
     </footer>
   );
 }

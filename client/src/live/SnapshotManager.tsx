@@ -64,7 +64,7 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
 
   return (
     <div className="manager live">
-      <RegionHeader region={region} onRegion={onRegion} fictional={false}>
+      <RegionHeader region={region} onRegion={onRegion}>
         <span className="pill preview-pill" title="Live database not published yet: showing A's precomputed snapshots">Preview snapshot</span>
       </RegionHeader>
 

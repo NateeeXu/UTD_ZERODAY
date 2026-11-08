@@ -1,0 +1,20 @@
+/* Manager top bar (RegionHeader). This file loads before styles.css, so these selectors win on
+   specificity over its .topbar / .topbar-right / .segmented rules, not on order. */
+
+/* Brand + scenario on the left; the right-hand slot and the region switcher on the right, with the
+   switcher last so it is anchored to the right edge and does not move when the scenario name (and so
+   the brand width) changes between regions. */
+header.topbar.region-bar > .topbar-right { margin-left: auto; }
+header.topbar.region-bar > .segmented { flex-shrink: 0; }
+
+/* The selected button is bolder (600 vs 500), so the switcher was a fraction of a pixel wider or
+   narrower depending on which region is on. Each button reserves its label's bold width with an
+   invisible zero-height copy, so the switcher's width, and with it its x, never changes. */
+header.topbar.region-bar > .segmented button {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+}
+header.topbar.region-bar > .segmented button::after {
+  content: attr(data-label);
+  content: attr(data-label) / '';
+  height: 0; overflow: hidden; visibility: hidden; pointer-events: none; font-weight: 600;
+}
