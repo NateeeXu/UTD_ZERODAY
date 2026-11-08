@@ -1,8 +1,8 @@
 // Policyholder "Disaster check-in" page (QR target): #/reply?h=<householdId>&code=<reply passcode>. No login.
-// FollowLive (#/app?code=<reply passcode>) is an insurer-app message center over the same chat (appMode). It follows
-// the household of the newest automatic (system) message: when an adjuster accepts a home, the message center
-// shows a banner and an unread row at once, alongside the iMessage. appMode styles live under .rp[data-app],
-// so #/reply is unchanged.
+// FollowLive (#/app?code=<reply passcode>) is an insurer-app message center over the same chat (appMode). Every home
+// an adjuster has contacted is a conversation in its list, newest first: a new assignment adds a row with a banner
+// and an unread mark, alongside the iMessage, and earlier conversations stay. appMode styles live under
+// .rp[data-app], so #/reply is unchanged.
 // Mobile first (390×844), safe areas, 44 px targets. One red token (--brand-red) for small accents only;
 // the one large red area is the full-width Call 911 after "Need help". Styles: ./reply/reply.css.
 //
@@ -16,6 +16,7 @@ import type { Infer } from 'spacetimedb';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import type ChatMessageRowDef from '../module_bindings/chat_message_table.ts';
+import { homeLabel } from '../format';
 import { LiveProvider } from './LiveProvider';
 import { initialLiveRegion, type RegionId } from './config';
 import { useVisualViewport } from './useVisualViewport';
@@ -113,7 +114,19 @@ export function FollowLive({ code }: { code: string }) {
   );
 }
 
-type Toast = { key: number; text: string };
+type Toast = { key: number; text: string; householdId: string };
+type Conversation = { householdId: string; rows: ChatRow[]; last: ChatRow; name: string };
+
+// The adjuster's name from the assignment notice, or from a message they sent.
+function adjusterOf(rows: ChatRow[]): string {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r.sender === 'adjuster' && r.senderName.trim()) return r.senderName.trim();
+    const m = r.sender === 'system' ? r.text.match(/^Adjuster (.+) has been assigned/) : null;
+    if (m) return m[1];
+  }
+  return 'Your adjuster';
+}
 
 // Name of the adjuster on this home's newest open assignment.
 function useAdjusterName(householdId: string, enabled: boolean): string | null {
@@ -131,25 +144,35 @@ function useAdjusterName(householdId: string, enabled: boolean): string | null {
 function Follow({ code, place }: { code: string; place: string }) {
   const [all, ready] = useTable(tables.chatMessage);
   const [worldRows] = useTable(tables.world);
-  const latestSystem = useMemo(
-    () => all.reduce<ChatRow | null>((a, r) => (r.sender === 'system' && (!a || r.id > a.id) ? r : a), null),
-    [all],
-  );
-  const householdId = latestSystem?.householdId ?? null;
-  const thread = useMemo(() => all.filter((r) => r.householdId === householdId).sort(byId), [all, householdId]);
-  const name = useAdjusterName(householdId ?? '', !!householdId);
   const hazard = worldRows[0]?.hazardType === 'earthquake' ? 'earthquake' : 'hurricane';
 
-  const [open, setOpen] = useState(false); // false = the message center list
-  const showList = !open || !householdId;
+  // One conversation per home that has heard from us, latest activity first.
+  const conversations = useMemo(() => {
+    const byHome = new Map<string, ChatRow[]>();
+    for (const r of [...all].sort(byId)) {
+      const list = byHome.get(r.householdId);
+      if (list) list.push(r);
+      else byHome.set(r.householdId, [r]);
+    }
+    return [...byHome.entries()]
+      .filter(([, rows]) => rows.some((r) => r.sender !== 'policyholder'))
+      .map(([householdId, rows]): Conversation => ({ householdId, rows, last: rows[rows.length - 1], name: adjusterOf(rows) }))
+      .sort((a, b) => (a.last.id < b.last.id ? 1 : -1));
+  }, [all]);
 
-  // Unread: anything not from the policyholder that arrived after the conversation was last open.
-  const newest = thread.length ? thread[thread.length - 1].id : 0n;
-  const [readTo, setReadTo] = useState(0n);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false); // false = the message center list
+  const current = conversations.find((c) => c.householdId === currentId) ?? null;
+  const showList = !open || !current;
+
+  // Unread: anything not from the policyholder that arrived after that conversation was last open.
+  const [readTo, setReadTo] = useState<ReadonlyMap<string, bigint>>(() => new Map());
+  const currentLast = current?.last.id ?? 0n;
   useEffect(() => {
-    if (!showList && newest > readTo) setReadTo(newest);
-  }, [showList, newest, readTo]);
-  const unread = thread.some((r) => r.id > readTo && r.sender !== 'policyholder');
+    if (showList || !currentId) return;
+    setReadTo((m) => ((m.get(currentId) ?? 0n) >= currentLast ? m : new Map(m).set(currentId, currentLast)));
+  }, [showList, currentId, currentLast]);
+  const isUnread = (c: Conversation) => c.rows.some((r) => r.id > (readTo.get(c.householdId) ?? 0n) && r.sender !== 'policyholder');
 
   // Notifications only for messages that arrive after the page opened (a reload doesn't replay them).
   const seen = useRef<bigint | null>(null);
@@ -161,26 +184,27 @@ function Follow({ code, place }: { code: string; place: string }) {
     const fresh = all.filter((r) => r.id > seen.current! && r.sender !== 'policyholder').sort(byId);
     if (max > seen.current) seen.current = max;
     const last = fresh[fresh.length - 1];
-    if (last) setToast({ key: Date.now(), text: last.sender === 'system' ? 'Adjuster assigned' : 'New message from your adjuster' });
+    if (last) setToast({ key: Date.now(), text: last.sender === 'system' ? 'Adjuster assigned' : 'New message from your adjuster', householdId: last.householdId });
   }, [all, ready]);
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(null), TOAST_MS);
     return () => clearTimeout(id);
   }, [toast]);
-  const openLatest = () => {
+  const openConversation = (householdId: string) => {
     setToast(null);
+    setCurrentId(householdId);
     setOpen(true);
     requestAnimationFrame(() => document.querySelector('.rp[data-app]:not(.rp-mc) .rp-thread')?.scrollTo({ top: 1e9, behavior: 'smooth' }));
   };
 
   return (
     <>
-      {/* The conversation stays mounted under the list, so quick replies and drafts survive going back. */}
-      {householdId && <CheckIn key={householdId} appMode onBack={() => setOpen(false)} householdId={householdId} urlCode={code} place={place} />}
-      {showList && <MessageCenter thread={thread} name={name} unread={unread} ready={ready} question={`After the ${hazard} in ${place}, are you and your household safe?`} onOpen={openLatest} />}
+      {/* The open conversation stays mounted under the list, so its quick replies and draft survive going back. */}
+      {currentId && <CheckIn key={currentId} appMode onBack={() => setOpen(false)} householdId={currentId} urlCode={code} place={place} />}
+      {showList && <MessageCenter conversations={conversations} isUnread={isUnread} ready={ready} question={`After the ${hazard} in ${place}, are you and your household safe?`} onOpen={openConversation} />}
       {toast && (
-        <button key={toast.key} type="button" className="rp-toast" role="status" onClick={openLatest}>
+        <button key={toast.key} type="button" className="rp-toast" role="status" onClick={() => openConversation(toast.householdId)}>
           <span className="rp-toast-badge"><Shield /></span>
           <span className="rp-toast-text"><b>{toast.text}</b><span>Tap to read and reply</span></span>
         </button>
@@ -189,18 +213,16 @@ function Follow({ code, place }: { code: string; place: string }) {
   );
 }
 
-function MessageCenter({ thread, name, unread, ready, question, onOpen }: {
-  thread: ChatRow[];
-  name: string | null;
-  unread: boolean;
+function MessageCenter({ conversations, isUnread, ready, question, onOpen }: {
+  conversations: Conversation[];
+  isUnread: (c: Conversation) => boolean;
   ready: boolean;
   question: string;
-  onOpen: () => void;
+  onOpen: (householdId: string) => void;
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
   useVisualViewport(pageRef);
-  const last = thread[thread.length - 1];
-  const preview = last ? `${last.sender === 'policyholder' ? 'You: ' : ''}${last.text.split('\n')[0]}` : '';
+  const newest = conversations[0];
   return (
     <div className="rp rp-mc" ref={pageRef} data-app="">
       <div className="rp-top">
@@ -211,18 +233,25 @@ function MessageCenter({ thread, name, unread, ready, question, onOpen }: {
         </header>
       </div>
       <main className="rp-thread">
-        {last ? (
+        {newest ? (
           <>
-            <h2 className="mc-sec">Latest</h2>
+            <h2 className="mc-sec">Messages</h2>
             <div className="rp-card mc-group">
-              <button type="button" className={`mc-row${unread ? ' new' : ''}`} onClick={onOpen}>
-                <span className="mc-av">{LOGO_URL ? <img src={LOGO_URL} alt="" /> : <Shield size={18} />}</span>
-                <span className="mc-main">
-                  <span className="mc-top"><b>{name ?? 'Your adjuster'}</b><time>{fmtWhen(last.createdAt.toDate()).replace('Today ', '')}</time></span>
-                  <span className="mc-prev">{preview}</span>
-                </span>
-                {unread ? <span className="mc-dot" role="img" aria-label="Unread" /> : <ChevronRight />}
-              </button>
+              {conversations.map((c) => {
+                const unread = isUnread(c);
+                const preview = `${c.last.sender === 'policyholder' ? 'You: ' : ''}${c.last.text.split('\n')[0]}`;
+                return (
+                  <button key={c.householdId} type="button" className={`mc-row${unread ? ' new' : ''}`} onClick={() => onOpen(c.householdId)}>
+                    <span className="mc-av">{LOGO_URL ? <img src={LOGO_URL} alt="" /> : <Shield size={18} />}</span>
+                    <span className="mc-main">
+                      <span className="mc-top"><b>{c.name}</b><time>{fmtWhen(c.last.createdAt.toDate()).replace('Today ', '')}</time></span>
+                      <span className="mc-home">{homeLabel(c.householdId)}</span>
+                      <span className="mc-prev">{preview}</span>
+                    </span>
+                    {unread ? <span className="mc-dot" role="img" aria-label="Unread" /> : <ChevronRight />}
+                  </button>
+                );
+              })}
             </div>
           </>
         ) : (
@@ -230,8 +259,8 @@ function MessageCenter({ thread, name, unread, ready, question, onOpen }: {
         )}
         <h2 className="mc-sec">Earlier</h2>
         <div className="rp-card mc-group">
-          {last && (
-            <button type="button" className="mc-row" onClick={onOpen}>
+          {newest && (
+            <button type="button" className="mc-row" onClick={() => onOpen(newest.householdId)}>
               <span className="mc-av off"><ChatIcon size={17} /></span>
               <span className="mc-main">
                 <span className="mc-top"><b>Disaster check-in</b></span>
