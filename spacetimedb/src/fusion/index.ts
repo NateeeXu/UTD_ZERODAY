@@ -14,6 +14,7 @@ import type { Ctx } from '../schema';
 import { getMetrics, getModelState, getReplay, worldCtxOf, worldStampKey } from '../state';
 import { stubEstimator } from './stub';
 import { engineEstimator, engineWorldRefs, INSPECT_PER_CELL } from './engine-adapter';
+import { inspectionEligible } from './coverage';
 import type { Damage, Facility, HexCell, Household, ModelParams, Peril, Safety } from './contract';
 import type {
   CellEstimator,
@@ -168,7 +169,7 @@ type EventRows = {
   sent: Iterable<{ householdId: string; t: number }>;
   replies: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; damageKnown: boolean; lifeSafety: boolean; needs: string; notHome: boolean; channel: string }>;
   claims: Iterable<{ id: bigint; householdId: string; t: number; peril: string; reportedDamage: number }>;
-  fields: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; adjusterId: string }>;
+  fields: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; damageKnown: boolean; adjusterId: string }>;
 };
 
 /**
@@ -206,12 +207,24 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
     claimId.set(e.householdId, e.id);
     s.claim = { t: e.t, peril: e.peril as Peril, reportedDamage: e.reportedDamage as Damage };
   }
+  // Field reports mirror the engine merge: the latest report wins for the people (safety, t, adjuster);
+  // damage comes from the latest report that assessed the house (a people-only visit keeps it).
   const fieldId = new Map<string, bigint>();
+  const knownDamage = new Map<string, { t: number; id: bigint; damage: Damage }>();
   for (const e of rows.fields) {
     const s = byId.get(e.householdId);
-    if (!s || !isLater(e, s.field, fieldId.get(e.householdId))) continue;
+    if (!s) continue;
+    if (e.damageKnown) {
+      const k = knownDamage.get(e.householdId);
+      if (!k || isLater(e, k, k.id)) knownDamage.set(e.householdId, { t: e.t, id: e.id, damage: e.damage as Damage });
+    }
+    if (!isLater(e, s.field, fieldId.get(e.householdId))) continue;
     fieldId.set(e.householdId, e.id);
-    s.field = { t: e.t, safety: e.safety as Safety, damage: e.damage as Damage, adjusterId: e.adjusterId };
+    s.field = { t: e.t, safety: e.safety as Safety, damage: null, adjusterId: e.adjusterId };
+  }
+  for (const [id, k] of knownDamage) {
+    const s = byId.get(id);
+    if (s?.field) s.field.damage = k.damage;
   }
 }
 
@@ -403,7 +416,12 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
 
     const h = out.hex;
     writeQueue(ctx, hexId, queue, h.priority, prep.nowMin);
-    writeCandidates(ctx, hexId, out.households.map((e) => ({ ...e, ...acct.get(e.householdId)! })), h.priority, h.verification);
+    // Property inspection queue: only houses the policy covers for this peril, or with a claim (coverage.ts).
+    const eligible = out.households.filter((e) => {
+      const s = sigById.get(e.householdId);
+      return !!s && inspectionEligible(s.household, prep.world.hazardType, s.claim !== null);
+    });
+    writeCandidates(ctx, hexId, eligible.map((e) => ({ ...e, ...acct.get(e.householdId)! })), h.priority, h.verification);
 
     const stats = ctx.db.hexStats.hex.find(hexId)!;
     const reason = h.reason ?? '';
@@ -694,7 +712,7 @@ function isVulnerable(h: HouseholdSignals['household']): boolean {
   return !!(h.age75 || h.disability || h.noVehicle || h.limitedEnglish || h.medicalDevice || (h.age65 && h.livesAlone));
 }
 
-/** Keep the cell's top-INSPECT_PER_CELL unverified households in inspection_candidate. */
+/** Keep the cell's top-INSPECT_PER_CELL unverified households in inspection_candidate (callers pass only eligible ones). */
 function writeCandidates(
   ctx: Ctx,
   hexId: string,

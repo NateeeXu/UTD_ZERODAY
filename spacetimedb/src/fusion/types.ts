@@ -36,7 +36,12 @@ export interface HouseholdSignals {
     channel: 'sms' | 'call';
   } | null;
   claim: { t: number; peril: Peril; reportedDamage: Damage } | null;
-  field: { t: number; safety: Safety; damage: Damage; adjusterId: string } | null;
+  /**
+   * Latest field report for the people (safety, t, adjuster) with the latest ASSESSED damage: a report that
+   * did not assess the house keeps the earlier known damage (engine applyEventToSignals). damage null = no
+   * report so far assessed the house.
+   */
+  field: { t: number; safety: Safety; damage: Damage | null; adjusterId: string } | null;
 }
 
 export interface CellInput {

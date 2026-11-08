@@ -121,7 +121,8 @@ export type SimEvent =
       text?: string;       // v2：自由文本回复（可能是多语言），由 Claude 解析成 safety/damage/needs
       language?: string }  // v2：回复所用语言
   | { kind: 'claim'; t: Minutes; householdId: string; peril: Peril; reportedDamage: Damage }
-  | { kind: 'field_report'; t: Minutes; householdId: string; adjusterId: string; safety: Safety; damage: Damage };
+  | { kind: 'field_report'; t: Minutes; householdId: string; adjusterId: string; safety: Safety;
+      damage: Damage | null }; // v3：null = 只看了人、没评估房子（夜里 / 进不去），房子仍算未查勘
 
 // data/backtest/*.json 和 data/live.json 的格式
 export interface EventBundle {

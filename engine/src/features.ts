@@ -317,7 +317,7 @@ export interface FieldSignal {
   t: number;
   adjusterId: string;
   safety: Safety;
-  damage: Damage;
+  damage: Damage | null; // null = occupants checked, house not assessed
 }
 
 /** Everything observed for one household up to the snapshot time (structured fields only; free text is ignored). */
@@ -442,7 +442,8 @@ export function applyEventToSignals(s: HouseholdSignals, e: SimEvent): void {
     case 'field_report':
       s.fieldReports += 1;
       if (s.fieldReport === null || e.t >= s.fieldReport.t) {
-        s.fieldReport = { t: e.t, adjusterId: e.adjusterId, safety: e.safety, damage: e.damage };
+        // Latest report wins for the people; a report that did not assess the house keeps the earlier damage.
+        s.fieldReport = { t: e.t, adjusterId: e.adjusterId, safety: e.safety, damage: e.damage ?? s.fieldReport?.damage ?? null };
       }
       break;
   }
@@ -534,8 +535,11 @@ export function addToAggregate(agg: CellAggregate, s: HouseholdSignals, tr: Hous
     if (s.claim.reportedDamage >= 2) agg.severeClaims += 1;
   }
   if (s.fieldReport) {
-    agg.fieldReported += 1;
-    if (s.fieldReport.damage >= 2) agg.fieldSevere += 1;
+    // fieldReported / fieldSevere describe PROPERTY inspections: a people-only visit does not count.
+    if (s.fieldReport.damage !== null) {
+      agg.fieldReported += 1;
+      if (s.fieldReport.damage >= 2) agg.fieldSevere += 1;
+    }
     if (s.fieldReport.safety !== 'unsure') {
       agg.fieldSafetyKnown += 1;
       if (s.fieldReport.safety === 'needs_help') agg.fieldHelp += 1;

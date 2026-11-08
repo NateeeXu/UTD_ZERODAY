@@ -65,7 +65,7 @@ async function main() {
   const picks = [...conn.db.inspectionCandidate.iter()].sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 10);
   const reports: number[] = [];
   for (const p of picks)
-    reports.push(await time(() => adj.conn.reducers.submitFieldReport({ householdId: p.householdId, safety: 'safe', damage: 1, note: 'bench' })));
+    reports.push(await time(() => adj.conn.reducers.submitFieldReport({ householdId: p.householdId, safety: 'safe', damage: 1, note: 'bench', memberMissing: false })));
   await adj.conn.reducers.leave({});
   adj.conn.disconnect();
 

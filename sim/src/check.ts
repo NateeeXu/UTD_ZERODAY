@@ -108,7 +108,7 @@ function validate(file: string, b: EventBundle, isLive: boolean): void {
       if (tl && e.notHome !== (locationAt(tl, e.t) !== 'home')) fail(file, `notHome disagrees with truth location ${e.householdId}`);
     }
     if (e.kind === 'claim' && (!DAMAGES.has(e.reportedDamage) || !['wind', 'flood'].includes(e.peril))) fail(file, `bad claim ${JSON.stringify(e)}`);
-    if (e.kind === 'field_report' && (!DAMAGES.has(e.damage) || !['safe', 'needs_help', 'unsure'].includes(e.safety))) fail(file, `bad field_report ${JSON.stringify(e)}`);
+    if (e.kind === 'field_report' && ((e.damage !== null && !DAMAGES.has(e.damage)) || !['safe', 'needs_help', 'unsure'].includes(e.safety))) fail(file, `bad field_report ${JSON.stringify(e)}`);
   }
   // Every reply must follow an sms_sent to the same household.
   const sent = new Map<string, number>();

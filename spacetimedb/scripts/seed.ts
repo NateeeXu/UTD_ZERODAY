@@ -118,7 +118,15 @@ function stagedRow(e: SimEvent, seq: number) {
     case 'claim':
       return { ...base, ...blank, peril: e.peril, reportedDamage: e.reportedDamage };
     case 'field_report':
-      return { ...base, ...blank, safety: e.safety, damage: e.damage, adjusterId: e.adjusterId };
+      // damage null = the adjuster checked the people but did not assess the house.
+      return {
+        ...base,
+        ...blank,
+        safety: e.safety,
+        damage: e.damage ?? 0,
+        damageKnown: e.damage !== null && e.damage !== undefined,
+        adjusterId: e.adjusterId,
+      };
   }
 }
 

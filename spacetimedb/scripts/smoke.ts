@@ -8,6 +8,10 @@
 // 4. manager starts the replay at high speed, then jumps to t = 24 h
 // 5. manager assigns a household in a silent cell; adjuster reports it -> cell updates
 // 6. prints hex_stats / household_estimate / metrics before and after
+// 7. a not-assessed report (damage 255) needs a note, accounts the people and leaves the property unverified;
+//    memberMissing on a field report opens a referral; unreachable_after_visit needs an 'unsure' visit and a note,
+//    and closing marks open assignments done (reopening does not)
+// 8. raw reply inbox: submit_raw_reply (reply passcode, 1..500 chars) and mark_reply_parsed (manager)
 // --keep leaves the replay state as is at the end (default: pause).
 import { connect, errText, ownerToken, REPLY_PASSCODE, sleep, STAFF_PASSCODE, subscribe } from './lib.ts';
 
@@ -71,6 +75,9 @@ async function main() {
     'SELECT * FROM household',
     'SELECT * FROM assignment',
     'SELECT * FROM member',
+    'SELECT * FROM field_report',
+    'SELECT * FROM household_followup',
+    'SELECT * FROM reply_inbox',
   ]);
   const db = manager.conn.db;
   const metrics = () => [...db.metrics.iter()][0];
@@ -113,15 +120,15 @@ async function main() {
 
   await expectReject(
     'outsider field report',
-    outsider.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'needs_help', damage: 3, note: 'should fail' })
+    outsider.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'needs_help', damage: 3, note: 'should fail', memberMissing: false })
   );
   await expectReject(
     'manager field report (not an adjuster)',
-    manager.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'safe', damage: 0, note: 'should fail' })
+    manager.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'safe', damage: 0, note: 'should fail', memberMissing: false })
   );
   await expectReject(
     'adjuster field report with damage 7',
-    adjuster.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'safe', damage: 7, note: '' })
+    adjuster.conn.reducers.submitFieldReport({ householdId: hh.id, safety: 'safe', damage: 7, note: '', memberMissing: false })
   );
   await expectReject(
     'sms reply with wrong passcode',
@@ -149,6 +156,7 @@ async function main() {
     safety: 'needs_help',
     damage: 3,
     note: 'smoke test: roof gone, elderly resident needs evacuation',
+    memberMissing: false,
   });
   await sleep(300);
   const after = stats(target.hex);
@@ -174,6 +182,100 @@ async function main() {
       s?.helpReplies === help0 + 1 && metrics()?.helpReplies === metricsHelp0 + 1,
       `household ${other.id}, cell ${other.hex} -> ${s?.priority}, helpReplies ${help0} -> ${s?.helpReplies}`
     );
+  }
+
+  // ----- field reports: house not assessed, missing member, documented closure -----
+  const reported = new Set([...db.fieldReport.iter()].map(r => r.householdId));
+  const spare = [...db.household.iter()]
+    .filter(h => !h.holdout && h.id !== hh.id && h.id !== other?.id && !reported.has(h.id))
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  const [hNa, hMiss, hGone] = [spare[0], spare[1], spare[2]];
+  const follow = (id: string) => [...db.householdFollowup.iter()].find(f => f.householdId === id);
+
+  await expectReject(
+    'not-assessed report (damage 255) without a note',
+    adjuster.conn.reducers.submitFieldReport({ householdId: hNa.id, safety: 'safe', damage: 255, note: '  ', memberMissing: false })
+  );
+  const naStats0 = stats(hNa.hex);
+  await adjuster.conn.reducers.submitFieldReport({ householdId: hNa.id, safety: 'safe', damage: 255, note: 'unsafe to enter', memberMissing: false });
+  await sleep(300);
+  const naRow = [...db.fieldReport.iter()].find(r => r.householdId === hNa.id);
+  const naEst = est(hNa.id);
+  const naStats1 = stats(hNa.hex);
+  check('not-assessed report stored with damageKnown = false', !!naRow && naRow.damageKnown === false && naRow.damage === 0, `damage ${naRow?.damage}, damageKnown ${naRow?.damageKnown}`);
+  check(
+    "not-assessed report: people accounted ('safe'), property unverified",
+    naEst?.accounted === true && naEst?.verified === false && naEst?.escalation === 'verified',
+    `accounted ${naEst?.accounted}, verified ${naEst?.verified}, escalation ${naEst?.escalation}`
+  );
+  check(
+    'not-assessed report counts as a field report but not a verified household',
+    naStats1?.fieldReports === (naStats0?.fieldReports ?? 0) + 1 && naStats1?.verifiedHouseholds === naStats0?.verifiedHouseholds
+  );
+
+  await adjuster.conn.reducers.submitFieldReport({ householdId: hMiss.id, safety: 'safe', damage: 1, note: 'son not here, neighbors have not seen him', memberMissing: true });
+  await sleep(300);
+  const fMiss = follow(hMiss.id);
+  const eMiss = est(hMiss.id);
+  check(
+    'memberMissing on a field report opens a referral',
+    fMiss?.memberMissing === true && (eMiss?.escalation === 'emergency_referral' || eMiss?.escalation === 'referral_overdue'),
+    `memberMissing ${fMiss?.memberMissing}, escalation ${eMiss?.escalation}`
+  );
+
+  await expectReject(
+    "unreachable_after_visit without a prior 'unsure' field report",
+    manager.conn.reducers.closeHousehold({ householdId: hGone.id, reason: 'unreachable_after_visit', note: 'called 3 times, no answer' })
+  );
+  await adjuster.conn.reducers.submitFieldReport({ householdId: hGone.id, safety: 'unsure', damage: 2, note: 'nobody answered the door', memberMissing: false });
+  // An open assignment that the closure must clear (the 'unsure' report above completed nothing: assigned after it).
+  await manager.conn.reducers.assign({ householdId: hGone.id, adjusterIdentityHex: adjuster.identity.toHexString() });
+  await sleep(200);
+  check('assignment open before the closure', [...db.assignment.iter()].some(a => a.householdId === hGone.id && a.status === 'assigned'));
+  await expectReject(
+    'unreachable_after_visit without a note',
+    manager.conn.reducers.closeHousehold({ householdId: hGone.id, reason: 'unreachable_after_visit', note: ' ' })
+  );
+  await manager.conn.reducers.closeHousehold({ householdId: hGone.id, reason: 'unreachable_after_visit', note: 'visited, nobody home; emergency contact did not answer' });
+  await sleep(300);
+  const fGone = follow(hGone.id);
+  check(
+    'unreachable_after_visit accepted after an unsure visit, with the note',
+    fGone?.closureReason === 'unreachable_after_visit' && fGone.closureNote.startsWith('visited, nobody home') && est(hGone.id)?.escalation === 'closed',
+    `reason ${fGone?.closureReason}, note "${fGone?.closureNote}", escalation ${est(hGone.id)?.escalation}`
+  );
+  const goneAssignments = [...db.assignment.iter()].filter(a => a.householdId === hGone.id);
+  check('closure marks open assignments done', goneAssignments.length > 0 && goneAssignments.every(a => a.status === 'done'), goneAssignments.map(a => a.status).join(','));
+  await manager.conn.reducers.closeHousehold({ householdId: hGone.id, reason: '', note: '' });
+  await manager.conn.reducers.assign({ householdId: hGone.id, adjusterIdentityHex: adjuster.identity.toHexString() });
+  await manager.conn.reducers.closeHousehold({ householdId: hGone.id, reason: '', note: '' });
+  await sleep(300);
+  const reopened = follow(hGone.id);
+  check(
+    'reopen clears the closure and leaves assignments alone',
+    reopened?.closureReason === '' && reopened.closureNote === '' && [...db.assignment.iter()].some(a => a.householdId === hGone.id && a.status === 'assigned'),
+    `reason "${reopened?.closureReason}", escalation ${est(hGone.id)?.escalation}`
+  );
+
+  // ----- raw reply inbox (Claude parser worker input) -----
+  await expectReject(
+    'raw reply with wrong passcode',
+    outsider.conn.reducers.submitRawReply({ householdId: hNa.id, text: 'we are ok', passcode: 'nope' })
+  );
+  await expectReject(
+    'raw reply longer than 500 characters',
+    outsider.conn.reducers.submitRawReply({ householdId: hNa.id, text: 'x'.repeat(501), passcode: REPLY_PASSCODE })
+  );
+  await outsider.conn.reducers.submitRawReply({ householdId: hNa.id, text: '  estamos bien pero huele a gas  ', passcode: REPLY_PASSCODE });
+  await sleep(200);
+  const inbox = [...db.replyInbox.iter()].find(r => r.householdId === hNa.id);
+  check('raw reply stored as pending (trimmed)', inbox?.status === 'pending' && inbox.text === 'estamos bien pero huele a gas', `status ${inbox?.status}`);
+  if (inbox) {
+    await expectReject('outsider mark_reply_parsed', outsider.conn.reducers.markReplyParsed({ id: inbox.id, status: 'parsed', error: '' }));
+    await manager.conn.reducers.markReplyParsed({ id: inbox.id, status: 'failed', error: 'smoke' });
+    await sleep(200);
+    const done = [...db.replyInbox.iter()].find(r => r.id === inbox.id);
+    check('manager mark_reply_parsed', done?.status === 'failed' && done.error === 'smoke' && done.parsedAt !== undefined);
   }
 
   const mEnd = metrics();

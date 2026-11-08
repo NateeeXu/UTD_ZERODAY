@@ -242,7 +242,8 @@ export const fieldReport = table(
     ...eventColumns,
     adjusterId: t.string(), // display name of the adjuster (or 'adj-xx' for replayed reports)
     safety: t.string(), // 'safe' | 'needs_help' | 'unsure'
-    damage: t.u8(),
+    damage: t.u8(), // 0..3 (0 when damageKnown is false)
+    damageKnown: t.bool(), // false = the adjuster checked the people but did not assess the house (note says why)
     note: t.string(),
   }
 );
@@ -284,7 +285,7 @@ export const hexStats = table(
     helpReplies: t.u32(), // reply events with safety = needs_help
     claims: t.u32(),
     fieldReports: t.u32(),
-    verifiedHouseholds: t.u32(), // distinct households with a field report
+    verifiedHouseholds: t.u32(), // distinct households with a field report that assessed the house
     // fusion output (HexEstimate)
     severity: t.f64(),
     confidence: t.f64(),
@@ -374,6 +375,7 @@ export const householdFollowup = table(
     referralSimMinutes: t.f64(), // sim minute it was referred
     reportedSimMinutes: t.f64(), // sim minute a missing member was reported (starts the referral timer)
     closureReason: t.string(), // '' | 'vacant' | 'not_in_area' | 'unreachable_after_visit'
+    closureNote: t.string(), // why it was closed (required with a reason), '' when open
     closedBy: t.string(),
     updatedAt: t.timestamp(),
   }
@@ -555,6 +557,25 @@ export const assignment = table(
   }
 );
 
+/**
+ * Raw free-text replies waiting for the Claude parser worker (scripts/claude-worker.ts), so the reply
+ * page never needs the Anthropic key. Written by submit_raw_reply; the worker parses each pending row,
+ * calls submit_parsed_reply and then mark_reply_parsed. Cleared with the demo state.
+ */
+export const replyInbox = table(
+  { name: 'reply_inbox', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    householdId: t.string().index('btree'),
+    text: t.string(), // 1..500 characters, trimmed
+    language: t.string(), // hint for the parser: household.primaryLanguage ('' when unknown)
+    status: t.string().index('btree'), // 'pending' | 'parsed' | 'failed'
+    receivedAt: t.timestamp(),
+    parsedAt: t.option(t.timestamp()), // undefined while pending
+    error: t.string(), // '' when parsed cleanly; parser fallback or submit error otherwise
+  }
+);
+
 // ---------------------------------------------------------------------------
 // Reducer argument types (not tables)
 // ---------------------------------------------------------------------------
@@ -687,6 +708,7 @@ const spacetimedb = schema({
   modelState,
   member,
   assignment,
+  replyInbox,
 });
 export default spacetimedb;
 

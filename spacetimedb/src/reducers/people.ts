@@ -174,20 +174,91 @@ export const submitParsedReply = spacetimedb.reducer(
     })
 );
 
+// ----- raw reply inbox (Claude parser worker) ----------------------------------------
+
+/** Spam guard for the public reply passcode: pending rows per household and in total. */
+const MAX_PENDING_PER_HOUSEHOLD = 5;
+const MAX_PENDING_TOTAL = 500;
+const INBOX_STATUSES = ['pending', 'parsed', 'failed'];
+
+/**
+ * Reply page: store a raw free-text reply for the Claude parser worker (scripts/claude-worker.ts), which
+ * parses it and calls submit_parsed_reply. Same access rule as submit_sms_text_reply. text: 1..500 characters.
+ */
+export const submitRawReply = spacetimedb.reducer(
+  { name: 'submit_raw_reply' },
+  { householdId: t.string(), text: t.string(), passcode: t.string() },
+  (ctx, { householdId, text, passcode }) => {
+    checkReplyAccess(ctx, passcode);
+    const hh = ctx.db.household.id.find(householdId);
+    if (!hh) throw new SenderError(`unknown household ${householdId}`);
+    const body = text.trim();
+    const len = [...body].length;
+    if (len < 1 || len > 500) throw new SenderError('text must be 1..500 characters');
+    let mine = 0;
+    for (const r of ctx.db.replyInbox.householdId.filter(householdId)) if (r.status === 'pending') mine++;
+    if (mine >= MAX_PENDING_PER_HOUSEHOLD) throw new SenderError('too many replies waiting for this household, try again shortly');
+    let total = 0;
+    for (const _ of ctx.db.replyInbox.status.filter('pending')) if (++total >= MAX_PENDING_TOTAL) throw new SenderError('reply inbox is full, try again shortly');
+    ctx.db.replyInbox.insert({
+      id: 0n,
+      householdId,
+      text: body,
+      language: hh.primaryLanguage ?? '',
+      status: 'pending',
+      receivedAt: ctx.timestamp,
+      parsedAt: undefined,
+      error: '',
+    });
+  }
+);
+
+/**
+ * Parser worker (manager) or owner: set an inbox row's status. 'parsed' / 'failed' stamp parsedAt;
+ * 'pending' puts the row back in the queue (re-parse). error is truncated to 500 characters.
+ */
+export const markReplyParsed = spacetimedb.reducer(
+  { name: 'mark_reply_parsed' },
+  { id: t.u64(), status: t.string(), error: t.string() },
+  (ctx, { id, status, error }) => {
+    requireManager(ctx);
+    if (!INBOX_STATUSES.includes(status)) throw new SenderError("status must be 'pending', 'parsed' or 'failed'");
+    const row = ctx.db.replyInbox.id.find(id);
+    if (!row) throw new SenderError('unknown reply');
+    ctx.db.replyInbox.id.update({
+      ...row,
+      status,
+      error: error.slice(0, 500),
+      parsedAt: status === 'pending' ? undefined : ctx.timestamp,
+    });
+  }
+);
+
+/** submit_field_report damage value: the adjuster checked the people but did not assess the house. */
+const DAMAGE_NOT_ASSESSED = 255;
+
 /**
  * Adjuster field report. Caller must be an `adjuster` member. Completes their open assignment for the household.
- * safety: 'safe' / 'needs_help' = the occupants were seen; 'unsure' = the property was inspected but nobody
- * was seen (the people stay unaccounted and move to 'locate'). damage is always the property finding.
+ * safety: 'safe' / 'needs_help' = the occupants were seen; 'unsure' = nobody was seen (the people stay
+ * unaccounted and move to 'locate'). damage: the property finding 0..3, or 255 = not assessed (unsafe to
+ * enter, no access, dark): the note must then say why (>= 3 characters) and the property stays unverified
+ * and in the inspection queue. memberMissing: someone in the household is unaccounted for (opens a
+ * referral, same as report_member_missing).
  */
 export const submitFieldReport = spacetimedb.reducer(
   { name: 'submit_field_report' },
-  { householdId: t.string(), safety: t.string(), damage: t.u8(), note: t.string() },
-  (ctx, { householdId, safety, damage, note }) => {
+  { householdId: t.string(), safety: t.string(), damage: t.u8(), note: t.string(), memberMissing: t.bool() },
+  (ctx, { householdId, safety, damage, note, memberMissing }) => {
     const me = requireAdjuster(ctx);
     if (safety !== 'safe' && safety !== 'needs_help' && safety !== 'unsure')
       throw new SenderError("safety must be 'safe', 'needs_help' or 'unsure'");
-    checkDamage(damage);
+    const assessed = damage !== DAMAGE_NOT_ASSESSED;
+    if (assessed) checkDamage(damage);
     if (note.length > 500) throw new SenderError('note must be at most 500 characters');
+    if (!assessed && note.trim().length < 3)
+      throw new SenderError('damage 255 (house not assessed) needs a note saying why, e.g. "unsafe to enter" or "no access: flooded"');
+    // Written before onEvent so its recompute sees the missing member (one recompute for both).
+    if (memberMissing) markMemberMissing(ctx, householdId, false);
     onEvent(
       ctx,
       {
@@ -196,7 +267,7 @@ export const submitFieldReport = spacetimedb.reducer(
         householdId,
         adjusterId: me.name,
         safety: safety as Safety,
-        damage: damage as Damage,
+        damage: assessed ? (damage as Damage) : null,
         note,
       },
       'live'
@@ -295,9 +366,9 @@ function checkReplyAccess(ctx: Ctx, passcode: string) {
     throw new SenderError('join as policyholder_demo or provide the reply passcode');
 }
 
-type FollowupPatch = Partial<{ memberMissing: boolean; reportedSimMinutes: number; referralStatus: string; referralSimMinutes: number; closureReason: string; closedBy: string }>;
+type FollowupPatch = Partial<{ memberMissing: boolean; reportedSimMinutes: number; referralStatus: string; referralSimMinutes: number; closureReason: string; closureNote: string; closedBy: string }>;
 
-function upsertFollowup(ctx: Ctx, householdId: string, patch: FollowupPatch) {
+function upsertFollowup(ctx: Ctx, householdId: string, patch: FollowupPatch, recompute = true) {
   const hh = ctx.db.household.id.find(householdId);
   if (!hh) throw new SenderError(`unknown household ${householdId}`);
   const prev = ctx.db.householdFollowup.householdId.find(householdId);
@@ -309,13 +380,32 @@ function upsertFollowup(ctx: Ctx, householdId: string, patch: FollowupPatch) {
     referralStatus: prev?.referralStatus ?? '',
     referralSimMinutes: prev?.referralSimMinutes ?? 0,
     closureReason: prev?.closureReason ?? '',
+    closureNote: prev?.closureNote ?? '',
     closedBy: prev?.closedBy ?? '',
     ...patch,
     updatedAt: ctx.timestamp,
   };
   if (prev) ctx.db.householdFollowup.householdId.update(row);
   else ctx.db.householdFollowup.insert(row);
-  recomputeHex(ctx, hh.hex);
+  if (recompute) recomputeHex(ctx, hh.hex);
+}
+
+/**
+ * Someone in the household is unaccounted for (reply page or field report). A repeat report keeps the
+ * original clock; a report after a resolved referral opens a new one; an open referral is kept.
+ */
+function markMemberMissing(ctx: Ctx, householdId: string, recompute: boolean) {
+  const prev = ctx.db.householdFollowup.householdId.find(householdId);
+  if (prev?.memberMissing && prev.referralStatus !== 'resolved') return;
+  const now = simNow(ctx);
+  // Keep a referral already open for this household (e.g. from a needs-help reply).
+  const open = prev && (prev.referralStatus === 'referred' || prev.referralStatus === 'acknowledged');
+  upsertFollowup(
+    ctx,
+    householdId,
+    open ? { memberMissing: true, reportedSimMinutes: now } : { memberMissing: true, reportedSimMinutes: now, referralStatus: '', referralSimMinutes: 0 },
+    recompute
+  );
 }
 
 /** Policyholder page: "Someone in my household is unaccounted for". Opens a referral. */
@@ -324,13 +414,11 @@ export const reportMemberMissing = spacetimedb.reducer(
   { householdId: t.string(), passcode: t.string() },
   (ctx, { householdId, passcode }) => {
     checkReplyAccess(ctx, passcode);
+    if (!ctx.db.household.id.find(householdId)) throw new SenderError(`unknown household ${householdId}`);
     const prev = ctx.db.householdFollowup.householdId.find(householdId);
-    // A repeat report keeps the original clock; a report after a resolved referral opens a new one.
+    // A repeat report keeps the original clock (nothing to write).
     if (prev?.memberMissing && prev.referralStatus !== 'resolved') return;
-    const now = simNow(ctx);
-    // Keep a referral already open for this household (e.g. from a needs-help reply).
-    const open = prev && (prev.referralStatus === 'referred' || prev.referralStatus === 'acknowledged');
-    upsertFollowup(ctx, householdId, open ? { memberMissing: true, reportedSimMinutes: now } : { memberMissing: true, reportedSimMinutes: now, referralStatus: '', referralSimMinutes: 0 });
+    markMemberMissing(ctx, householdId, true);
   }
 );
 
@@ -350,19 +438,33 @@ export const updateReferral = spacetimedb.reducer(
 
 /**
  * No silent closure: a household leaves "unaccounted" only with evidence or a documented reason.
- * reason: 'vacant' | 'not_in_area' | 'unreachable_after_visit' (needs an adjuster assignment) | '' to reopen.
+ * reason: 'vacant' | 'not_in_area' | 'unreachable_after_visit' (needs a field report with safety 'unsure',
+ * i.e. a visit that found nobody) | '' to reopen. note: required with a reason (>= 3 characters), stored in
+ * household_followup.closureNote; ignored on reopen (the note is cleared). Closing marks the household's
+ * open ('assigned') assignments 'done'; reopening does not touch assignments.
  */
 export const closeHousehold = spacetimedb.reducer(
   { name: 'close_household' },
-  { householdId: t.string(), reason: t.string() },
-  (ctx, { householdId, reason }) => {
+  { householdId: t.string(), reason: t.string(), note: t.string() },
+  (ctx, { householdId, reason, note }) => {
     const me = memberOf(ctx);
     if (!(me && (me.role === 'manager' || me.role === 'adjuster')) && !isOwner(ctx))
       throw new SenderError('only managers or adjusters can close a household');
     if (!['vacant', 'not_in_area', 'unreachable_after_visit', ''].includes(reason))
       throw new SenderError("reason must be 'vacant', 'not_in_area', 'unreachable_after_visit' or '' (reopen)");
-    if (reason === 'unreachable_after_visit' && [...ctx.db.assignment.householdId.filter(householdId)].length === 0)
-      throw new SenderError('unreachable_after_visit needs an adjuster assignment for this household first');
-    upsertFollowup(ctx, householdId, { closureReason: reason, closedBy: reason ? (me?.name ?? 'owner') : '' });
+    const why = note.trim();
+    if (reason && why.length < 3) throw new SenderError('closing a household needs a note (at least 3 characters) saying what was tried');
+    if (why.length > 500) throw new SenderError('note must be at most 500 characters');
+    if (reason === 'unreachable_after_visit' && ![...ctx.db.fieldReport.householdId.filter(householdId)].some(r => r.safety === 'unsure'))
+      throw new SenderError("unreachable_after_visit needs a field report for this household with safety 'unsure' (visited, nobody seen) first");
+    upsertFollowup(ctx, householdId, {
+      closureReason: reason,
+      closureNote: reason ? why : '',
+      closedBy: reason ? (me?.name ?? 'owner') : '',
+    });
+    // Closing clears the adjusters' task lists; reopening leaves assignments alone.
+    if (reason)
+      for (const a of [...ctx.db.assignment.householdId.filter(householdId)])
+        if (a.status === 'assigned') ctx.db.assignment.id.update({ ...a, status: 'done', updatedAt: ctx.timestamp });
   }
 );

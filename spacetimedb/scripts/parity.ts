@@ -3,9 +3,11 @@
 // compares every household_estimate, hex_stats and inspection_candidate row with engine/src
 // (copied in src/fusion/engine) run offline on the same bundle + model + events.
 //
-//   node scripts/parity.ts [--db triage-loop-ca] [--file <bundle>] [--model <model.json>] [--t 1440] [--reports 20] [--step 60]
+//   node scripts/parity.ts [--db triage-loop-ca] [--file <bundle>] [--model <model.json>] [--t 1440] [--reports 20] [--unassessed 5] [--step 60]
 // --reports N: an adjuster files N truthful field reports (top inspectScore households) at t, and
 //              the offline run gets the same events (exercises the local + neighbour update path).
+// --unassessed K: also K people-only reports (damage 255 = house not assessed) on the first K of those
+//              households (the earlier damage must be kept) and on K fresh households (property stays unverified).
 // --step M:    afterwards advance the clock by M minutes with step_replay (the replay-tick code path)
 //              and compare at t + M. Exact when the step triggers the full-recompute cadence.
 import { readFileSync } from 'node:fs';
@@ -15,6 +17,7 @@ import type { EventBundle, ModelParams, SimEvent } from '../../shared/types.ts';
 import { DEFAULT_CONFIG } from '../src/fusion/engine/config.ts';
 import { estimateAll } from '../src/fusion/engine/infer.ts';
 import { recommendInspections } from '../src/fusion/engine/active.ts';
+import { inspectionEligible } from '../src/fusion/coverage.ts';
 import { connect, DB, errText, ownerToken, STAFF_PASSCODE, subscribe } from './lib.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +25,7 @@ const args = process.argv.slice(2);
 const arg = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const T = Number(arg('--t') ?? 1440);
 const REPORTS = Number(arg('--reports') ?? 0);
+const UNASSESSED = Number(arg('--unassessed') ?? 0);
 const STEP = Number(arg('--step') ?? 0);
 const bundlePath = resolve(arg('--file') ?? resolve(here, '../../data/live.json'));
 const modelPath = resolve(arg('--model') ?? resolve(bundlePath, '..', 'model.json'));
@@ -43,17 +47,25 @@ async function main() {
   const engineName = [...conn.db.metrics.iter()][0]?.engine;
 
   const extra: SimEvent[] = [];
-  if (REPORTS > 0) {
+  if (REPORTS > 0 || UNASSESSED > 0) {
     const adj = await connect();
     await adj.conn.reducers.joinAs({ role: 'adjuster', name: 'parity-adj', passcode: STAFF_PASSCODE });
     const truth = new Map(bundle.truth.map(r => [r.householdId, r]));
-    const picks = [...conn.db.householdEstimate.iter()]
-      .sort((a, b) => b.inspectScore - a.inspectScore || (a.householdId < b.householdId ? -1 : 1))
-      .slice(0, REPORTS);
+    const ranked = [...conn.db.householdEstimate.iter()].sort(
+      (a, b) => b.inspectScore - a.inspectScore || (a.householdId < b.householdId ? -1 : 1)
+    );
+    const picks = ranked.slice(0, REPORTS);
     for (const e of picks) {
       const tr = truth.get(e.householdId)!;
-      await adj.conn.reducers.submitFieldReport({ householdId: e.householdId, safety: tr.safety, damage: tr.damage, note: 'parity' });
+      await adj.conn.reducers.submitFieldReport({ householdId: e.householdId, safety: tr.safety, damage: tr.damage, note: 'parity', memberMissing: false });
       extra.push({ kind: 'field_report', t: Math.floor(T), householdId: e.householdId, adjusterId: 'parity-adj', safety: tr.safety, damage: tr.damage });
+    }
+    // People-only visits: re-visits of already assessed houses (keep their damage) and fresh households.
+    const peopleOnly = [...picks.slice(0, UNASSESSED), ...ranked.slice(REPORTS, REPORTS + UNASSESSED)];
+    for (const e of peopleOnly) {
+      const tr = truth.get(e.householdId)!;
+      await adj.conn.reducers.submitFieldReport({ householdId: e.householdId, safety: tr.safety, damage: 255, note: 'parity: no access', memberMissing: false });
+      extra.push({ kind: 'field_report', t: Math.floor(T), householdId: e.householdId, adjusterId: 'parity-adj', safety: tr.safety, damage: null });
     }
     await adj.conn.reducers.leave({});
     adj.conn.disconnect();
@@ -105,7 +117,11 @@ async function main() {
 
   // inspection_candidate vs. the engine's recommendInspections (per-cell cap, global ranking).
   const K = 50;
-  const engineTop = recommendInspections(bundle.world, offline.households, offline.hexes, K, DEFAULT_CONFIG).map(c => c.householdId);
+  // Same coverage filter as the database's inspection queue (src/fusion/coverage.ts).
+  const hazardType = bundle.world.hazardType ?? 'hurricane';
+  const claimed = new Set([...bundle.events, ...extra].filter(e => e.kind === 'claim' && e.t <= tCompare).map(e => e.householdId));
+  const exclude = new Set(bundle.world.households.filter(h => !inspectionEligible(h, hazardType, claimed.has(h.id))).map(h => h.id));
+  const engineTop = recommendInspections(bundle.world, offline.households, offline.hexes, K, DEFAULT_CONFIG, { exclude }).map(c => c.householdId);
   const dbTop = [...conn.db.inspectionCandidate.iter()]
     .sort((a, b) => b.inspectScore - a.inspectScore || (a.householdId < b.householdId ? -1 : 1))
     .slice(0, K)
@@ -133,6 +149,7 @@ async function main() {
     maxAbsDiff: Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Number(v.toExponential(1))])),
     mismatches: { priority: prio, verification: ver, reason, silenceCause: cause },
     inspectTop50Overlap: `${overlap}/${engineTop.length}`,
+    inspectionIneligible: exclude.size,
   });
   if (firstReasonDiff) console.log('first reason difference:', firstReasonDiff);
   console.log(ok ? 'PARITY OK' : 'PARITY MISMATCH');

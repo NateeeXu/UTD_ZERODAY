@@ -102,6 +102,7 @@ export const FieldReport = __t.object("FieldReport", {
   adjusterId: __t.string(),
   safety: __t.string(),
   damage: __t.u8(),
+  damageKnown: __t.bool(),
   note: __t.string(),
 });
 export type FieldReport = __Infer<typeof FieldReport>;
@@ -243,6 +244,7 @@ export const HouseholdFollowup = __t.object("HouseholdFollowup", {
   referralSimMinutes: __t.f64(),
   reportedSimMinutes: __t.f64(),
   closureReason: __t.string(),
+  closureNote: __t.string(),
   closedBy: __t.string(),
   updatedAt: __t.timestamp(),
 });
@@ -405,6 +407,18 @@ export const ReplayTick = __t.object("ReplayTick", {
   scheduledAt: __t.scheduleAt(),
 });
 export type ReplayTick = __Infer<typeof ReplayTick>;
+
+export const ReplyInbox = __t.object("ReplyInbox", {
+  id: __t.u64(),
+  householdId: __t.string(),
+  text: __t.string(),
+  language: __t.string(),
+  status: __t.string(),
+  receivedAt: __t.timestamp(),
+  parsedAt: __t.option(__t.timestamp()),
+  error: __t.string(),
+});
+export type ReplyInbox = __Infer<typeof ReplyInbox>;
 
 export const SimTruth = __t.object("SimTruth", {
   householdId: __t.string(),

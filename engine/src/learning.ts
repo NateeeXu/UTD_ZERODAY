@@ -100,8 +100,9 @@ export function sourceOpinions(householdId: string, snap: Snapshot): SourceOpini
   };
 }
 
-/** Turn a field report into a trust observation. `snapBefore` must not yet contain the report. */
-export function observeFieldReport(report: FieldReportEvent, snapBefore: Snapshot): FieldReportObservation {
+/** Turn a field report into a trust observation (null when the house was not assessed: nothing to score sources against). `snapBefore` must not yet contain the report. */
+export function observeFieldReport(report: FieldReportEvent, snapBefore: Snapshot): FieldReportObservation | null {
+  if (report.damage === null) return null;
   const h = snapBefore.householdById.get(report.householdId);
   if (!h) throw new Error(`observeFieldReport: unknown household ${report.householdId}`);
   return {
@@ -242,7 +243,8 @@ export interface LocalUpdateResult {
   snapshot: Snapshot;
   households: HouseholdEstimate[];
   hexes: HexEstimate[];
-  observation: FieldReportObservation;
+  /** null when the report did not assess the house */
+  observation: FieldReportObservation | null;
 }
 
 /** Convenience: observe (for trust), apply locally, re-estimate the one cell. */
@@ -256,6 +258,8 @@ export function localUpdate(
 ): LocalUpdateResult {
   const observation = observeFieldReport(report, snap);
   const snapshot = applyFieldReportToSnapshot(snap, report);
-  const re = reestimateCell(snapshot, observation.hex, models, cfg, households, hexes);
+  const hex = snap.householdById.get(report.householdId)?.hex;
+  if (!hex) throw new Error(`applyLocalFieldReport: unknown household ${report.householdId}`);
+  const re = reestimateCell(snapshot, hex, models, cfg, households, hexes);
   return { snapshot, households: re.households, hexes: re.hexes, observation };
 }

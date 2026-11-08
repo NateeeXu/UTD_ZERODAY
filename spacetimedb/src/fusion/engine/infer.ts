@@ -149,7 +149,7 @@ export function finishHousehold(
   if (!s || !agg) throw new Error(`household ${h.id} not in snapshot`);
 
   const fr = s.fieldReport;
-  if (fr) {
+  if (fr && fr.damage !== null) {
     const { high, low } = cfg.verifiedValues;
     const pSevere = fr.damage >= 2 ? high : low;
     let pNeedsHelp = probs.pNeedsHelp; // 'unsure': keep the model's needs-help estimate
@@ -161,7 +161,10 @@ export function finishHousehold(
 
   const nu = cfg.neighbourUpdate;
   const pSevere = residual.k > 0 && nu.gainSevere !== 0 ? sigmoid(logitOf(probs.pSevere) + nu.gainSevere * residual.severe) : probs.pSevere;
-  const pNeedsHelp = residual.k > 0 && nu.gainHelp !== 0 ? sigmoid(logitOf(probs.pNeedsHelp) + nu.gainHelp * residual.help) : probs.pNeedsHelp;
+  let pNeedsHelp = residual.k > 0 && nu.gainHelp !== 0 ? sigmoid(logitOf(probs.pNeedsHelp) + nu.gainHelp * residual.help) : probs.pNeedsHelp;
+  // People-only visit (house not assessed): the adjuster saw the occupants, the property stays unverified.
+  if (fr && fr.safety === 'needs_help') pNeedsHelp = cfg.verifiedValues.high;
+  else if (fr && fr.safety === 'safe') pNeedsHelp = cfg.verifiedValues.low;
 
   // Uncertainty: spread of the estimate plus how much evidence backs it.
   const ownHeard = s.reply || s.claim ? 1 : 0;
@@ -187,15 +190,17 @@ export function estimateCellHouseholds(members: readonly Household[], snap: Snap
   for (let i = 0; i < members.length; i++) {
     const fr = snap.signals.get(members[i].id)!.fieldReport;
     if (!fr) continue;
-    k++;
-    sumSevere += (fr.damage >= 2 ? 1 : 0) - probs[i].pSevere;
+    if (fr.damage !== null) {
+      k++;
+      sumSevere += (fr.damage >= 2 ? 1 : 0) - probs[i].pSevere;
+    }
     if (fr.safety !== 'unsure') {
       kHelp++;
       sumHelp += (fr.safety === 'needs_help' ? 1 : 0) - probs[i].pNeedsHelp;
     }
   }
   const sc = cfg.neighbourUpdate.shrinkageCount;
-  const residual: CellResidual = k === 0 ? NO_RESIDUAL : { severe: sumSevere / (k + sc), help: kHelp > 0 ? sumHelp / (kHelp + sc) : 0, k };
+  const residual: CellResidual = k === 0 && kHelp === 0 ? NO_RESIDUAL : { severe: k > 0 ? sumSevere / (k + sc) : 0, help: kHelp > 0 ? sumHelp / (kHelp + sc) : 0, k: Math.max(k, kHelp) };
   return members.map((h, i) => finishHousehold(h, snap, probs[i], residual, cfg));
 }
 

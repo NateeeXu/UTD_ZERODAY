@@ -40,7 +40,7 @@ export type IngestEvent =
       householdId: string;
       adjusterId: string;
       safety: Safety;
-      damage: Damage;
+      damage: Damage | null; // null = the occupants were checked, the house was not assessed
       note: string;
     };
 
@@ -201,22 +201,26 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: Inges
       break;
     }
     case 'field_report': {
-      const learned = accumulateTrust(ctx, hh, ev.damage);
-      if (learned) {
-        m.trustHazard = learned.trust.hazard;
-        m.trustSms = learned.trust.sms;
-        m.trustClaims = learned.trust.claims;
-        m.trustUpdates = learned.updates;
-      }
-      if (!any(ctx.db.fieldReport.householdId.filter(hh.id))) {
-        stats.verifiedHouseholds += 1;
-        m.verifiedHouseholds += 1;
+      // A people-only visit (damage null) neither scores the sources nor verifies the property.
+      if (ev.damage !== null) {
+        const learned = accumulateTrust(ctx, hh, ev.damage);
+        if (learned) {
+          m.trustHazard = learned.trust.hazard;
+          m.trustSms = learned.trust.sms;
+          m.trustClaims = learned.trust.claims;
+          m.trustUpdates = learned.updates;
+        }
+        if (!any([...ctx.db.fieldReport.householdId.filter(hh.id)].filter((r) => r.damageKnown))) {
+          stats.verifiedHouseholds += 1;
+          m.verifiedHouseholds += 1;
+        }
       }
       ctx.db.fieldReport.insert({
         ...base,
         adjusterId: ev.adjusterId,
         safety: ev.safety,
-        damage: ev.damage,
+        damage: ev.damage ?? 0,
+        damageKnown: ev.damage !== null,
         note: ev.note,
       });
       stats.fieldReports += 1;
@@ -366,7 +370,8 @@ export function rebuildAll(ctx: Ctx) {
     const s = byHex.get(e.hex);
     if (!s) continue;
     s.fieldReports++;
-    if (!verifiedHH.has(e.householdId)) {
+    // Same rule as onEvent: only a report that assessed the house verifies the property.
+    if (e.damageKnown && !verifiedHH.has(e.householdId)) {
       verifiedHH.add(e.householdId);
       s.verifiedHouseholds++;
     }
@@ -469,6 +474,7 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.householdFollowup.clear();
   ctx.db.unaccountedQueue.clear();
   ctx.db.staffContact.clear();
+  ctx.db.replyInbox.clear();
   resetStaffCounters(ctx);
   ctx.db.replayTick.clear();
 

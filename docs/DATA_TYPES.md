@@ -45,7 +45,7 @@ Harbor Bend（`data/live.json` 和 `data/backtest/`）是虚构小镇，**所有
      │  replay_tick（每秒一次）按 t 释放 staged_event → onEvent()（ingest.ts，唯一的写入口）
      │  → recomputeCells()（fusion/index.ts，调用复制进来的引擎 spacetimedb/src/fusion/engine/）
      │  其他写入口：投保人页面 submit_*_reply、理赔员 submit_field_report、模拟员工 staff.ts、
-     │  Claude 解析 worker → submit_parsed_reply（计划中，worker 还没写）
+     │  Claude 解析 worker（scripts/claude-worker.ts）：reply_inbox → submit_parsed_reply
      ▼
 ⑥ 公开输出：hex_stats、household_estimate、inspection_candidate、unaccounted_queue、
             household_followup、metrics、model_state、replay_state、staff_sim
@@ -225,7 +225,7 @@ Harbor Bend 的住户只有前 12 个必填字段；两个真实地区的住户�
 | `sms_sent` | 无 | 给这户发了外联短信（只发给 `phoneOnFile` 的住户；飓风在 60–180 min，地震在 20–120 min） |
 | `sms_reply` | 见下表 | 住户回复了（或坐席电话联系上了） |
 | `claim` | `peril: Peril`，`reportedDamage: Damage` | 理赔申请：申报的灾种和损失（申报值有 ±1 的噪声） |
-| `field_report` | `adjusterId: string`，`safety: Safety`，`damage: Damage` | 理赔员现场报告。`damage` 是房子的查勘结果（等于真相）；`safety` 是见到的住户状态，`unsure` = 查勘了房子但没见到人。**只出现在回测文件里**；live 里的现场报告在演示时由理赔员或模拟员工产生。回测的 `adjusterId` 形如 `adj-01` |
+| `field_report` | `adjusterId: string`，`safety: Safety`，`damage: Damage \| null` | 理赔员现场报告。`damage` 是房子的查勘结果（等于真相）；`null` = 只看了人、没评估房子（夜里 / 进不去），房子仍算未查勘；`safety` 是见到的住户状态，`unsure` = 没见到人。同一户的多条报告：住户状态取最新一条，房子损失保留最近一条评估过的。**只出现在回测文件里**；live 里的现场报告在演示时由理赔员或模拟员工产生。回测的 `adjusterId` 形如 `adj-01` |
 
 `sms_reply` 的字段：
 
@@ -447,9 +447,9 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `sms_sent` | 无 |
 | `sms_reply` | `safety` string（`safe`/`needs_help`）；`damage` u8（0–3，`damageKnown` 为 false 时存 0）；`text` option(string)（自由文本，可能不是英文；safety/damage 是它的解析结果）；`language` option(string)（例如 `es`、`zh`）；`damageKnown` bool（false = 回复没描述房子）；`lifeSafety` bool（现在有危险：开一个 911 / 当地机构转介）；`needs` string（逗号分隔：`medical,power_for_device,shelter,water_food,transport,inspection,other`，空串表示没有）；`notHome` bool（回复的人不在房子里，人和房子分开追踪）；`channel` string（`sms` / `call`：坐席打电话联系上） |
 | `claim` | `peril` string（注释写的是 `wind`/`flood`，实际也有 `earthquake`）；`reportedDamage` u8 |
-| `field_report` | `adjusterId` string（演示时提交的是理赔员的显示名；回放的是 `adj-xx`；模拟员工是 `sim-adjuster`）；`safety` string（`safe`/`needs_help`/`unsure`）；`damage` u8；`note` string（≤ 500 字符；回放事件为空串） |
+| `field_report` | `adjusterId` string（演示时提交的是理赔员的显示名；回放的是 `adj-xx`；模拟员工是 `sim-adjuster`）；`safety` string（`safe`/`needs_help`/`unsure`）；`damage` u8（`damageKnown` 为 false 时存 0）；`damageKnown` bool（false = 只看了人、没评估房子，note 写原因；房子仍未核实，留在查勘队列）；`note` string（≤ 500 字符；回放事件为空串） |
 
-注意：读 `sms_reply.damage` 之前一定要先看 `damageKnown`。
+注意：读 `sms_reply.damage` 和 `field_report.damage` 之前一定要先看 `damageKnown`。
 
 ### 5.3 公开表：回放、融合输出、"不漏一人"
 
@@ -483,7 +483,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `helpReplies` | u32 | safety = needs_help 的回复**条数** | 同上 |
 | `claims` | u32 | 理赔**条数** | 同上 |
 | `fieldReports` | u32 | 现场报告**条数** | 同上 |
-| `verifiedHouseholds` | u32 | 有现场报告的住户数（去重） | 同上 |
+| `verifiedHouseholds` | u32 | 有评估过房子的现场报告的住户数（去重；只看人的报告不算） | 同上 |
 | `severity` | f64 | HexEstimate.severity，0–1 | 模型输出 |
 | `confidence` | f64 | 0–1 | 模型输出 |
 | `priority` | string | `P0`/`P1`/`P2`（第一次重算之前为 `''`） | 模型输出 |
@@ -531,6 +531,8 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 
 #### `inspection_candidate`（主动查勘候选：每格未核实住户里 inspectScore 前 3 名）
 
+只收保单覆盖这次灾种的房子（homeowners / condo / 没有 policyType，且飓风 = windCovered 或 floodPolicy，地震 = earthquakeEndorsement），或已经报了理赔的住户；租户只能通过理赔进来（`src/fusion/coverage.ts`）。不符合的住户照样有估计、跟进和统计，只是不进查勘队列（模拟员工的房屋查勘也因此跳过它们）。
+
 `householdId` string PK；`hex` string（btree）；`rank` u8（1 = 格内最好）；`inspectScore`、`pSevere`、`pNeedsHelp`、`uncertainty` f64；`cellPriority` string；`cellVerification` string；`accounted` bool；`escalation` string。按 inspectScore 排序就得到引擎 `recommendInspections()` 的顺序，不用订阅几万行 household_estimate。
 
 #### `household_followup`（每户跟进状态，"不漏一人"；演示状态）
@@ -544,6 +546,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `referralSimMinutes` | f64 | 转介时的模拟分钟（resolved 时改成解决的时刻） |
 | `reportedSimMinutes` | f64 | 报告失联时的模拟分钟（转介计时的起点） |
 | `closureReason` | string | `''` / `vacant` / `not_in_area` / `unreachable_after_visit` |
+| `closureNote` | string | 关闭说明（有 reason 时必填，≥ 3 字符；模拟员工写 "visited, nobody home; emergency contact unreachable after 3 tries"；重新打开时为 `''`） |
 | `closedBy` | string | 关闭人的名字（`owner`、成员名，或模拟员工 `sim-staff`；重新打开时为 `''`） |
 | `updatedAt` | timestamp | |
 
@@ -591,7 +594,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `smsSent`, `smsReplies` | u32 | 发过短信 / 用短信回复过的住户（去重） | 演示状态 |
 | `helpReplies` | u32 | needs_help 回复的条数 | 演示状态 |
 | `claims`, `fieldReports` | u32 | 理赔 / 现场报告条数 | 演示状态 |
-| `verifiedHouseholds` | u32 | 有现场报告的住户 | 演示状态 |
+| `verifiedHouseholds` | u32 | 有评估过房子的现场报告的住户 | 演示状态 |
 | `verifiedCoverage` | f64 | verifiedHouseholds / households | 演示状态 |
 | `accounted`, `unaccounted` | u32 | 已联系上 / 没联系上的住户（unaccounted 是要降到 0 的数） | 演示状态 |
 | `accountedRate` | f64 | accounted / (accounted + unaccounted) | 演示状态 |
@@ -646,7 +649,11 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 
 #### `assignment`（派单）
 
-`id` u64 PK autoInc；`householdId` string（btree）；`hex` string；`adjuster` identity（btree）；`assignedBy` identity；`status` string（`assigned`/`done`/`cancelled`）；`createdAt`、`updatedAt` timestamp。演示状态。被派的理赔员提交这一户的现场报告时，派单自动变成 `done`。
+`id` u64 PK autoInc；`householdId` string（btree）；`hex` string；`adjuster` identity（btree）；`assignedBy` identity；`status` string（`assigned`/`done`/`cancelled`）；`createdAt`、`updatedAt` timestamp。演示状态。被派的理赔员提交这一户的现场报告时，或这户被 `close_household` 关闭时，派单自动变成 `done`。
+
+#### `reply_inbox`（Claude 解析 worker 的输入；演示状态）
+
+`id` u64 PK autoInc；`householdId` string（btree）；`text` string（去空格后 1–500 字符）；`language` string（提示：household.primaryLanguage，没有就是 `''`）；`status` string（btree；`pending` / `parsed` / `failed`）；`receivedAt` timestamp；`parsedAt` option(timestamp)（pending 时为空）；`error` string（`''` = 正常解析；`review: ...` = 解析成功但需要人看；`parser: ...; fallback submitted` = Claude 失败，按"需要人回电"提交；`submit: ...` = reducer 报错）。回复页只写 `submit_raw_reply`，不需要 Anthropic key；`scripts/claude-worker.ts` 订阅 `status = 'pending'` 的行。随演示状态一起清空。
 
 #### 视图（`spacetimedb/src/index.ts`）
 
@@ -767,14 +774,16 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `remove_member` | `identityHex: string` | manager 检查 | 删除一个成员（他没完成的派单保留） |
 | `submit_sms_reply` | `householdId, safety, damage: u8, passcode` | policyholder_demo / manager 成员、owner，或持有 reply/staff 口令的任何人 | 按钮回复：在当前模拟分钟插入 sms_reply（channel `sms`，`lifeSafety = (safety == needs_help)`，needs 为空，notHome false）；这户从没发过短信的话补一条 sms_sent；重算格子 |
 | `submit_sms_text_reply` | `householdId, safety, damage: u8, text, language, passcode` | 同上 | 同上，另外保存原始文本（≤ 1000 字符）和语言（≤ 16 字符） |
-| `submit_parsed_reply` | `householdId, safety, damage: u8, lifeSafety: bool, needs: string, notHome: bool, text, language, passcode` | 同上 | Claude（或其他解析器）的完整结构化结果；damage 255 表示回复没描述房子；needs 逗号分隔 |
-| `submit_field_report` | `householdId, safety, damage: u8, note` | **只有 adjuster 成员**（owner 没以 adjuster 加入也不行） | 插入 field_report（safety 为 `safe`/`needs_help`/`unsure`，note ≤ 500）；这户变为已核实，邻居做残差更新；非 holdout 的报告进入可信度批次；完成自己对这户的派单 |
+| `submit_parsed_reply` | `householdId, safety, damage: u8, lifeSafety: bool, needs: string, notHome: bool, text, language, passcode` | 同上 | Claude（或其他解析器）的完整结构化结果；damage 255 表示回复没描述房子；needs 逗号分隔。Claude worker（`scripts/claude-worker.ts`）用 manager 身份调用，见 docs/CLAUDE_PARSER.md |
+| `submit_field_report` | `householdId, safety, damage: u8, note, memberMissing: bool` | **只有 adjuster 成员**（owner 没以 adjuster 加入也不行） | 插入 field_report（safety 为 `safe`/`needs_help`/`unsure`，note ≤ 500）；damage 0–3 = 房子评估结果：这户变为已核实，邻居做残差更新，非 holdout 的报告进入可信度批次；**damage 255 = 没评估房子**（不安全、进不去、太黑）：note 必填（≥ 3 字符，否则报错），safety 照样记录住户状态，房子仍未核实、留在查勘队列，不进可信度批次；memberMissing true = 现场发现有人失联（同 report_member_missing，保留已开的转介）；完成自己对这户的派单 |
 | `assign` | `householdId, adjusterIdentityHex` | manager 检查 | 把一户派给一个 adjuster 成员，并取消其他人对这户没完成的派单 |
 | `assign_hex` | `hex, adjusterIdentityHex, count: u32` | manager 检查 | 主动查勘：把这一格里未核实、未派单、inspectScore 最高的 count 户（1–50）派给他 |
 | `update_assignment` | `id: u64, status: string` | 被派的 adjuster 本人，或 manager 检查 | 把状态改成 `assigned`/`done`/`cancelled` |
 | `report_member_missing` | `householdId, passcode` | 同 submit_sms_reply | "家里有人失联"：设 memberMissing，记录时刻，开始转介计时（已经开着的转介保留） |
 | `update_referral` | `householdId, status: string` | manager 检查 | 转介流程 `referred` → `acknowledged` → `resolved` |
-| `close_household` | `householdId, reason: string` | manager 或 adjuster 成员，或 owner | 以记录在案的原因关闭（`vacant`/`not_in_area`/`unreachable_after_visit`，最后一个要求这户有过派单）；`''` 表示重新打开 |
+| `close_household` | `householdId, reason: string, note: string` | manager 或 adjuster 成员，或 owner | 以记录在案的原因关闭（`vacant`/`not_in_area`/`unreachable_after_visit`）；有 reason 时 note 必填（≥ 3 字符），存进 `closureNote`；`unreachable_after_visit` 要求这户已有一条 safety `unsure` 的 field_report（上门没见到人）；关闭时把这户 `assigned` 的派单改成 `done`；`''` 表示重新打开（清空 note，不动派单） |
+| `submit_raw_reply` | `householdId, text, passcode` | 同 submit_sms_reply | 把原始自由文本（去空格后 1–500 字符）放进 `reply_inbox`（status `pending`，language 取 household.primaryLanguage），由 Claude 解析 worker 处理；每户最多 5 条、全库最多 500 条待处理 |
+| `mark_reply_parsed` | `id: u64, status: string, error: string` | manager 检查 | worker 用：`parsed` / `failed`（写 parsedAt），`pending` = 重新排队；error 截到 500 字符 |
 
 补充说明：
 - 代码里三个回复 reducer 都把 damage 255 当作"未知"（文档只对 submit_parsed_reply 写明了）。
@@ -817,7 +826,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 | `verification` | `verified` / `needs_verification`（重算之前为 `''`） | hex_stats、inspection_candidate.cellVerification |
 | `silenceCause` | `away` / `trapped` / `outage` / `unknown` / `''`（不沉默） | hex_stats；规则见 8.2 |
 | `referralStatus` | `''` / `referred` / `acknowledged` / `resolved` | household_followup |
-| `closureReason` | `''` / `vacant` / `not_in_area` / `unreachable_after_visit` | household_followup；最后一个要求这户有派单 |
+| `closureReason` | `''` / `vacant` / `not_in_area` / `unreachable_after_visit` | household_followup；有 reason 必须有 closureNote；最后一个要求这户有 safety `unsure` 的现场报告 |
 | `channel` | `sms` / `call` | sms_reply、staged_event；`call` = 坐席电话（目前只有模拟员工会产生） |
 | `source` | `replay` / `live` / `staff_sim` | 四张事件表 |
 | 角色 `role` | `manager` / `adjuster` / `policyholder_demo` | member；owner 是一个身份，不是角色 |
@@ -889,7 +898,7 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 
 ### A.1 `IngestEvent` 和 `Source`（`spacetimedb/src/ingest.ts`）
 
-`IngestEvent` 和 `SimEvent` 一样按 `kind` 区分。区别是：`sms_reply` 的 `lifeSafety: boolean`、`needs: string[]`、`notHome: boolean`、`channel: 'sms' | 'call'` 都是必填；`field_report` 多一个 `note: string`。`Source = 'replay' | 'live' | 'staff_sim'`。
+`IngestEvent` 和 `SimEvent` 一样按 `kind` 区分。区别是：`sms_reply` 的 `lifeSafety: boolean`、`needs: string[]`、`notHome: boolean`、`channel: 'sms' | 'call'` 都是必填；`field_report` 多一个 `note: string`（`damage: Damage | null`，null = 没评估房子）。`Source = 'replay' | 'live' | 'staff_sim'`。
 
 ### A.2 Fusion 适配层（`spacetimedb/src/fusion/types.ts`）
 

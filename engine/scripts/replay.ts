@@ -210,7 +210,7 @@ function replayWorld(target: Target): void {
       snapshot = lu.snapshot;
       households = lu.households;
       hexes = lu.hexes;
-      learning = recordFieldReport(learning, lu.observation, cfg);
+      if (lu.observation) learning = recordFieldReport(learning, lu.observation, cfg);
       const newHex = hexes.find((x) => x.hex === p.hex)!;
       log.push([
         String(++made),

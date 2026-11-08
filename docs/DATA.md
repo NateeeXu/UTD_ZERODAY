@@ -93,6 +93,9 @@ The household is two things that are tracked separately:
 | Reply from someone not at home | people accounted | damage unknown → stays in the inspection queue |
 | Visit with nobody home | not accounted → `locate` (emergency contact) | inspected |
 | Collapsed house, no reply, high hazard | silent high-hazard → P0 → life-safety referral to 911 / local agency (search and rescue is theirs, not State Farm's) | inspected later |
+| Visit that could not assess the house (damage 255: unsafe to enter, no access, dark; note required) | accounted if the occupants were seen | not inspected → stays unverified and in the inspection queue |
+
+The **property inspection queue is coverage-aware**: a house is queued for an adjuster only if its policy covers this event's peril (homeowners / condo with wind or flood cover for a hurricane, an earthquake endorsement for an earthquake) or it filed a claim; renters only via a claim. Uncovered households still count everywhere else (estimates, accounting, map, severe-count intervals).
 
 ## 4. Help taxonomy
 
