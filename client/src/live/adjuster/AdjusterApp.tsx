@@ -277,7 +277,8 @@ function Field({ meName }: { meName: string }) {
       return {
         a, id, hex: a.hex, open: a.status === 'assigned', number: 0, label: homeLabel(id),
         hh: householdBy.get(id), est, cell, hexRow: hexBy.get(a.hex), priority: prio(cell?.priority ?? 'P2'), type, job: D.jobFor(est, type),
-        district: labeler.district(a.hex), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
+        // Same cell label as the manager's dashboard ("District 90 · 7"), so a task maps to the area panel.
+        district: labeler.cell(a.hex), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
         replies, reports, sent, followup, silent: D.silentHours(est, sim, replies, sent),
         banner: D.taskBanner({ a, replies, reports, followup, me: myId, type }), unsent: unsentIds.has(id),
         notice: imessageBy.get(id),
@@ -415,7 +416,7 @@ function Field({ meName }: { meName: string }) {
         <section className="adj-float-card adj-glass" aria-label="Distance">
           <div>
             <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'No start set'}</div>
-            <span className="adj-sub">{t.miles != null ? `to the center of ${t.district} · ${t.label}` : 'Set your start on the Tasks map'}</span>
+            <span className="adj-sub">{t.miles != null ? `to the center of ${t.district} (${t.label})` : 'Set your start on the Tasks map'}</span>
           </div>
           <span className="adj-caption">Demo data: area, not an address</span>
           <button type="button" className="adj-btn dark block" onClick={() => setRoute({ name: 'home', id: t.id })}>Open home</button>

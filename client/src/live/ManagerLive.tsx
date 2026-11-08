@@ -152,6 +152,13 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     for (const a of assignments) if (a.status === 'assigned') m.set(a.hex, (m.get(a.hex) ?? 0) + 1);
     return m;
   }, [assignments]);
+  // Every assigned or completed inspection with its adjuster's name, for the area panel's "Assigned" list.
+  const assignedHomes = useMemo<AssignedHome[]>(() => {
+    const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
+    return assignments
+      .filter((a) => a.status !== 'cancelled')
+      .map((a) => ({ householdId: a.householdId, hex: a.hex, status: a.status, adjuster: names.get(a.adjuster.toHexString()) ?? 'adjuster', at: a.updatedAt.toDate().getTime() }));
+  }, [assignments, members]);
   // Household → name of the adjuster it is assigned to (open assignments only).
   const sentTo = useMemo(() => {
     const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
@@ -417,6 +424,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               households={householdBy}
               candidates={candidates}
               openAssignments={openAssignments}
+              assignedHomes={assignedHomes}
+              onOpenHousehold={openHousehold}
               onAssign={doAssign}
               onClose={() => setSelected(null)}
               canAssign={isManager}
@@ -494,12 +503,17 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
+type AssignedHome = { householdId: string; hex: string; status: string; adjuster: string; at: number };
+const ASSIGNED_SHOWN = 8;
+
+export function CellDetail({ unit, label, households, candidates, openAssignments, assignedHomes = [], onOpenHousehold, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
   candidates: readonly { householdId: string; hex: string; rank: number; inspectScore: number; pSevere: number; pNeedsHelp: number }[];
   openAssignments: Map<string, number>;
+  assignedHomes?: readonly AssignedHome[];
+  onOpenHousehold?: (householdId: string, hex: string) => void;
   onAssign: (hex: string) => void;
   onClose: () => void;
   canAssign: boolean;
@@ -515,6 +529,10 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   const target = [...unit.kids].sort((a, b) => RANK[prio(a.priority)] - RANK[prio(b.priority)] || b.severity - a.severity)
     .find((k) => k.verification === 'needs_verification') ?? unit.kids[0];
   const assigned = unit.kids.reduce((s, k) => s + (openAssignments.get(k.hex) ?? 0), 0);
+  // Homes sent to adjusters in this area: open first, then done; newest first within each.
+  const homes = assignedHomes.filter((a) => kidHexes.has(a.hex))
+    .sort((a, b) => Number(a.status !== 'assigned') - Number(b.status !== 'assigned') || b.at - a.at);
+  const doneCount = homes.filter((a) => a.status !== 'assigned').length;
   return (
     <aside className="card detail">
       <div className="detail-head">
@@ -545,6 +563,23 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
           <p className="small silence-line">Silent area ({pct(unit.si)} of expected replies missing) · {CAUSE[unit.sc] ?? unit.sc}</p>
         )}
         {!readOnly && <>
+        {homes.length > 0 && <>
+          <h3 className="eyebrow divider">Assigned · {homes.length - doneCount} open{doneCount ? ` · ${doneCount} done` : ''}</h3>
+          <ul className="hh-list">
+            {homes.slice(0, ASSIGNED_SHOWN).map((a) => (
+              <li key={`${a.householdId}-${a.at}`}>
+                <span className="hh-main">
+                  {onOpenHousehold
+                    ? <button type="button" className="link" onClick={() => onOpenHousehold(a.householdId, a.hex)}><b>{homeLabel(a.householdId, fictional)}</b></button>
+                    : <b>{homeLabel(a.householdId, fictional)}</b>}
+                  <span className="muted small">{a.adjuster}</span>
+                </span>
+                <span className="small num">{a.status === 'assigned' ? 'Assigned' : 'Done ✓'}</span>
+              </li>
+            ))}
+            {homes.length > ASSIGNED_SHOWN && <li className="muted small">+{homes.length - ASSIGNED_SHOWN} more</li>}
+          </ul>
+        </>}
         <h3 className="eyebrow divider">Inspect first</h3>
         <ul className="hh-list">
           {top.map((c) => (
