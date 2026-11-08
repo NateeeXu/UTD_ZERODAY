@@ -6,7 +6,7 @@ import { SenderError, t } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { replayTick, type Ctx } from '../schema';
 import { getReplay, microsBetween, requireManager } from '../state';
-import { clearDemoState, flushBatch, newBatch, onEvent, rebuildAll, refreshHoldoutMetrics, type IngestEvent } from '../ingest';
+import { clearDemoState, flushBatch, newBatch, onEvent, parseNeeds, rebuildAll, refreshHoldoutMetrics, type IngestEvent } from '../ingest';
 import { recomputeCells } from '../fusion';
 import { defaultCapacity, getStaff, runStaffUpTo, STAFF_STEP_MIN } from '../staff';
 import type { Damage, Peril, Safety } from '../fusion/contract';
@@ -27,9 +27,13 @@ function toIngest(e: StagedRow): IngestEvent {
         t: e.t,
         householdId: e.householdId,
         safety: e.safety as 'safe' | 'needs_help',
-        damage: e.damage as Damage,
+        damage: e.damageKnown ? (e.damage as Damage) : null,
         text: e.text,
         language: e.language,
+        lifeSafety: e.lifeSafety,
+        needs: parseNeeds(e.needs),
+        notHome: e.notHome,
+        channel: e.channel === 'call' ? 'call' : 'sms',
       };
     case 'claim':
       return {

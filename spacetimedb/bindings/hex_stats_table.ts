@@ -44,6 +44,10 @@ export default __t.row({
   membersMissing: __t.u32().name("members_missing"),
   closedNoContact: __t.u32().name("closed_no_contact"),
   recheckDue: __t.u32().name("recheck_due"),
+  callContacts: __t.u32().name("call_contacts"),
+  assistanceRequests: __t.u32().name("assistance_requests"),
+  inspectionRequests: __t.u32().name("inspection_requests"),
+  locateDue: __t.u32().name("locate_due"),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),
 });

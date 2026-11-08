@@ -166,30 +166,52 @@ function emptySignals(h: HouseholdRow): HouseholdSignals {
 
 type EventRows = {
   sent: Iterable<{ householdId: string; t: number }>;
-  replies: Iterable<{ householdId: string; t: number; safety: string; damage: number }>;
-  claims: Iterable<{ householdId: string; t: number; peril: string; reportedDamage: number }>;
-  fields: Iterable<{ householdId: string; t: number; safety: string; damage: number; adjusterId: string }>;
+  replies: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; damageKnown: boolean; lifeSafety: boolean; needs: string; notHome: boolean; channel: string }>;
+  claims: Iterable<{ id: bigint; householdId: string; t: number; peril: string; reportedDamage: number }>;
+  fields: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; adjusterId: string }>;
 };
+
+/**
+ * Latest event per household: later t wins; same minute -> the later insert (autoInc id) wins, which is
+ * also the bundle order for replayed events. Index scans do not return rows in insert order.
+ */
+function isLater(e: { t: number; id: bigint }, prev: { t: number } | null, prevId: bigint | undefined): boolean {
+  return !prev || e.t > prev.t || (e.t === prev.t && (prevId === undefined || e.id > prevId));
+}
 
 function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
   for (const e of rows.sent) {
     const s = byId.get(e.householdId);
     if (s && (s.smsSentT === null || e.t < s.smsSentT)) s.smsSentT = e.t;
   }
+  const replyId = new Map<string, bigint>();
   for (const e of rows.replies) {
     const s = byId.get(e.householdId);
-    if (s && (!s.reply || e.t >= s.reply.t))
-      s.reply = { t: e.t, safety: e.safety as 'safe' | 'needs_help', damage: e.damage as Damage };
+    if (!s || !isLater(e, s.reply, replyId.get(e.householdId))) continue;
+    replyId.set(e.householdId, e.id);
+    s.reply = {
+      t: e.t,
+      safety: e.safety as 'safe' | 'needs_help',
+      damage: e.damageKnown ? (e.damage as Damage) : null,
+      lifeSafety: e.lifeSafety,
+      needs: e.needs ? e.needs.split(',').filter(Boolean) : [],
+      notHome: e.notHome,
+      channel: e.channel === 'call' ? 'call' : 'sms',
+    };
   }
+  const claimId = new Map<string, bigint>();
   for (const e of rows.claims) {
     const s = byId.get(e.householdId);
-    if (s && (!s.claim || e.t >= s.claim.t))
-      s.claim = { t: e.t, peril: e.peril as Peril, reportedDamage: e.reportedDamage as Damage };
+    if (!s || !isLater(e, s.claim, claimId.get(e.householdId))) continue;
+    claimId.set(e.householdId, e.id);
+    s.claim = { t: e.t, peril: e.peril as Peril, reportedDamage: e.reportedDamage as Damage };
   }
+  const fieldId = new Map<string, bigint>();
   for (const e of rows.fields) {
     const s = byId.get(e.householdId);
-    if (s && (!s.field || e.t >= s.field.t))
-      s.field = { t: e.t, safety: e.safety as Safety, damage: e.damage as Damage, adjusterId: e.adjusterId };
+    if (!s || !isLater(e, s.field, fieldId.get(e.householdId))) continue;
+    fieldId.set(e.householdId, e.id);
+    s.field = { t: e.t, safety: e.safety as Safety, damage: e.damage as Damage, adjusterId: e.adjusterId };
   }
 }
 
@@ -312,6 +334,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     const prevById = new Map<string, ReturnType<typeof ctx.db.householdEstimate.householdId.find>>();
     for (const r of ctx.db.householdEstimate.hex.filter(hexId)) prevById.set(r.householdId, r);
     let accounted = 0, vulnerable = 0, unaccountedVulnerable = 0, recheckDue = 0;
+    let assistanceRequests = 0, inspectionRequests = 0, locateDue = 0;
     let highRiskUnaccounted = 0, longestWaitMin = 0, openReferrals = 0, overdueReferrals = 0, membersMissing = 0, closedNoContact = 0;
     const acct = new Map<string, { accounted: boolean; escalation: string }>();
     const queue: QueueEntry[] = [];
@@ -332,6 +355,9 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
         if (a.waitMin > longestWaitMin) longestWaitMin = a.waitMin;
       }
       if (a.recheck) recheckDue++;
+      if (a.assistance) assistanceRequests++;
+      if (a.inspection) inspectionRequests++;
+      if (a.locate) locateDue++;
       if (a.openReferral) openReferrals++;
       if (a.overdue) overdueReferrals++;
       if (f?.memberMissing && f.referralStatus !== 'resolved') membersMissing++;
@@ -400,7 +426,10 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       stats.overdueReferrals !== overdueReferrals ||
       stats.membersMissing !== membersMissing ||
       stats.closedNoContact !== closedNoContact ||
-      stats.recheckDue !== recheckDue;
+      stats.recheckDue !== recheckDue ||
+      stats.assistanceRequests !== assistanceRequests ||
+      stats.inspectionRequests !== inspectionRequests ||
+      stats.locateDue !== locateDue;
     if (accountingChanged) accountingDirty = true;
     const material =
       priorityChanged ||
@@ -437,6 +466,9 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       membersMissing,
       closedNoContact,
       recheckDue,
+      assistanceRequests,
+      inspectionRequests,
+      locateDue,
       updatedAt: ctx.timestamp,
       updatedSimMinutes: prep.nowMin,
     });
@@ -445,12 +477,14 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     // Totals over all cells (a few hundred rows), so full rebuilds and partial recomputes agree.
     let acc = 0, un = 0, vul = 0, unVul = 0;
     m.highRiskUnaccounted = 0; m.longestWaitMin = 0; m.openReferrals = 0; m.overdueReferrals = 0; m.membersMissing = 0; m.closedNoContact = 0; m.recheckDue = 0;
+    m.assistanceRequests = 0; m.inspectionRequests = 0; m.locateDue = 0;
     for (const s of ctx.db.hexStats.iter()) {
       acc += s.accounted; un += s.unaccounted; vul += s.vulnerable; unVul += s.unaccountedVulnerable;
       m.highRiskUnaccounted += s.highRiskUnaccounted;
       if (s.longestWaitMin > m.longestWaitMin) m.longestWaitMin = s.longestWaitMin;
       m.openReferrals += s.openReferrals; m.overdueReferrals += s.overdueReferrals;
       m.membersMissing += s.membersMissing; m.closedNoContact += s.closedNoContact; m.recheckDue += s.recheckDue;
+      m.assistanceRequests += s.assistanceRequests; m.inspectionRequests += s.inspectionRequests; m.locateDue += s.locateDue;
     }
     m.accounted = acc;
     m.unaccounted = un;
@@ -469,8 +503,11 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
 /**
  * "No one overlooked": accounting and escalation for every household.
  *
- * accounted = we have heard from the household (reply, claim, field report, open referral) or closed it
- * with a documented reason. It never goes back to false on its own, so the headline count only rises.
+ * People and property are tracked separately. accounted is about PEOPLE: we have heard from them
+ * (SMS reply, agent call, claim, missing-member report, open referral), an adjuster saw them on site, or
+ * the household was closed with a documented reason. It never goes back to false on its own.
+ * The property (damage) is the engine's job: a reply from someone who is not at the house says nothing
+ * about the house (damage unknown), and an adjuster can inspect a house with nobody home.
  *
  * Not heard from yet: a tiered ladder (sim minutes since the outreach text, or since landfall without one),
  * faster for high-risk households (vulnerable, pNeedsHelp >= 0.3, or a P0 cell). The step never moves
@@ -478,25 +515,29 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
  *   high-risk:  sms_sent -> sms_resend (30 m) -> agent_call (90 m)  -> field_visit (4 h)
  *   standard:   sms_sent -> sms_resend (2 h)  -> agent_call (6 h)   -> field_visit (12 h; 48 h for low-risk P2)
  *   no phone on file: agent_call (outreach through the agent / emergency contact) -> field_visit
- * Heard from but vulnerable and the last contact is older than RECHECK_MIN: 'recheck' (still accounted,
- * counted in recheckDue and put back in the outreach queue).
- * Needs help (reply or a reported missing member), until the referral is resolved:
+ *   visited, property inspected, occupants not seen (field safety 'unsure'): locate (emergency contact,
+ *   shelter lists) until they are heard from or the household is closed as unreachable_after_visit.
+ * Life safety (a reply with lifeSafety, an adjuster finding someone who needs help, or a reported missing
+ * member), until the referral is resolved:
  *   emergency_referral -> (manager refers) referral_pending -> referral_acknowledged
  *   'referral_overdue' when not referred within REFER_MIN of the report, or not acknowledged within
  *   REFERRAL_ACK_MIN of the referral (household_followup.referralStatus says which).
- * 'verified' once an adjuster filed a field report; 'closed' with a documented reason.
+ * Heard from, no danger: 'assistance' (asked for help that is not life safety: temporary housing, power,
+ * medication, transport; State Farm customer care), 'inspection_request' (asked for someone to look at the
+ * house), 'recheck' (vulnerable, last contact older than RECHECK_MIN; still accounted, back in the queue),
+ * otherwise 'accounted'. 'verified' once an adjuster saw the occupants; 'closed' with a documented reason.
  */
 export const ESCALATION = [
-  'sms_sent', 'sms_resend', 'agent_call', 'field_visit', 'recheck',
+  'sms_sent', 'sms_resend', 'agent_call', 'field_visit', 'locate', 'recheck',
   'emergency_referral', 'referral_pending', 'referral_overdue', 'referral_acknowledged',
-  'accounted', 'verified', 'closed',
+  'assistance', 'inspection_request', 'accounted', 'verified', 'closed',
 ] as const;
-const LADDER = ['sms_sent', 'sms_resend', 'agent_call', 'field_visit'] as const;
+const LADDER = ['sms_sent', 'sms_resend', 'agent_call', 'field_visit', 'locate'] as const;
 /** [sms_resend, agent_call, field_visit] thresholds in sim minutes. */
 export const LADDER_MIN = { highRisk: [30, 90, 240], standard: [120, 360, 720] } as const;
 /** Low-risk households in a P2 cell get a field visit after 48 h instead of 12 h, but they do get one. */
 export const LOW_RISK_VISIT_MIN = 2880;
-/** A needs-help report not referred within this many sim minutes is overdue. */
+/** A life-safety report not referred within this many sim minutes is overdue. */
 export const REFER_MIN = 30;
 /** A referral not acknowledged within this many sim minutes is overdue. */
 export const REFERRAL_ACK_MIN = 60;
@@ -509,7 +550,17 @@ export const QUEUE_PER_CELL = 5;
 export const QUEUE_AGING_MIN = 360;
 
 type FollowupRow = { memberMissing: boolean; reportedSimMinutes: number; referralStatus: string; referralSimMinutes: number; closureReason: string };
-type Accounting = { accounted: boolean; escalation: string; waitMin: number; openReferral: boolean; overdue: boolean; recheck: boolean };
+type Accounting = {
+  accounted: boolean;
+  escalation: string;
+  waitMin: number;
+  openReferral: boolean;
+  overdue: boolean;
+  recheck: boolean;
+  assistance: boolean; // latest reply asks for help that is not life safety
+  inspection: boolean; // latest reply asks for an inspection
+  locate: boolean; // property inspected, occupants not seen, not heard from
+};
 
 export function accountFor(
   s: HouseholdSignals | undefined,
@@ -521,16 +572,24 @@ export function accountFor(
   vulnerable: boolean,
   prevEscalation: string
 ): Accounting {
-  const base = { accounted: true, waitMin: 0, openReferral: false, overdue: false, recheck: false };
+  const base = { accounted: true, waitMin: 0, openReferral: false, overdue: false, recheck: false, assistance: false, inspection: false, locate: false };
   if (f?.closureReason) return { ...base, escalation: 'closed' };
-  // Someone needs help (reply or a missing household member): open until the referral is resolved.
-  // Needs-help statements (SMS / agent call reply, or an adjuster on site) newer than the last "safe"
-  // statement and the last resolved referral.
+  // Life-safety statements (a reply with lifeSafety, or an adjuster finding someone who needs help) newer
+  // than the last "safe" statement and the last resolved referral; plus missing members and referrals in flight.
   const resolved = f?.referralStatus === 'resolved';
   const resolvedAt = resolved ? f!.referralSimMinutes : -Infinity;
-  const stmts = [s?.field, s?.reply].filter((x): x is NonNullable<typeof x> => !!x);
-  const lastSafeT = Math.max(-Infinity, ...stmts.filter((x) => x.safety === 'safe').map((x) => x.t));
-  const helpTs = stmts.filter((x) => x.safety === 'needs_help' && x.t > resolvedAt && x.t > lastSafeT).map((x) => x.t);
+  const danger: number[] = [];
+  const safeTs: number[] = [];
+  if (s?.reply) {
+    if (s.reply.lifeSafety) danger.push(s.reply.t);
+    else if (s.reply.safety === 'safe') safeTs.push(s.reply.t);
+  }
+  if (s?.field) {
+    if (s.field.safety === 'needs_help') danger.push(s.field.t);
+    else if (s.field.safety === 'safe') safeTs.push(s.field.t);
+  }
+  const lastSafeT = Math.max(-Infinity, ...safeTs);
+  const helpTs = danger.filter((t) => t > resolvedAt && t > lastSafeT);
   const helpOpen = helpTs.length > 0;
   const missingOpen = !!f?.memberMissing && !resolved;
   const inFlight = f?.referralStatus === 'referred' || f?.referralStatus === 'acknowledged';
@@ -551,9 +610,14 @@ export function accountFor(
     return { ...base, escalation, waitMin: Math.max(0, wait), openReferral: true, overdue };
   }
   if (!s) return { ...base, accounted: false, escalation: 'sms_sent' };
-  if (s.field) return { ...base, escalation: 'verified' };
+  // An adjuster who saw the occupants verifies the people; 'unsure' = property only, nobody seen.
+  if (s.field && s.field.safety !== 'unsure') return { ...base, escalation: 'verified' };
   // A missing-member report is contact too, so the household stays accounted after the referral resolves.
   if (s.reply || s.claim || f?.memberMissing) {
+    const assistance = !!s.reply && s.reply.safety === 'needs_help' && !s.reply.lifeSafety;
+    const inspection = !!s.reply && s.reply.needs.includes('inspection');
+    if (assistance) return { ...base, escalation: 'assistance', assistance, inspection };
+    if (inspection) return { ...base, escalation: 'inspection_request', inspection };
     const lastT = Math.max(s.reply?.t ?? -Infinity, s.claim?.t ?? -Infinity, f?.memberMissing ? f.reportedSimMinutes : -Infinity);
     const stale = nowMin - lastT - RECHECK_MIN;
     if (vulnerable && stale > 0) return { ...base, escalation: 'recheck', waitMin: stale, recheck: true };
@@ -564,9 +628,10 @@ export function accountFor(
   const since = Math.max(0, nowMin - (s.smsSentT ?? 0));
   const [resend, call, visit] = highRisk ? LADDER_MIN.highRisk : LADDER_MIN.standard;
   const visitAt = !highRisk && cellPriority === 'P2' && pNeedsHelp < 0.2 ? LOW_RISK_VISIT_MIN : visit;
-  let step = since >= visitAt ? 3 : since >= call ? 2 : !phone ? 2 : since >= resend ? 1 : 0;
+  const locate = s.field?.safety === 'unsure';
+  let step = locate ? 4 : since >= visitAt ? 3 : since >= call ? 2 : !phone ? 2 : since >= resend ? 1 : 0;
   step = Math.max(step, LADDER.indexOf(prevEscalation as (typeof LADDER)[number]));
-  return { ...base, accounted: false, escalation: LADDER[step], waitMin: since };
+  return { ...base, accounted: false, escalation: LADDER[step], waitMin: since, locate: step === 4 };
 }
 
 type QueueEntry = { householdId: string; weight: number; waitSinceMin: number; escalation: string; vulnerable: boolean };

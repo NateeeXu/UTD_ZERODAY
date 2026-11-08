@@ -93,12 +93,28 @@ const householdRow = (h: Household) => ({
 
 function stagedRow(e: SimEvent, seq: number) {
   const base = { seq, t: Math.round(e.t), kind: e.kind, householdId: e.householdId };
-  const blank = { safety: '', damage: 0, peril: '', reportedDamage: 0, adjusterId: '', text: '', language: '' };
+  const blank = {
+    safety: '', damage: 0, peril: '', reportedDamage: 0, adjusterId: '', text: '', language: '',
+    damageKnown: true, lifeSafety: false, needs: '', notHome: false, channel: '',
+  };
   switch (e.kind) {
     case 'sms_sent':
       return { ...base, ...blank };
     case 'sms_reply':
-      return { ...base, ...blank, safety: e.safety, damage: e.damage, text: e.text ?? '', language: e.language ?? '' };
+      // v3 fields are optional in the bundle: older bundles seed as before (life safety = "needs help").
+      return {
+        ...base,
+        ...blank,
+        safety: e.safety,
+        damage: e.damage ?? 0,
+        damageKnown: e.damage !== null && e.damage !== undefined,
+        text: e.text ?? '',
+        language: e.language ?? '',
+        lifeSafety: e.lifeSafety ?? e.safety === 'needs_help',
+        needs: (e.needs ?? []).join(','),
+        notHome: e.notHome ?? false,
+        channel: e.channel ?? 'sms',
+      };
     case 'claim':
       return { ...base, ...blank, peril: e.peril, reportedDamage: e.reportedDamage };
     case 'field_report':
@@ -189,7 +205,16 @@ async function main() {
   if (facilities.length > 0)
     await batched('seed_facilities', facilities.map(facilityRow), 500, b => r.seedFacilities({ facilities: b }));
   await batched('seed_households', world.households.map(householdRow), BATCH, b => r.seedHouseholds({ households: b }));
-  await batched('seed_truth', truth, BATCH * 2, b => r.seedTruth({ rows: b }));
+  const truthRows = truth.map(t => ({
+    householdId: t.householdId,
+    damage: t.damage,
+    safety: t.safety,
+    peril: t.peril,
+    needType: t.needType ?? (t.safety === 'needs_help' ? 'life_safety' : 'none'),
+    location: t.location ?? 'home',
+    returnMin: t.returnMin ?? -1,
+  }));
+  await batched('seed_truth', truthRows, BATCH * 2, b => r.seedTruth({ rows: b }));
 
   // events are sorted by t in the bundle; keep that order as seq (re-sort defensively, stable).
   const sorted = events.map((e, i) => ({ e, i })).sort((a, b) => a.e.t - b.e.t || a.i - b.i);

@@ -97,11 +97,27 @@ export interface TruthRow {
   damage: Damage;
   safety: 'safe' | 'needs_help';
   peril: Peril | 'none';
+  // v3：需要帮助的类型。life_safety = 现在就有危险（转 911 / 当地机构）；assistance = 需要协助（住所、供电、药品、交通），由 State Farm 客服跟进
+  needType?: NeedType;
+  // v3：人在哪里（灾后响应期间）。home = 在家；away = 灾害发生时不在家（上班 / 上学），看不到房子；displaced = 因房屋受损已离开（知道损失）
+  location?: Whereabouts;
+  // v3：away 的人回到家的时间（模拟分钟）。回家后房子损失 ≥ 2 的人会再离开（displaced，知道损失），否则在家
+  returnMin?: number;
 }
+
+export type NeedType = 'life_safety' | 'assistance' | 'none';
+export type Whereabouts = 'home' | 'away' | 'displaced';
+export type Need = 'medical' | 'power_for_device' | 'shelter' | 'water_food' | 'transport' | 'inspection' | 'other';
+// Need 的取值：medical, power_for_device, shelter, water_food, transport, inspection, other（types-only 文件，不放常量）
 
 export type SimEvent =
   | { kind: 'sms_sent'; t: Minutes; householdId: string }
-  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help'; damage: Damage;
+  | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help';
+      damage: Damage | null; // v3：null = 回复没有描述房子（例如人不在家），损失未知
+      lifeSafety?: boolean;  // v3：有生命危险的信号（被困、受伤、煤气、医疗设备断电、泛泛的"救命"）
+      needs?: Need[];        // v3：具体需求（不是生命危险）
+      notHome?: boolean;     // v3：回复的人不在房子里（人和房子分开：人安全 ≠ 房子已查勘）
+      channel?: 'sms' | 'call'; // v3：call = 坐席电话联系上
       text?: string;       // v2：自由文本回复（可能是多语言），由 Claude 解析成 safety/damage/needs
       language?: string }  // v2：回复所用语言
   | { kind: 'claim'; t: Minutes; householdId: string; peril: Peril; reportedDamage: Damage }

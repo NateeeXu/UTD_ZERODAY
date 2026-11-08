@@ -96,7 +96,7 @@ export function sourceOpinions(householdId: string, snap: Snapshot): SourceOpini
   const agg = snap.cells.get(h.hex)!;
   return {
     hazard: agg.hazard,
-    sms: s.reply ? s.reply.damage / 3 : null,
+    sms: s.reply && s.reply.damage !== null ? s.reply.damage / 3 : null,
     claims: s.claim ? s.claim.reportedDamage / 3 : null,
   };
 }

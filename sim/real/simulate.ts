@@ -14,6 +14,7 @@ import type { HurricaneScenario, Scenario } from './scenarios.ts';
 import { parseShakeMapGrid } from './geo.ts';
 import { RAW_DIR } from './sources.ts';
 import { replyLanguage, replyText } from './textgen.ts';
+import { replyLabels, truthLocation, truthNeedType, truthReturnMin, locationAt } from '../src/needs.ts';
 
 export const HORIZON_MIN = 4320;
 export const HOLDOUT_SHARE = 0.15;
@@ -132,6 +133,9 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
   const claimRng = new Rng(subSeed(sc.seed, 'claims'));
   const fieldRng = new Rng(subSeed(sc.seed, 'field'));
   const quirkRng = new Rng(subSeed(sc.seed, 'quirks'));
+  // v3 labels use their own streams so the truth / sms / text streams above do not shift.
+  const needsRng = new Rng(subSeed(sc.seed, 'needs'));
+  const labelRng = new Rng(subSeed(sc.seed, 'labels'));
   const notes: string[] = [];
   const cells = base.cells;
   const hexSet = new Set(cells.map((c) => c.hex));
@@ -330,7 +334,10 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       + (hf > 4 ? 0.6 : 0)
       + (awayNow ? -1.8 : 0);
     const safety = truthRng.chance(sigmoid(z)) ? 'needs_help' : 'safe';
-    const row: TruthRow = { householdId: hh.id, damage, safety, peril: damage === 0 ? 'none' : peril };
+    const needType = truthNeedType(needsRng, hh, { safety, damage, floodFt: hf, outagePct: hc.towerOutagePct, hazard: sc.kind });
+    const location = truthLocation(needsRng, awayNow, damage, needType);
+    const returnMin = truthReturnMin(needsRng, location);
+    const row: TruthRow = { householdId: hh.id, damage, safety, peril: damage === 0 ? 'none' : peril, needType, location, ...(returnMin !== undefined ? { returnMin } : {}) };
     truth.push(row);
     truthById.set(hh.id, row);
   }
@@ -368,10 +375,21 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
         // free text for ~25% of replies (fixed draw order keeps the structured stream identical with/without text)
         const wantText = smsRng.chance(0.25);
         if (tReply <= HORIZON_MIN) {
-          const ev: SimEvent = { kind: 'sms_reply', t: tReply, householdId: hh.id, safety, damage };
+          const l = replyLabels(labelRng, hh, { safety, damage }, { needType: tr.needType!, location: locationAt(tr, tReply) }, { outagePct: hc.towerOutagePct, hazard: sc.kind });
+          const ev: SimEvent = {
+            kind: 'sms_reply', t: tReply, householdId: hh.id, safety, damage: l.damage,
+            lifeSafety: l.lifeSafety, needs: l.needs, notHome: l.notHome, channel: 'sms',
+          };
           if (wantText) {
             const lang = replyLanguage(textRng, hh);
-            ev.text = replyText(textRng, lang, { hh, safety, damage, hazardType: sc.kind, outagePct: hc.towerOutagePct, floodFt: houseFlood.get(hh.id)!, awayNow });
+            // The text renders the labels; its damage is what the words actually say (null if the house is not described).
+            const out = replyText(textRng, lang, {
+              hh, safety, damage: l.damage, lifeSafety: l.lifeSafety, needs: l.needs, location: locationAt(tr, tReply),
+              hazardType: sc.kind, outagePct: hc.towerOutagePct, floodFt: houseFlood.get(hh.id)!,
+            });
+            ev.text = out.text;
+            ev.damage = out.damage;
+            ev.needs = out.needs;
             ev.language = lang;
             texts++;
           }
@@ -405,9 +423,11 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     const adjusters = Array.from({ length: 20 }, (_, i) => `adj-${String(i + 1).padStart(2, '0')}`);
     for (const hh of fieldRng.shuffle(pool).slice(0, n)) {
       const tr = truthById.get(hh.id)!;
+      const tField = fieldRng.int(1440, HORIZON_MIN);
       events.push({
-        kind: 'field_report', t: fieldRng.int(1440, HORIZON_MIN), householdId: hh.id,
-        adjusterId: fieldRng.pick(adjusters), safety: fieldRng.chance(0.06) ? 'unsure' : tr.safety, damage: tr.damage,
+        kind: 'field_report', t: tField, householdId: hh.id,
+        // Nobody home (away / displaced at that time): the adjuster inspects the house but cannot see the occupants.
+        adjusterId: fieldRng.pick(adjusters), safety: fieldRng.chance(0.06) || locationAt(tr, tField) !== 'home' ? 'unsure' : tr.safety, damage: tr.damage,
       });
     }
   }

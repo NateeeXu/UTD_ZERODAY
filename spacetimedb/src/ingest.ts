@@ -10,6 +10,13 @@ import { gatherHouseholdSignals, recomputeCells, recomputeHex, toHexCell } from 
 import { resetStaffCounters } from './staff';
 import { batchScores, DEFAULT_TRUST, nextTrust, sourceOpinions, TRUST_BATCH } from './fusion/trust';
 import type { Damage, Peril, Safety } from './fusion/contract';
+/** Needs a reply can carry (the Claude parser and the simulator use the same list). */
+export const NEEDS = ['medical', 'power_for_device', 'shelter', 'water_food', 'transport', 'inspection', 'other'] as const;
+
+/** Comma-separated needs column -> list ('' -> []). */
+export function parseNeeds(s: string): string[] {
+  return s ? s.split(',').filter(Boolean) : [];
+}
 
 export type IngestEvent =
   | { kind: 'sms_sent'; t: number; householdId: string }
@@ -18,9 +25,13 @@ export type IngestEvent =
       t: number;
       householdId: string;
       safety: 'safe' | 'needs_help';
-      damage: Damage;
+      damage: Damage | null; // null = the reply does not describe the home
       text?: string; // free-text reply (already parsed into safety/damage)
       language?: string;
+      lifeSafety: boolean; // danger now: opens a 911 / local agency referral
+      needs: string[]; // concrete needs (see NEEDS)
+      notHome: boolean; // the person replying is not at the house
+      channel: 'sms' | 'call';
     }
   | { kind: 'claim'; t: number; householdId: string; peril: Peril; reportedDamage: Damage }
   | {
@@ -75,6 +86,10 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     membersMissing: 0,
     closedNoContact: 0,
     recheckDue: 0,
+    callContacts: 0,
+    assistanceRequests: 0,
+    inspectionRequests: 0,
+    locateDue: 0,
     updatedAt: ctx.timestamp,
     updatedSimMinutes: 0,
   };
@@ -139,24 +154,37 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: Inges
       break;
     }
     case 'sms_reply': {
-      // A reply from the live policyholder page may arrive for a household we never texted in the
-      // replay; record the text too so replyRate stays <= 1.
-      if (!any(ctx.db.smsSent.householdId.filter(hh.id))) {
-        markSent();
-        ctx.db.smsSent.insert(base);
-      }
-      if (!any(ctx.db.smsReply.householdId.filter(hh.id))) {
-        stats.smsReplies += 1;
-        m.smsReplies += 1;
+      const channel = ev.channel === 'call' ? 'call' : 'sms';
+      const firstOnChannel = !any([...ctx.db.smsReply.householdId.filter(hh.id)].filter((r) => r.channel === channel));
+      if (channel === 'sms') {
+        // A reply from the live policyholder page may arrive for a household we never texted in the
+        // replay; record the text too so replyRate stays <= 1.
+        if (!any(ctx.db.smsSent.householdId.filter(hh.id))) {
+          markSent();
+          ctx.db.smsSent.insert(base);
+        }
+        if (firstOnChannel) {
+          stats.smsReplies += 1;
+          m.smsReplies += 1;
+        }
+      } else if (firstOnChannel) {
+        // Agent phone contact: not an SMS reply, so it stays out of smsReplies / replyRate.
+        stats.callContacts += 1;
+        m.callContacts += 1;
       }
       ctx.db.smsReply.insert({
         ...base,
         safety: ev.safety,
-        damage: ev.damage,
+        damage: ev.damage ?? 0,
         text: ev.text || undefined,
         language: ev.language || undefined,
+        damageKnown: ev.damage !== null,
+        lifeSafety: ev.lifeSafety,
+        needs: ev.needs.join(','),
+        notHome: ev.notHome,
+        channel,
       });
-      if (ev.damage >= 2) stats.severeReplies += 1;
+      if (ev.damage !== null && ev.damage >= 2) stats.severeReplies += 1;
       if (ev.safety === 'needs_help') {
         stats.helpReplies += 1;
         m.helpReplies += 1;

@@ -1,8 +1,11 @@
-// Short free-text SMS replies in the household's language, consistent with the structured
-// (safety, damage) values of the same sms_reply event, with deliberate ambiguity.
+// Short free-text SMS replies in the household's language. The text renders the structured labels of
+// the same sms_reply event (lifeSafety, needs, whereabouts, damage) and reports back the damage it
+// actually conveys (null when the words do not describe the house), so text and labels never disagree.
+// Policy encoded here: a generic plea ("need help", "please send someone") counts as life safety, so it
+// only appears in life-safety replies; non-life-safety replies state a concrete need instead.
 // All texts are synthetic templates written for this simulator.
 
-import type { Damage, HazardType, Household } from '../../shared/types.ts';
+import type { Damage, HazardType, Household, Need, Whereabouts } from '../../shared/types.ts';
 import type { Rng } from '../src/rng.ts';
 
 export const TEXT_LANGS = ['en', 'es', 'zh', 'vi', 'tl', 'ko'] as const;
@@ -198,14 +201,86 @@ const BANKS: Record<Lang, Bank> = {
   },
 };
 
+/** Need phrases (not life safety) plus the life-safety medical cue and "we left the house". */
+interface NeedBank {
+  shelter: string[];
+  water_food: string[];
+  inspection: string[];
+  other: string[];
+  medication: string[];
+  medicalUrgent: string[];
+  displaced: string[];
+}
+
+const NEED_BANKS: Record<Lang, NeedBank> = {
+  en: {
+    shelter: ['we need a place to stay', 'cant stay in the house tonight'],
+    water_food: ['we need water', 'running out of food and water'],
+    inspection: ['can someone come look at the house', 'need an adjuster to check the damage'],
+    other: ['please call me back', 'call me when you can'],
+    medication: ['running low on my medication', 'need a refill of my meds'],
+    medicalUrgent: ['mom is on oxygen and the power is out, need help now', 'my dad cant breathe, please send help'],
+    displaced: ['we left the house, staying with family', 'we are at a shelter now'],
+  },
+  es: {
+    shelter: ['necesitamos un lugar donde quedarnos', 'no podemos quedarnos en la casa esta noche'],
+    water_food: ['necesitamos agua', 'se nos acaba la comida y el agua'],
+    inspection: ['¿pueden venir a revisar la casa?', 'necesito un ajustador para ver los daños'],
+    other: ['por favor llámenme', 'llámenme cuando puedan'],
+    medication: ['se me acaban las medicinas', 'necesito resurtir mis medicamentos'],
+    medicalUrgent: ['mi mamá usa oxígeno y no hay luz, ayuda ya', 'mi papá no puede respirar, manden ayuda'],
+    displaced: ['salimos de la casa, estamos con familia', 'estamos en un refugio'],
+  },
+  zh: {
+    shelter: ['我们需要地方住', '今晚没法住在家里'],
+    water_food: ['我们需要水', '吃的和水快没了'],
+    inspection: ['能派人来看看房子吗', '需要理赔员来查看损失'],
+    other: ['请给我回电话', '方便时给我打电话'],
+    medication: ['我的药快吃完了', '需要补开药'],
+    medicalUrgent: ['妈妈在用氧气机，停电了，马上需要帮助', '我爸喘不上气，快派人来'],
+    displaced: ['我们已经离开家，住在亲戚家', '我们现在在避难所'],
+  },
+  vi: {
+    shelter: ['chúng tôi cần chỗ ở', 'tối nay không ở nhà được'],
+    water_food: ['chúng tôi cần nước', 'sắp hết đồ ăn và nước'],
+    inspection: ['có thể cử người đến xem nhà không', 'cần người giám định đến xem thiệt hại'],
+    other: ['vui lòng gọi lại cho tôi', 'khi nào rảnh gọi tôi nhé'],
+    medication: ['tôi sắp hết thuốc', 'cần mua thêm thuốc'],
+    medicalUrgent: ['mẹ tôi đang thở oxy mà mất điện, cần giúp ngay', 'bố tôi khó thở, xin gửi người đến'],
+    displaced: ['chúng tôi đã rời nhà, đang ở nhà người thân', 'chúng tôi đang ở nơi tạm trú'],
+  },
+  tl: {
+    shelter: ['kailangan namin ng matutuluyan', 'hindi kami makakatulog sa bahay ngayong gabi'],
+    water_food: ['kailangan namin ng tubig', 'nauubos na ang pagkain at tubig'],
+    inspection: ['pwede bang may pumunta para tingnan ang bahay', 'kailangan ng adjuster para tingnan ang sira'],
+    other: ['pakitawagan po ako', 'tawagan niyo ako pag may oras'],
+    medication: ['paubos na ang gamot ko', 'kailangan ko ng refill ng gamot'],
+    medicalUrgent: ['naka-oxygen si nanay at walang kuryente, tulong agad', 'hindi makahinga si tatay, magpadala ng tulong'],
+    displaced: ['umalis na kami sa bahay, nasa kamag-anak kami', 'nasa evacuation center kami ngayon'],
+  },
+  ko: {
+    shelter: ['지낼 곳이 필요해요', '오늘 밤 집에 못 있어요'],
+    water_food: ['물이 필요해요', '음식이랑 물이 거의 없어요'],
+    inspection: ['누가 와서 집 좀 봐주실 수 있나요', '손해사정인이 피해를 확인해야 해요'],
+    other: ['전화 부탁드려요', '시간 되실 때 전화 주세요'],
+    medication: ['약이 거의 떨어졌어요', '약을 다시 받아야 해요'],
+    medicalUrgent: ['어머니가 산소 쓰시는데 정전이에요, 지금 도와주세요', '아버지가 숨을 못 쉬어요, 도와주세요'],
+    displaced: ['집에서 나와서 친척 집에 있어요', '지금 대피소에 있어요'],
+  },
+};
+
 export interface ReplyContext {
   hh: Household;
   safety: 'safe' | 'needs_help';
-  damage: Damage;
+  /** label damage; null = the person cannot see the house */
+  damage: Damage | null;
+  lifeSafety: boolean;
+  needs: Need[];
+  /** where the person is (truth) */
+  location: Whereabouts;
   hazardType: HazardType;
   outagePct: number;
   floodFt: number;
-  awayNow: boolean;
 }
 
 /** Language the household texts back in: limited-English households always use their language;
@@ -218,21 +293,59 @@ export function replyLanguage(rng: Rng, hh: Household): Lang {
   return rng.chance(0.45) ? (lang as Lang) : 'en';
 }
 
-export function replyText(rng: Rng, lang: Lang, c: ReplyContext): string {
+function needPhrase(rng: Rng, b: Bank, n: NeedBank, need: Need): string {
+  switch (need) {
+    case 'medical': return rng.pick(n.medication); // not the oxygen / CPAP bank: that reads as life safety
+    case 'power_for_device': return rng.pick(b.medical); // only reached from life-safety replies
+    case 'transport': return rng.pick(b.noCar);
+    case 'shelter': return rng.pick(n.shelter);
+    case 'water_food': return rng.pick(n.water_food);
+    case 'inspection': return rng.pick(n.inspection);
+    default: return rng.pick(n.other);
+  }
+}
+
+/** Render the labels as a short text. Returns what the text conveys: damage (null if the house is not described)
+ *  and the needs it states (the event uses these, so text and labels agree). */
+export function replyText(rng: Rng, lang: Lang, c: ReplyContext): { text: string; damage: Damage | null; needs: Need[] } {
   const b = BANKS[lang];
+  const n = NEED_BANKS[lang];
   const parts: string[] = [];
-  if (c.awayNow && rng.chance(0.6)) parts.push(rng.pick(b.away));
-  else if (c.damage >= 1 && c.damage <= 2 && rng.chance(0.2)) parts.push(rng.pick(b.vague)); // ambiguous
-  else if (!(c.damage === 0 && rng.chance(0.4))) parts.push(rng.pick(b.dmg[c.hazardType][c.damage]));
-  if (c.safety === 'needs_help') {
-    const urgent = c.damage >= 2 || c.floodFt > 4;
-    parts.push(rng.pick(urgent && rng.chance(0.6) ? (c.hazardType === 'earthquake' ? b.quakeUrgent : b.helpUrgent) : b.help));
-    if (c.hh.medicalDevice && rng.chance(0.7)) parts.push(rng.pick(b.medical));
-    else if ((c.hh.age75 || c.hh.disability) && rng.chance(0.6)) parts.push(rng.pick(b.elder));
-    else if (c.hh.noVehicle && c.hazardType === 'hurricane' && rng.chance(0.5)) parts.push(rng.pick(b.noCar));
+  const said: Need[] = [];
+  let damage = c.damage;
+  const home = c.location === 'home';
+  // Whereabouts first: people and the house are separate.
+  if (c.location === 'away') parts.push(rng.pick(b.away));
+  else if (c.location === 'displaced') parts.push(rng.pick(n.displaced));
+  if (damage !== null) {
+    const r = rng.float();
+    // Vague phrases ("not sure how bad, it's dark") only from people at home.
+    if (home && damage >= 1 && damage <= 2 && r < 0.15) {
+      parts.push(b.vague[1]!); // "not sure how bad": the text does not tell the damage
+      damage = null;
+    } else if (home && damage >= 1 && damage <= 2 && r < 0.3) {
+      parts.push(rng.pick([b.vague[0]!, b.vague[2]!])); // vague but some damage: label kept (ambiguous 1 vs 2)
+    } else if (damage === 0 && r < 0.4) {
+      damage = null; // only "we are ok": the house is not described
+    } else {
+      parts.push(rng.pick(b.dmg[c.hazardType][damage]));
+    }
+  }
+  if (c.lifeSafety) {
+    if (c.hh.medicalDevice && c.outagePct > 40 && rng.chance(0.7)) {
+      parts.push(rng.pick(n.medicalUrgent));
+      said.push('power_for_device');
+    }
+    else if (rng.chance(0.65)) parts.push(rng.pick(c.hazardType === 'earthquake' ? b.quakeUrgent : b.helpUrgent));
+    else parts.push(rng.pick(b.help)); // generic plea: life safety by policy
+    if ((c.hh.age75 || c.hh.disability) && rng.chance(0.5)) parts.push(rng.pick(b.elder));
   } else {
-    if (rng.chance(0.7)) parts.push(rng.pick(b.safe));
-    if (c.hh.medicalDevice && c.outagePct > 50 && rng.chance(0.4)) parts.push(rng.pick(b.medical)); // safe but a need
+    if (c.safety === 'safe' && rng.chance(0.7)) parts.push(rng.pick(b.safe));
+    for (const need of c.needs) {
+      if (need === 'power_for_device') continue;
+      parts.push(needPhrase(rng, b, n, need));
+      said.push(need);
+    }
   }
   if (c.hh.childrenUnder18 && rng.chance(0.15)) parts.push(rng.pick(b.kids));
   if (c.outagePct > 40 && rng.chance(0.35)) parts.push(rng.pick(b.noPower));
@@ -240,5 +353,5 @@ export function replyText(rng: Rng, lang: Lang, c: ReplyContext): string {
   let text = parts.join(b.sep);
   if (lang !== 'zh' && lang !== 'ko' && rng.chance(0.3)) text = text.charAt(0).toUpperCase() + text.slice(1);
   if (rng.chance(0.25)) text += lang === 'zh' ? '。' : '.';
-  return text;
+  return { text, damage, needs: said };
 }

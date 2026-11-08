@@ -71,7 +71,7 @@ function estimateHousehold(s: HouseholdSignals, input: CellInput): HouseholdOutp
 
   // P(severe): hazard prior + self-report + claim, each weighted by source trust.
   let logit = hazardLogit(cell) * (0.4 + 0.6 * trust.hazard);
-  if (s.reply) logit += SMS_DAMAGE_SHIFT[s.reply.damage] * (0.4 + 0.8 * trust.sms);
+  if (s.reply && s.reply.damage !== null) logit += SMS_DAMAGE_SHIFT[s.reply.damage] * (0.4 + 0.8 * trust.sms);
   if (s.claim) logit += CLAIM_DAMAGE_SHIFT[s.claim.reportedDamage] * (0.4 + 0.8 * trust.claims);
   const pSevere = sigmoid(logit);
 

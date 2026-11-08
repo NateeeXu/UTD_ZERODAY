@@ -10,6 +10,7 @@ import {
   FIELD_REPORT_SHARE, GRID_RADIUS, H3_RESOLUTION, HOLDOUT_SHARE, HORIZON_MIN,
 } from './config.ts';
 import { Rng, subSeed } from './rng.ts';
+import { replyLabels, truthLocation, truthNeedType, locationAt } from './needs.ts';
 
 /** Diagnostics about deliberate quirks, written to data/sim-meta.json (not part of the contract). */
 export interface WorldMeta {
@@ -104,6 +105,9 @@ export function generateBundle(cfg: EventConfig): { bundle: EventBundle; meta: W
   const claimRng = new Rng(subSeed(cfg.seed, 'claims'));
   const fieldRng = new Rng(subSeed(cfg.seed, 'field'));
   const quirkRng = new Rng(subSeed(cfg.seed, 'quirks'));
+  // v3 labels use their own streams so the truth / sms / claim streams above do not shift.
+  const needsRng = new Rng(subSeed(cfg.seed, 'needs'));
+  const labelRng = new Rng(subSeed(cfg.seed, 'labels'));
 
   const s = cfg.storm;
   const track = new Track(s);
@@ -307,7 +311,9 @@ export function generateBundle(cfg: EventConfig): { bundle: EventBundle; meta: W
       + (hh.medicalDevice && c.towerOutagePct > 60 ? 1.8 : hh.medicalDevice ? 0.5 : 0)
       + (houseFlood > 4 ? 0.6 : 0);
     const safety = truthRng.chance(sigmoid(z)) ? 'needs_help' : 'safe';
-    const row: TruthRow = { householdId: hh.id, damage, safety, peril };
+    const needType = truthNeedType(needsRng, hh, { safety, damage, floodFt: houseFlood, outagePct: c.towerOutagePct, hazard: 'hurricane' });
+    const location = truthLocation(needsRng, false, damage, needType); // night-time storm: nobody is away
+    const row: TruthRow = { householdId: hh.id, damage, safety, peril, needType, location };
     truth.push(row);
     truthById.set(hh.id, row);
   }
@@ -337,7 +343,11 @@ export function generateBundle(cfg: EventConfig): { bundle: EventBundle; meta: W
           ? (smsRng.chance(0.85) ? 'needs_help' : 'safe')
           : (smsRng.chance(0.03) ? 'needs_help' : 'safe');
         if (tReply <= HORIZON_MIN) {
-          events.push({ kind: 'sms_reply', t: tReply, householdId: hh.id, safety, damage: clampDamage(dmg) });
+          const l = replyLabels(labelRng, hh, { safety, damage: clampDamage(dmg) }, { needType: tr.needType!, location: locationAt(tr, tReply) }, { outagePct: c.towerOutagePct, hazard: 'hurricane' });
+          events.push({
+            kind: 'sms_reply', t: tReply, householdId: hh.id, safety, damage: l.damage,
+            lifeSafety: l.lifeSafety, needs: l.needs, notHome: l.notHome, channel: 'sms',
+          });
         }
       }
     }
@@ -368,12 +378,14 @@ export function generateBundle(cfg: EventConfig): { bundle: EventBundle; meta: W
     const adjusters = Array.from({ length: 10 }, (_, i) => `adj-${String(i + 1).padStart(2, '0')}`);
     for (const hh of fieldRng.shuffle(pool).slice(0, n)) {
       const tr = truthById.get(hh.id)!;
+      const tField = fieldRng.int(1440, HORIZON_MIN);
       events.push({
         kind: 'field_report',
-        t: fieldRng.int(1440, HORIZON_MIN),
+        t: tField,
         householdId: hh.id,
         adjusterId: fieldRng.pick(adjusters),
-        safety: fieldRng.chance(0.06) ? 'unsure' : tr.safety,
+        // Nobody home (displaced): the adjuster inspects the house but cannot see the occupants.
+        safety: fieldRng.chance(0.06) || locationAt(tr, tField) !== 'home' ? 'unsure' : tr.safety,
         damage: tr.damage,
       });
     }

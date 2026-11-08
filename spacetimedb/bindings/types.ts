@@ -180,6 +180,10 @@ export const HexStats = __t.object("HexStats", {
   membersMissing: __t.u32(),
   closedNoContact: __t.u32(),
   recheckDue: __t.u32(),
+  callContacts: __t.u32(),
+  assistanceRequests: __t.u32(),
+  inspectionRequests: __t.u32(),
+  locateDue: __t.u32(),
   updatedAt: __t.timestamp(),
   updatedSimMinutes: __t.f64(),
 });
@@ -317,6 +321,10 @@ export const Metrics = __t.object("Metrics", {
   membersMissing: __t.u32(),
   closedNoContact: __t.u32(),
   recheckDue: __t.u32(),
+  callContacts: __t.u32(),
+  assistanceRequests: __t.u32(),
+  inspectionRequests: __t.u32(),
+  locateDue: __t.u32(),
   p0Cells: __t.u32(),
   p1Cells: __t.u32(),
   p2Cells: __t.u32(),
@@ -394,6 +402,9 @@ export const SimTruth = __t.object("SimTruth", {
   damage: __t.u8(),
   safety: __t.string(),
   peril: __t.string(),
+  needType: __t.string(),
+  location: __t.string(),
+  returnMin: __t.f64(),
 });
 export type SimTruth = __Infer<typeof SimTruth>;
 
@@ -409,6 +420,11 @@ export const SmsReply = __t.object("SmsReply", {
   damage: __t.u8(),
   text: __t.option(__t.string()),
   language: __t.option(__t.string()),
+  damageKnown: __t.bool(),
+  lifeSafety: __t.bool(),
+  needs: __t.string(),
+  notHome: __t.bool(),
+  channel: __t.string(),
 });
 export type SmsReply = __Infer<typeof SmsReply>;
 
@@ -427,6 +443,7 @@ export const StaffContact = __t.object("StaffContact", {
   householdId: __t.string(),
   failedCalls: __t.u8(),
   lastCallMin: __t.f64(),
+  locateTries: __t.u8(),
 });
 export type StaffContact = __Infer<typeof StaffContact>;
 
@@ -442,6 +459,7 @@ export const StaffSim = __t.object("StaffSim", {
   referralsMade: __t.u32(),
   referralsResolved: __t.u32(),
   helpFound: __t.u32(),
+  visitsNobodyHome: __t.u32(),
   updatedAt: __t.timestamp(),
 });
 export type StaffSim = __Infer<typeof StaffSim>;
@@ -458,6 +476,11 @@ export const StagedEvent = __t.object("StagedEvent", {
   adjusterId: __t.string(),
   text: __t.string(),
   language: __t.string(),
+  damageKnown: __t.bool(),
+  lifeSafety: __t.bool(),
+  needs: __t.string(),
+  notHome: __t.bool(),
+  channel: __t.string(),
 });
 export type StagedEvent = __Infer<typeof StagedEvent>;
 
@@ -473,6 +496,11 @@ export const StagedEventInput = __t.object("StagedEventInput", {
   adjusterId: __t.string(),
   text: __t.string(),
   language: __t.string(),
+  damageKnown: __t.bool(),
+  lifeSafety: __t.bool(),
+  needs: __t.string(),
+  notHome: __t.bool(),
+  channel: __t.string(),
 });
 export type StagedEventInput = __Infer<typeof StagedEventInput>;
 
@@ -481,6 +509,9 @@ export const TruthInput = __t.object("TruthInput", {
   damage: __t.u8(),
   safety: __t.string(),
   peril: __t.string(),
+  needType: __t.string(),
+  location: __t.string(),
+  returnMin: __t.f64(),
 });
 export type TruthInput = __Infer<typeof TruthInput>;
 

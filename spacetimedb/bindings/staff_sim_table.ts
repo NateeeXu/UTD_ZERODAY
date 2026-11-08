@@ -22,5 +22,6 @@ export default __t.row({
   referralsMade: __t.u32().name("referrals_made"),
   referralsResolved: __t.u32().name("referrals_resolved"),
   helpFound: __t.u32().name("help_found"),
+  visitsNobodyHome: __t.u32().name("visits_nobody_home"),
   updatedAt: __t.timestamp().name("updated_at"),
 });

@@ -26,6 +26,9 @@ export const simTruth = table(
     damage: t.u8(),
     safety: t.string(), // 'safe' | 'needs_help'
     peril: t.string(), // 'wind' | 'flood' | 'earthquake' | 'none'
+    needType: t.string(), // 'life_safety' | 'assistance' | 'none'
+    location: t.string(), // where the people are: 'home' | 'away' (not home when it hit) | 'displaced'
+    returnMin: t.f64(), // away people get home at this sim minute (-1 = never); then 'displaced' if damage >= 2, else 'home'
   }
 );
 
@@ -44,6 +47,11 @@ export const stagedEvent = table(
     adjusterId: t.string(), // field_report adjusterId, '' otherwise
     text: t.string(), // sms_reply free text ('' when none)
     language: t.string(), // sms_reply language code ('' when none)
+    damageKnown: t.bool(), // sms_reply: false = the reply does not describe the home (damage is then 0)
+    lifeSafety: t.bool(), // sms_reply: danger now (911 / local agency referral)
+    needs: t.string(), // sms_reply: comma-separated needs ('' when none)
+    notHome: t.bool(), // sms_reply: the person replying is not at the house
+    channel: t.string(), // sms_reply: 'sms' | 'call'
   }
 );
 
@@ -208,9 +216,14 @@ export const smsReply = table(
   {
     ...eventColumns,
     safety: t.string(), // 'safe' | 'needs_help'
-    damage: t.u8(), // 0..3
+    damage: t.u8(), // 0..3 (0 when damageKnown is false)
     text: t.option(t.string()), // free-text reply (may be non-English); safety/damage are its parsed values
     language: t.option(t.string()), // language code of the reply, e.g. 'es', 'zh'
+    damageKnown: t.bool(), // false = the reply does not describe the home (e.g. the person is not there)
+    lifeSafety: t.bool(), // danger now: opens a 911 / local agency referral
+    needs: t.string(), // comma-separated: medical,power_for_device,shelter,water_food,transport,inspection,other
+    notHome: t.bool(), // the person replying is not at the house (people and property tracked separately)
+    channel: t.string(), // 'sms' | 'call' (an agent reached them by phone)
   }
 );
 
@@ -294,7 +307,11 @@ export const hexStats = table(
     overdueReferrals: t.u32(), // referred but not acknowledged within REFERRAL_ACK_MIN
     membersMissing: t.u32(), // households reporting someone unaccounted for
     closedNoContact: t.u32(), // closed with a documented reason instead of contact
-    recheckDue: t.u32(), // heard from, but a high-risk "safe" is older than RECHECK_MIN
+    recheckDue: t.u32(), // heard from, but a vulnerable household's last contact is older than RECHECK_MIN
+    callContacts: t.u32(), // households reached by an agent phone call
+    assistanceRequests: t.u32(), // needs help, not life safety (State Farm customer care)
+    inspectionRequests: t.u32(), // asked for someone to look at the house
+    locateDue: t.u32(), // property inspected, occupants not seen, not heard from: find their whereabouts
     updatedAt: t.timestamp(),
     updatedSimMinutes: t.f64(),
   }
@@ -401,6 +418,7 @@ export const staffSim = table(
     referralsMade: t.u32(),
     referralsResolved: t.u32(),
     helpFound: t.u32(), // households that needed help and were found by a staff call or visit
+    visitsNobodyHome: t.u32(), // visits that inspected the property but found no occupants
     updatedAt: t.timestamp(),
   }
 );
@@ -412,6 +430,7 @@ export const staffContact = table(
     householdId: t.string().primaryKey(),
     failedCalls: t.u8(), // consecutive unanswered calls (reset when reached)
     lastCallMin: t.f64(),
+    locateTries: t.u8(), // emergency-contact attempts after a visit found nobody home
   }
 );
 
@@ -442,6 +461,10 @@ export const metrics = table(
     membersMissing: t.u32(),
     closedNoContact: t.u32(),
     recheckDue: t.u32(),
+    callContacts: t.u32(),
+    assistanceRequests: t.u32(),
+    inspectionRequests: t.u32(),
+    locateDue: t.u32(),
     p0Cells: t.u32(),
     p1Cells: t.u32(),
     p2Cells: t.u32(),
@@ -601,6 +624,9 @@ export const TruthInput = t.object('TruthInput', {
   damage: t.u8(),
   safety: t.string(),
   peril: t.string(),
+  needType: t.string(),
+  location: t.string(),
+  returnMin: t.f64(),
 });
 
 export const StagedEventInput = t.object('StagedEventInput', {
@@ -615,6 +641,11 @@ export const StagedEventInput = t.object('StagedEventInput', {
   adjusterId: t.string(),
   text: t.string(),
   language: t.string(),
+  damageKnown: t.bool(),
+  lifeSafety: t.bool(),
+  needs: t.string(),
+  notHome: t.bool(),
+  channel: t.string(),
 });
 
 const spacetimedb = schema({

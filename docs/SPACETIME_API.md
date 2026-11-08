@@ -82,22 +82,39 @@ Reducers:
 
 Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
 Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", the outreach queue with one action button per `escalation`, a referrals panel (overdue in red), and `accountedRate` vs `vulnerableAccountedRate` side by side.
+### People vs property, and the kind of help (v3 data)
+
+- **People are tracked by contact, property by inspection.** A reply or call reaches the person wherever they are and accounts for the PEOPLE. An adjuster visit inspects the PROPERTY; it accounts for the people only if they were there (`field_report.safety` `safe` / `needs_help`). `safety = 'unsure'` = house inspected, nobody seen → escalation `locate` (emergency contact, shelter lists), then a documented closure.
+- **A reply from someone not at home** (`sms_reply.notHome`) accounts for the people but says nothing about the house: `damageKnown = false`, and the household stays in the inspection queue (the model treats it as "damage unknown", not "no damage").
+- **Three kinds of help** (`sms_reply.lifeSafety`, `needs`):
+  | Kind | Signal | Escalation | Goes to |
+  |---|---|---|---|
+  | Life safety | `lifeSafety = true` (trapped, injured, gas, device without power, generic "help"), adjuster found `needs_help`, missing member | `emergency_referral` → `referral_*` | 911 / local agency (State Farm refers, never rescues) |
+  | Assistance | `needs_help` without `lifeSafety` (`needs`: shelter, medical, water_food, transport, other) | `assistance` | State Farm customer care |
+  | Inspection | `needs` contains `inspection` | `inspection_request` | adjuster queue |
+- New columns: `sms_reply` / `staged_event` `damageKnown`, `lifeSafety`, `needs` (comma-separated), `notHome`, `channel` (`sms` / `call`); `hex_stats` / `metrics` `callContacts` (staff calls, not counted as SMS replies), `assistanceRequests`, `inspectionRequests`, `locateDue`; `staff_sim.visitsNobodyHome`.
+- New reducer for the Claude parser: `submit_parsed_reply(householdId, safety, damage (0–3, 255 = unknown), lifeSafety, needs, notHome, text, language, passcode)`; see docs/CLAUDE_PARSER.md. The "I need help" button (`submit_sms_reply` with `needs_help`) counts as a generic plea = life safety.
+- Data assumptions and limitations: docs/DATA.md.
+
 ### Simulated staff (`staff_sim`, on by default)
 
 So the numbers move during the demo without anyone clicking, simulated staff work the queues every 30 sim minutes (src/staff.ts). Outcomes come from the private sim truth, never from the model.
 - **Referral desk** (no limit): refers every new needs-help report at the next step; the agency acknowledges after 30 min and resolves after 6 h.
-- **Agents** (`callsPerHour`, default 2% of households): call the top of `unaccounted_queue` once the text has had an hour; retry after 2 h, at most 3 tries. P(answer) 0.75, 0.35 if the household really needs help, 0.4 with no phone on file (emergency contact). A reached call is an `sms_reply` row with text `[agent call] reached by phone` and `source = 'staff_sim'`.
-- **Adjusters** (`visitsPerHour`, default 0.3%): visit queue households after two failed calls, or one failed call and 4 h of silence (also a re-check nobody answers). A visit is a `field_report` from `sim-adjuster`, so it also feeds trust learning.
+- **Agents** (`callsPerHour`, default 2% of households): call the top of `unaccounted_queue` once the text has had an hour; retry after 2 h, at most 3 tries. P(answer) = 0.75 (0.4 via emergency contact when no phone) × 0.5 if they really need help × 0.8 limited English × 0.7 destroyed home. Phones travel with people. A reached call is an `sms_reply` with `channel = 'call'` and `source = 'staff_sim'`; people away when it hit cannot say how the house is (damage unknown).
+- **Adjusters** (`visitsPerHour`, default 0.3%): visit queue households after two failed calls, or one failed call and 4 h of silence (a re-check only if the person was last known at home). A visit always inspects the house (`field_report` from `sim-adjuster`, feeds trust learning); the people are seen only if they are home at that time (away people get home 4–12 h after it hit; badly damaged homes are empty). Nobody home → `locate`: up to 3 emergency-contact tries, then closed as `unreachable_after_visit` by `sim-staff`.
 - Counters in `staff_sim`: `callsMade`, `callsReached`, `visitsMade`, `referralsMade`, `referralsResolved`, `helpFound` (people who needed help, found by a call or visit).
 - `set_staff_sim(enabled, callsPerHour, visitsPerHour)` (manager; 0 = default). Turn it off to show "no staff" vs "staff working the queue". Settings survive `reset_demo`.
 
-Measured, 72 h replays:
+Measured, 72 h replays (v3 data):
 | | no staff | staff on |
 |---|---|---|
-| Harbor Bend accounted at 24 h / 48 h | 1,590 / 1,693 of 3,000 | 2,570 / **3,000** |
-| Harbor Bend high-risk unaccounted at 24 h | 760 | 10 |
-| Harbor Bend overdue referrals | 55 | 0 |
-| Bay Area accounted at 24 h / 72 h | – / 8,981 of 30,000 | 19,032 / **30,000** |
+| Harbor Bend accounted at 24 h / 48 h | 1,590 / 1,693 of 3,000 | 2,364 / **3,000** |
+| Harbor Bend high-risk unaccounted at 24 h | 760 | 64 |
+| Harbor Bend overdue 911 referrals | 7 | 0 |
+| Bay Area accounted at 24 h / 72 h | 8,138 / 8,981 of 30,000 | 16,174 / **29,362** |
+| Bay Area overdue 911 referrals | 65 | 0 |
+
+Splitting life safety from assistance cut Harbor Bend's 911 referrals from 55 to 7 (the rest are assistance or inspection requests). In the Bay Area (weekday-daytime quake) 61% of staff visits find nobody home: the visited homes are the badly damaged ones, and their people have already left, so the next step is `locate`, not more door-knocking.
 
 Cost: one staff step for the Bay Area is ~80 ms. The running replay does one step per tick; `step_replay(240)` takes ~1 s on Maincloud; a Bay Area `jump_to(1440)` takes ~4 s, so fast-forward big regions with repeated `step_replay(240)` calls (the UI also updates between them).
 Holdout metrics now score only households without a field report (verified households are known, not predicted).
