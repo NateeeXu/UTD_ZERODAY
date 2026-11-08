@@ -11,3 +11,7 @@
 .p1-details { display: flex; flex-direction: column; gap: 6px; }
 .p1-key { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .p1-toggle svg { transition: none; } }
+/* Stat tiles: the value stays on one line; units are set smaller than the number ("3 h 25 m"). */
+.p1 .p1-stat b { white-space: nowrap; }
+.p1 .p1-stat b .p1-unit { margin: 0 4px 0 2px; font-size: 12px; font-weight: 600; color: #555; }
+.p1 .p1-stat b .p1-unit:last-child { margin-right: 0; }

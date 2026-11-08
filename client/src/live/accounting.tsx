@@ -1,6 +1,6 @@
 // "No one overlooked": the unaccounted card (P1), escalation chips, risk flags and the
 // family-reunification note. See docs/SPACETIME_API.md section 0b.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { FacilityRow, HexStatsRow, HouseholdRow, MetricsRow } from './rows';
 import { pct } from '../format';
 import './accounting.css';
@@ -36,6 +36,18 @@ export const fmtWait = (minutes: number) => {
   return r ? `${h} h ${r} min` : `${h} h`;
 };
 
+// The same wait for the narrow tile, units set small so it stays on one line:
+// "40 min", "3 h 25 m", and whole hours from 10 h ("40 h"; the exact wait is in the tooltip).
+function WaitValue({ minutes }: { minutes: number }) {
+  const m = Math.max(0, Math.round(minutes));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  const u = (s: string) => <span className="p1-unit">{s}</span>;
+  if (h === 0) return <>{r}{u('min')}</>;
+  if (h >= 10 || r === 0) return <>{h}{u('h')}</>;
+  return <>{h}{u('h')}{r}{u('m')}</>;
+}
+
 // P1 card: people first. Hero = unaccounted (goal 0) with both accounted rates beside it, then the
 // people stats, then the three request queues (911 referrals, customer care, inspection).
 export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined }) {
@@ -57,7 +69,10 @@ export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined })
     />
   );
   const highRisk = <Stat label="High-risk unaccounted" value={n(metrics?.highRiskUnaccounted)} />;
-  const longestWait = <Stat label="Longest wait · high-risk" value={metrics ? fmtWait(metrics.longestWaitMin) : '—'} />;
+  const longestWait = (
+    <Stat label="Longest wait · high-risk" title={metrics ? `Longest wait: ${fmtWait(metrics.longestWaitMin)}` : undefined}
+      value={metrics ? <WaitValue minutes={metrics.longestWaitMin} /> : '—'} />
+  );
   return (
     <section className={`glass p1${open ? '' : ' p1-collapsed'}`} aria-label={`Unaccounted: ${unaccounted} households`}>
       <div className="p1-head">
@@ -107,7 +122,7 @@ export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined })
   );
 }
 
-function Stat({ label, value, danger = false, title }: { label: string; value: string; danger?: boolean; title?: string }) {
+function Stat({ label, value, danger = false, title }: { label: string; value: ReactNode; danger?: boolean; title?: string }) {
   return (
     <div className={`p1-stat${danger ? ' danger' : ''}`} title={title}>
       <b>{value}</b>
