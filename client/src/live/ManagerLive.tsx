@@ -111,7 +111,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const metrics = metricsRows[0];
   const me = myMember[0];
   const isManager = me?.role === 'manager';
-  const fictional = !world?.region;
+  const fictional = world ? !world.region : false; // until `world` arrives, assume real geography (never invent names)
 
   const [joining, setJoining] = useState(false);
   const [tab, setTab] = useState<Tab>('act');
@@ -429,7 +429,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
         </span>
       </div>
       <div className="detail-body">
-        {unit.r && <p className="reason">{unit.r}</p>}
+        {unit.r && <p className="reason">{unit.res === 7 && <b>Most urgent neighborhood: </b>}{unit.r}</p>}
         <div className="readout">
           <span><b>~{unit.ex.toFixed(1)}</b>likely severe</span>
           <span><b>{unit.rep}/{unit.sent}</b>SMS replied</span>

@@ -300,3 +300,30 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .grow-text { flex: 1; min-width: 200px; }
 .metrics-strip .ms-title { max-width: 440px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .segmented.speed button { height: 32px; padding: 0 9px; font-size: 12.5px; }
+
+/* ---- Map tooltip: frosted glass, three lines ---- */
+.leaflet-tooltip.tip {
+  width: 280px;
+  max-width: 300px;
+  white-space: normal;
+  padding: 10px 12px;
+  color: #111;
+  font: 12.5px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
+  background: rgba(255, 255, 255, 0.58);
+  -webkit-backdrop-filter: blur(14px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(17, 17, 17, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.leaflet-tooltip.tip::before { display: none; }
+.tip-title { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
+.tip-title i { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.tip-status { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(217, 58, 53, 0.12); color: #9b1f1b; white-space: nowrap; }
+.tip-status.ok { background: rgba(15, 122, 85, 0.12); color: #0b5c40; }
+.tip-why { margin-top: 4px; }
+.tip-meta { margin-top: 2px; color: #555; font-variant-numeric: tabular-nums; }
+.leaflet-tooltip.tip { width: max-content; max-width: 380px; }
+.tip-why, .tip-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tip-title { gap: 7px; }
+.tip-status { margin-left: 14px; }

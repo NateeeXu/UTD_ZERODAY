@@ -96,13 +96,33 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
 
+// One plain sentence for *why* this area has its priority, from the engine's reason
+// (first clause) and the structured fields. Silence only shows when it is the driver.
+export function driverLine(u: MapUnit): string {
+  const first = (u.r.split(';')[0] ?? '').trim();
+  const silentDriver = u.p === 'P0' && u.v === 'needs_verification' && u.si >= 0.5 && /suspected|silent/i.test(first);
+  if (silentDriver || /^suspected/i.test(first)) {
+    const cause = CAUSE[u.sc] ?? 'cause unclear';
+    return u.sent > 0 ? `Silent: ${u.rep} of ${u.sent} replied · ${cause}` : `Silent high-hazard area · ${cause}`;
+  }
+  let m = first.match(/(\d+) households? confirmed needing help/);
+  if (m) return `${m[1]} resident${m[1] === '1' ? '' : 's'} confirmed needing help`;
+  m = first.match(/credible needs-help signal \(max (\d+)%\)/);
+  if (m) return `Residents asking for help (up to ${m[1]}%)`;
+  m = first.match(/possible needs-help \(max (\d+)%\)/);
+  if (m) return `Possible help requests (up to ${m[1]}%)`;
+  if (/no policyholders/.test(first)) return 'No policyholders here';
+  const share = u.n > 0 ? u.ex / u.n : 0;
+  if (u.p === 'P2') return share >= 0.1 ? `Some damage expected (~${Math.round(share * 100)}% of homes)` : 'Little damage expected';
+  return `Heavy damage expected (~${Math.round(share * 100)}% of homes)`;
+}
+
 export function tooltipHtml(u: MapUnit, label: string): string {
-  const cause = u.sc && u.si >= 0.2 ? `<br>Silence: ${Math.round(u.si * 100)}% · ${esc(CAUSE[u.sc] ?? u.sc)}` : '';
-  const scope = u.res === 7 ? `District of ${u.kids.length} neighborhoods · ` : '';
+  const status = u.fr > 0 ? 'field-verified' : u.v === 'verified' ? 'verified' : 'unverified';
   return (
-    `<b>${esc(label)} · ${u.p}${u.v === 'needs_verification' ? ' · needs verification' : ' · verified'}</b>` +
-    `<br>${scope}Confidence ${Math.round(u.c * 100)}% · ${u.n.toLocaleString()} households · ~${u.ex.toFixed(1)} likely severe` +
-    `<br>SMS replies ${u.rep}/${u.sent} · claims ${u.cl}${u.fr ? ` · field reports ${u.fr}` : ''}${cause}` +
-    (u.r ? `<br><span class="tip-reason">${esc(u.r)}</span>` : '')
+    `<div class="tip-title"><i style="background:${COLOR[u.p]}"></i>${esc(label)} · ${u.p}` +
+    `<span class="tip-status ${u.v === 'verified' ? 'ok' : ''}">${status}</span></div>` +
+    `<div class="tip-why">${esc(driverLine(u))}</div>` +
+    `<div class="tip-meta">${u.n.toLocaleString()} homes · ~${Math.round(u.ex).toLocaleString()} likely severe · ${Math.round(u.c * 100)}% confident</div>`
   );
 }

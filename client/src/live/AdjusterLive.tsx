@@ -35,7 +35,7 @@ function AdjusterScreen() {
   const assignedIdsAll = useMemo(() => mine.map((a) => a.householdId), [mine]);
   const estimateBy = useEstimatesById(assignedIdsAll);
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
-  const fictional = !worldRows[0]?.region;
+  const fictional = worldRows[0] ? !worldRows[0].region : false;
   const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cells.length, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assigned = useMemo(

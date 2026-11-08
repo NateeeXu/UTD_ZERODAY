@@ -98,7 +98,7 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
         L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 2.5, fill: false, interactive: false }).addTo(g.sel);
       }
     }
-  }, [cells, res, zoom, selected]);
+  }, [cells, res, zoom, selected, labelFor]); // labelFor: rebuild tooltips when names change (e.g. world row arrives)
 
   // Schools / universities / hospitals.
   useEffect(() => {
