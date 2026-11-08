@@ -17,11 +17,12 @@ interface Props {
   flash: { hex: string; key: number } | null; // a fresh live event landed here
   fitKey: string;                       // refit when this changes (region switch)
   padRight?: number;
+  padLeft?: number;                     // px covered by the left rail, for fitBounds
   onResChange?: (res: 7 | 8) => void;
   mode?: MapMode;
 }
 
-export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, onResChange, mode = 'priority' }: Props) {
+export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority' }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup } | null>(null);
@@ -63,10 +64,10 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     if (!m || !cells.length || fitted.current === fitKey) return;
     const b = L.latLngBounds(cells.flatMap((c) => cellToBoundary(c.hex) as [number, number][]));
     m.invalidateSize();
-    m.fitBounds(b, { paddingTopLeft: [24, 24], paddingBottomRight: [padRight, 24], animate: false });
+    m.fitBounds(b, { paddingTopLeft: [padLeft, 24], paddingBottomRight: [padRight, 24], animate: false });
     fitted.current = fitKey;
     setZoom(m.getZoom());
-  }, [cells, fitKey, padRight]);
+  }, [cells, fitKey, padRight, padLeft]);
 
   const res: 7 | 8 = zoom < LOD_ZOOM ? 7 : 8;
   useEffect(() => cb.current.onResChange?.(res), [res]);

@@ -22,6 +22,12 @@ export function AdjusterLive() {
 
 type Safety = 'safe' | 'needs_help' | 'unsure';
 const DAMAGE = ['None', 'Minor', 'Severe', 'Uninhabitable'] as const;
+// close_household reasons; unreachable_after_visit requires an assignment first (backend rule).
+const CLOSURES = [
+  { value: 'vacant', label: 'Vacant' },
+  { value: 'not_in_area', label: 'Not in area' },
+  { value: 'unreachable_after_visit', label: 'Unreachable after visit' },
+];
 
 function AdjusterScreen() {
   const [myMember] = useTable(tables.myMember);
@@ -134,6 +140,10 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
   const [claims] = useTable(tables.claim.where((r) => r.householdId.eq(hh.id)));
   const [reports] = useTable(tables.fieldReport.where((r) => r.householdId.eq(hh.id)));
   const submit = useReducer(reducers.submitFieldReport);
+  const closeHousehold = useReducer(reducers.closeHousehold);
+  const [followRows] = useTable(tables.householdFollowup.where((r) => r.householdId.eq(hh.id)));
+  const closure = followRows[0]?.closureReason ?? '';
+  const [closeError, setCloseError] = useState<string | null>(null);
   const [safety, setSafety] = useState<Safety | null>(null);
   const [damage, setDamage] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -213,6 +223,27 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
         <button className="btn primary block" disabled={safety == null || damage == null || busy} onClick={send}>
           {busy ? 'Sending…' : 'Submit field report'}
         </button>
+
+        <h3>Can't make contact?</h3>
+        <label className="field">
+          <span>Close without contact (documented reason)</span>
+          <select
+            value={closure}
+            onChange={async (e) => {
+              setCloseError(null);
+              try {
+                await closeHousehold({ householdId: hh.id, reason: e.target.value });
+              } catch (err) {
+                setCloseError(err instanceof Error ? err.message : String(err));
+              }
+            }}
+          >
+            <option value="">{closure ? 'Reopen (not closed)' : 'Open · choose a reason…'}</option>
+            {CLOSURES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
+        {closure && <p className="small muted">Closed: {CLOSURES.find((c) => c.value === closure)?.label ?? closure}{followRows[0]?.closedBy ? ` · by ${followRows[0].closedBy}` : ''}</p>}
+        {closeError && <p className="form-error">{closeError}</p>}
       </div>
     </div>
   );
