@@ -11,7 +11,7 @@ import { QrButton } from './LiveQrCard';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, RANK, cellSetKey, driverLine, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import { COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import './cell-detail.css';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
@@ -86,7 +86,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     });
   }, [adjusterLocations, members]);
   const [myMember, memberReady] = useTable(tables.myMember);
-  const [candidates] = useTable(tables.inspectionCandidate);
   const [assignments] = useTable(tables.assignment);
 
   const [flash, setFlash] = useState<{ hex: string; key: number } | null>(null);
@@ -188,13 +187,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   const kidsNote = useMemo(() => makeKidsNote(facilities, cellBy, !!world?.schoolHours), [facilities, cellBy, world?.schoolHours]);
 
-  // Household details for the selected cell's candidates (the panels subscribe their own rows).
-  const detailIds = useMemo(() => {
-    if (!sel) return [];
-    const kids = new Set(sel.kids.map((k) => k.hex));
-    return candidates.filter((c) => kids.has(c.hex)).map((c) => c.householdId);
-  }, [sel, candidates]);
-  const householdBy = useHouseholdsById(detailIds);
 
   // QR target: a household with a phone in the most urgent silent cell, so a judge's reply lands somewhere visible.
   const qrHex = useMemo(() => {
@@ -422,8 +414,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             <CellDetail
               unit={sel}
               label={labelFor(sel)}
-              households={householdBy}
-              candidates={candidates}
               openAssignments={openAssignments}
               assignedHomes={assignedHomes}
               onOpenHousehold={openHousehold}
@@ -485,19 +475,6 @@ function unitFromCell(c: HexStatsRow): MapUnit {
   return unitsFor([c], 8)[0];
 }
 
-function householdLine(h: HouseholdRow | undefined, fictional: boolean): string {
-  if (!h) return '';
-  const flags: string[] = [];
-  if (h.age75) flags.push('75+');
-  else if (h.age65) flags.push('65+');
-  if (h.livesAlone) flags.push('lives alone');
-  if (h.medicalDevice) flags.push('medical device');
-  if (h.disability) flags.push('disability');
-  if (h.noVehicle) flags.push('no vehicle');
-  if (h.limitedEnglish) flags.push(`limited English${h.primaryLanguage ? ` (${h.primaryLanguage})` : ''}`);
-  return [homeLabel(h.id, fictional), ...flags].join(' · ');
-}
-
 function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   return (
     <span className={`chip chip-${p}`} style={{ opacity: unverified ? 0.55 : 1 }} title={unverified ? `${p}, needs check` : p}>
@@ -509,11 +486,11 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
 type AssignedHome = { householdId: string; hex: string; status: string; adjuster: string; at: number };
 const ASSIGNED_SHOWN = 8;
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, assignedHomes = [], onOpenHousehold, cellLabel, onSelectCell, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
+export function CellDetail({ unit, label, openAssignments, assignedHomes = [], onOpenHousehold, cellLabel, onSelectCell, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false }: {
   unit: MapUnit;
   label: string;
-  households: Map<string, HouseholdRow>;
-  candidates: readonly { householdId: string; hex: string; rank: number; inspectScore: number; pSevere: number; pNeedsHelp: number }[];
+  households?: Map<string, HouseholdRow>;
+  candidates?: readonly { householdId: string; hex: string; rank: number; inspectScore: number; pSevere: number; pNeedsHelp: number }[];
   openAssignments: Map<string, number>;
   assignedHomes?: readonly AssignedHome[];
   onOpenHousehold?: (householdId: string, hex: string) => void;
@@ -529,7 +506,6 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   noteFor?: (h: HouseholdRow | undefined) => string | null;
 }) {
   const kidHexes = new Set(unit.kids.map((k) => k.hex));
-  const top = candidates.filter((c) => kidHexes.has(c.hex)).sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 6);
   // For a district, assign in its most urgent unverified child cell.
   const target = [...unit.kids].sort((a, b) => RANK[prio(a.priority)] - RANK[prio(b.priority)] || b.severity - a.severity)
     .find((k) => k.verification === 'needs_verification') ?? unit.kids[0];
@@ -558,7 +534,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
         </span>
       </div>
       <div className="detail-body">
-        {/* Only the neighborhood number up front; the engine's reasoning is one tap away (and in the decision trace). */}
+        {/* Kept short on purpose: neighborhood number, the readout and assigned homes. The engine's reasoning is in the decision trace. */}
         {unit.res === 7 && cellLabel && (
           <p className="nb-line">
             Most urgent neighborhood:{' '}
@@ -567,24 +543,11 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
               : <b>{cellLabel(topKid.hex)}</b>}
           </p>
         )}
-        {unit.r && (
-          <details className="why">
-            <summary>Why {unit.p}</summary>
-            <p className="why-plain">{driverLine(unit)}</p>
-            <p className="why-full">{unit.r}</p>
-          </details>
-        )}
         <div className="readout">
-          <span title="90% range from the simulation"><b>{severeRange(unit)}</b>homes severely damaged</span>
+          <span title={`90% range from the simulation · point estimate ~${unit.ex.toFixed(1)}`}><b>{severeRange(unit)}</b>homes severely damaged</span>
           <span><b>{unit.rep}/{unit.sent}</b>SMS replied</span>
           <span><b>{unit.cl}</b>claims</span>
         </div>
-        {Number.isFinite(unit.lo) && Number.isFinite(unit.hi) && (
-          <p className="small muted range-note">90% range · point estimate ~{unit.ex.toFixed(1)}, for reference</p>
-        )}
-        {unit.sc && (
-          <p className="small silence-line">Silent area ({pct(unit.si)} of expected replies missing) · {CAUSE[unit.sc] ?? unit.sc}</p>
-        )}
         {!readOnly && <>
         {homes.length > 0 && <>
           <h3 className="eyebrow divider">Assigned · {homes.length - doneCount} open{doneCount ? ` · ${doneCount} done` : ''}</h3>
@@ -603,20 +566,6 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
             {homes.length > ASSIGNED_SHOWN && <li className="muted small">+{homes.length - ASSIGNED_SHOWN} more</li>}
           </ul>
         </>}
-        <h3 className="eyebrow divider">Inspect first</h3>
-        <ul className="hh-list">
-          {top.map((c) => (
-            <li key={c.householdId}>
-              <span className="hh-main">
-                <b>{homeLabel(c.householdId, fictional)}</b>
-                <span className="muted small">{householdLine(households.get(c.householdId), fictional).split(' · ').slice(1).join(' · ') || 'no vulnerability flags'}</span>
-                {noteFor?.(households.get(c.householdId)) && <span className="kids small">{noteFor(households.get(c.householdId))}</span>}
-              </span>
-              <span className="small num">help {pct(c.pNeedsHelp)} · severe {pct(c.pSevere)}</span>
-            </li>
-          ))}
-          {!top.length && <li className="muted small">No open inspection candidates here.</li>}
-        </ul>
         </>}
       </div>
       {!readOnly && <div className="detail-actions">

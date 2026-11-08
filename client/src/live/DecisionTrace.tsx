@@ -466,11 +466,9 @@ function Lanes({ step }: { step: number }) {
     <div className="dt-lanes">
       <div className={`dt-lane c${lane === 'c' ? ' on' : ''}`}>
         <b>Claude reads</b>
-        <span>Never scores cells. Never answers coverage.</span>
       </div>
       <div className={`dt-lane r${lane === 'r' ? ' on' : ''}`}>
         <b>Rules decide</b>
-        <span>Priority, routing, action.</span>
       </div>
     </div>
   );
