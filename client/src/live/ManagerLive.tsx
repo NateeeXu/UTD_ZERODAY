@@ -169,9 +169,11 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   const feed = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
-    for (const r of smsReplies) items.push({ key: `s${r.id}`, kind: 'sms_reply', t: r.t, at: r.ingestedAt.toDate().getTime(), hex: r.hex, householdId: r.householdId, live: r.source === 'live', text: replyText(r), help: r.lifeSafety });
-    for (const c of claims) items.push({ key: `c${c.id}`, kind: 'claim', t: c.t, at: c.ingestedAt.toDate().getTime(), hex: c.hex, householdId: c.householdId, live: c.source === 'live', text: `Claim · ${c.peril} · damage ${c.reportedDamage}`, help: false });
-    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, text: `Visit (${f.adjusterId}) · ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · ${reportDamage(f)}`, help: f.safety === 'needs_help' });
+    for (const r of smsReplies) items.push({ key: `s${r.id}`, kind: 'sms_reply', t: r.t, at: r.ingestedAt.toDate().getTime(), hex: r.hex, householdId: r.householdId, live: r.source === 'live', ...replyFeed(r) });
+    for (const c of claims) items.push({ key: `c${c.id}`, kind: 'claim', t: c.t, at: c.ingestedAt.toDate().getTime(), hex: c.hex, householdId: c.householdId, live: c.source === 'live', channel: 'claim', title: 'Claim filed', detail: `${cap(c.peril)} · ${damagePhrase(c.reportedDamage)}`, tone: 'neutral' });
+    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, channel: 'visit',
+      title: f.safety === 'unsure' ? 'Visit · nobody seen' : f.safety === 'needs_help' ? 'Visit · needs help' : 'Visit · everyone safe',
+      detail: `${f.damageKnown ? damagePhrase(f.damage) : 'House not assessed'} · ${f.adjusterId}`, tone: f.safety === 'needs_help' ? 'help' : 'neutral' });
     return items.sort((a, b) => b.t - a.t || b.at - a.at).slice(0, 50);
   }, [smsReplies, claims, fieldReports]);
 
@@ -578,8 +580,15 @@ export function CellDetail({ unit, label, openAssignments, assignedHomes = [], o
   );
 }
 
-function replyText(r: SmsReplyRow): string {
-  const who = r.channel === 'call' ? 'Call' : 'Text';
-  const state = r.lifeSafety ? 'DANGER' : r.safety === 'needs_help' ? 'needs help' : 'safe';
-  return `${who} · ${state}${r.notHome ? ' · not home' : ''} · ${r.damageKnown ? `damage ${r.damage}` : 'damage unknown'}`;
+// Feed rows in plain words: a title that says what happened, a detail line with the house.
+const DAMAGE_PHRASE = ['No damage', 'Minor damage', 'Severe damage', 'Uninhabitable'];
+const damagePhrase = (d: number) => DAMAGE_PHRASE[d] ?? `Damage ${d}`;
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+function replyFeed(r: SmsReplyRow): Pick<FeedItem, 'channel' | 'title' | 'detail' | 'tone'> {
+  return {
+    channel: r.channel === 'call' ? 'call' : 'text',
+    title: r.lifeSafety ? 'Immediate danger' : r.safety === 'needs_help' ? 'Needs help' : r.notHome ? 'Safe, not home' : 'Safe',
+    detail: r.damageKnown ? damagePhrase(r.damage) : 'Damage unknown',
+    tone: r.lifeSafety ? 'danger' : r.safety === 'needs_help' ? 'help' : 'ok',
+  };
 }

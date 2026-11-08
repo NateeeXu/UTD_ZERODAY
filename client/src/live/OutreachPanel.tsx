@@ -14,7 +14,8 @@ import { ContactActions, channelFor } from './household';
 import { prio, type Priority } from './mapModel';
 import type { HexStatsRow, HouseholdRow, MemberRow, MetricsRow, SmsReplyRow } from './rows';
 import type { Labeler } from './labels';
-import { fmtT, homeLabel } from '../format';
+import { homeLabel } from '../format';
+import './feed.css';
 
 export type OutreachTab = 'unacc' | 'requests' | 'feed';
 type RequestTab = 'referral' | 'assistance' | 'inspection_request';
@@ -27,8 +28,10 @@ export interface FeedItem {
   hex: string;
   householdId: string;
   live: boolean;
-  text: string;
-  help: boolean;
+  channel: 'text' | 'call' | 'claim' | 'visit';
+  title: string;   // what happened, in plain words: "Immediate danger", "Safe, not home", "Claim filed"
+  detail: string;  // the house: "Severe damage", "Wind · Minor damage"
+  tone: 'danger' | 'help' | 'ok' | 'neutral';
 }
 
 interface Props {
@@ -265,19 +268,29 @@ export function OutreachPanel(p: Props) {
 
           {live && (
             <div className="p2-pane" hidden={tab !== 'feed'}>
-              <ul className="p2-list">
-                {feedRows.map((f) => (
-                  <li key={f.key}>
-                    <button className={`feed-item ${f.kind}`} onClick={() => p.onSelectHex(f.hex)}>
-                      <span className="muted small num">{fmtT(f.t)}</span>
-                      <span className="feed-main">
-                        <span className={f.help ? 'danger-text' : ''}>{f.text}</span>
-                        <span className="muted small"><span className={`chip mini chip-${cellPrio(f.hex)}`}>{cellPrio(f.hex)}</span>{p.labeler.cell(f.hex)}{f.live ? ' · live' : ''}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-                {!p.feed.length && <li className="muted empty">No events yet. Press Start.</li>}
+              <ul className="p2-list feed-list">
+                {feedRows.map((f) => {
+                  const pr = cellPrio(f.hex);
+                  return (
+                    <li key={f.key}>
+                      <button type="button" className={`feed-row tone-${f.tone}`} onClick={() => p.onSelectHex(f.hex)}>
+                        <span className="feed-icon" aria-hidden="true"><FeedIcon channel={f.channel} /></span>
+                        <span className="feed-body">
+                          <span className="feed-top">
+                            <span className="feed-title">{f.title}</span>
+                            <span className="feed-time">{shortT(f.t)}</span>
+                          </span>
+                          <span className="feed-sub">
+                            <span className={`feed-prio p-${pr}`}>{pr}</span>
+                            <span className="feed-where">{p.labeler.cell(f.hex)} · {f.detail}</span>
+                            {f.live && <span className="feed-live">Live</span>}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {!p.feed.length && <li className="feed-empty">No events yet. Press Start.</li>}
               </ul>
             </div>
           )}
@@ -285,4 +298,21 @@ export function OutreachPanel(p: Props) {
       )}
     </section>
   );
+}
+
+// "T+6h" / "T+6h 15m"
+function shortT(t: number): string {
+  const m = Math.max(0, Math.round(t));
+  const h = Math.floor(m / 60);
+  return m % 60 ? `T+${h}h ${m % 60}m` : `T+${h}h`;
+}
+
+function FeedIcon({ channel }: { channel: FeedItem['channel'] }) {
+  const svg = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  switch (channel) {
+    case 'call': return <svg {...svg}><path d="M6.6 3.5h2.6l1.4 4-2 1.3a12 12 0 0 0 6.6 6.6l1.3-2 4 1.4v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" /></svg>;
+    case 'claim': return <svg {...svg}><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></svg>;
+    case 'visit': return <svg {...svg}><path d="M4 11l8-7 8 7" /><path d="M6 10v10h12V10" /><path d="M10 20v-5h4v5" /></svg>;
+    default: return <svg {...svg}><path d="M4 5h16v11H9l-5 4z" /></svg>;
+  }
 }
