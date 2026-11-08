@@ -51,6 +51,25 @@ export function rememberRegion(id: RegionId) {
 
 export type Screen = 'manager' | 'adjuster' | 'reply';
 
+// Phone hand-off from the manager's QR: #/adjuster?t=<identity token>. Before the app renders, the token
+// becomes this device's adjuster identity for the region's database (so the phone opens already signed in
+// as that adjuster) and is removed from the address bar. It sits after '#', so it never reaches the server.
+export function consumeAdjusterHandoff(): void {
+  const m = /^#\/adjuster\?(.+)$/.exec(window.location.hash);
+  if (!m) return;
+  const token = new URLSearchParams(m[1]).get('t');
+  if (token) {
+    const r = initialLiveRegion();
+    try {
+      if (r.db) localStorage.setItem(tokenKey('adjuster', r.db), token);
+      rememberRegion(r.id);
+    } catch {
+      /* storage blocked: the phone will ask to join */
+    }
+  }
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/adjuster`);
+}
+
 // One token per screen and database, so one laptop can run manager + adjuster as two identities.
 export const tokenKey = (screen: Screen, db: string) => `triage-token-${screen}-${db}`;
 

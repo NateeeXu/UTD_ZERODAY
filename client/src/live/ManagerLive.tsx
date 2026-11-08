@@ -285,7 +285,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   return (
     <div className="manager live">
       <RegionHeader region={region} onRegion={onRegion} scenario={world?.name}>
-        <QrButton household={qrHousehold} region={region.id} />
+        <QrButton household={qrHousehold} region={region.id} db={region.db!} members={members} managerName={me?.name} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
         {me ? (

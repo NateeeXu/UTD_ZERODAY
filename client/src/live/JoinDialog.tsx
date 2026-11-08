@@ -28,7 +28,7 @@ export function rememberedName(db: string | undefined, role: string): string | n
   }
 }
 
-function rememberName(db: string | undefined, role: string, name: string) {
+export function rememberName(db: string | undefined, role: string, name: string) {
   if (!db) return;
   try {
     localStorage.setItem(joinedKey(db, role), name);
@@ -53,6 +53,11 @@ function writeSaved(role: Role, saved: Saved | null) {
   } catch {
     /* storage blocked: manual join only */
   }
+}
+
+/** A staff passcode this browser was asked to remember (manager or adjuster login), if any. */
+export function savedPasscode(): string | null {
+  return readSaved('manager')?.passcode ?? readSaved('adjuster')?.passcode ?? null;
 }
 
 const defaultName = (role: Role) => (role === 'manager' ? 'Manager' : 'Adjuster');
