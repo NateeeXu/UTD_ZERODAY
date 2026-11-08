@@ -75,7 +75,7 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
    - 标题："Home #006142"。
    - 一行文字："District 91 · Help: High · Damage: High"。
    - 需求 chip 最多 2 个，只能是 `Medical device` 或 `Speaks Spanish`。
-   - 按钮："Directions"（描边，打开地图 App）和 "Open home"（主按钮）。
+   - 按钮："Go to area"（描边，见下方"导航说明"）和 "Open home"（主按钮）。
 5. **其余未完成任务**：每行显示编号、P badge、"Home #005321"、"District 58 · Medical device"，右侧 "Help: High"。发件箱里有未发报告的行加琥珀色 tag "Unsent"。
 6. **已完成任务**：行首绿勾，右侧 "Reported T+13h 05m"。绿勾**只表示任务做完了**；人的状况另起一个小 tag：
    - "Everyone safe"
@@ -97,7 +97,12 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
 顶栏："‹ Tasks" · "Task 1 of 3 · T+14h 30m" · `live`。
 
 从上到下（**Welfare check** 的顺序；Property inspection 的差别见本节末尾）：
-1. **地图条**：一个钉、自己的位置、一个 "Directions" 按钮（全屏只有这一个 Directions）。
+1. **地图条**：这一户所在格子的轮廓（不是精确房屋点）、自己的位置、一个 "Go to area" 按钮（全屏只有这一个导航按钮）。
+
+   **导航说明（演示数据）**：住户是合成的，但坐标落在真实街区里，精确坐标可能正好对上某个真实住宅。所以演示里不打开外部地图 App 去导航到某一户：
+   - "Go to area" 只在 App 内地图上显示到**格子中心**（约 0.7 km² 的区域）的路线和直线距离，并标注 "Demo data: area, not an address"。
+   - 任务列表仍可按距离排序（内部计算），不显示坐标。
+   - 正式上线时改为：保单上的真实地址 + 打开 Apple / Google Maps 导航。
    - iOS：`https://maps.apple.com/?daddr=lat,lng`；其他系统：`https://www.google.com/maps/dir/?api=1&destination=lat,lng`。
 2. **Badge 行**：`P0`、`Welfare check`、`Silent 14 h`。每种 chip 在一屏里只出现一次。
 3. **标题**："Home #006142"。下面一行："District 91 · assigned by M. Reyes · 12 min ago"（`assignedBy` → `member.name`；`createdAt` 是真实时间，所以用"几分钟前"）。
