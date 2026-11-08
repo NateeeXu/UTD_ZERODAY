@@ -310,7 +310,7 @@ renters 的区块内容：
                                        先查重：我的报告数 > baseCount？ 是 → [Sent]；否 → [Sending]
 
  needs_help 看门狗：点 Send 起 30 s 内没进 [Sent]（Queued 或 Failed 都算）
-   → 全宽红色块 "Not delivered — call 911 directly" + `Call 911 now`（tel:911），后台继续重试。
+   → 全宽红色块 "Not delivered — call 911 directly" + `Call 911 now`（演示版不要真的拨号：弹提示 "Demo only. No call placed."；正式版才用 tel:911），后台继续重试。
 ```
 
 - **"我的报告"** 指 `field_report.householdId === X && ingestedBy.isEqual(myIdentity)`。用条数判断，不用时间，这样不受手机时钟偏差影响。
