@@ -145,8 +145,8 @@ check('no candidates, no rows', rankCandidates([], HOME, NOW).length === 0);
 const reasonCases: [string, Candidate, string][] = [
   ['welfare, under an hour', welfare('r', { waitSinceMin: NOW - 20 }), 'No reply < 1 h'],
   ['welfare, hours', welfare('r', { waitSinceMin: NOW - 180 }), 'No reply 3 h'],
-  ['welfare, vulnerable, under an hour', welfare('r', { waitSinceMin: NOW - 20, vulnerable: true }), 'Vulnerable · no reply < 1 h'],
-  ['welfare, vulnerable, hours', welfare('r', { waitSinceMin: NOW - 300, vulnerable: true }), 'Vulnerable · no reply 5 h'],
+  ['welfare, vulnerable, under an hour', welfare('r', { waitSinceMin: NOW - 20, vulnerable: true }), 'No reply < 1 h'],
+  ['welfare, vulnerable, hours', welfare('r', { waitSinceMin: NOW - 300, vulnerable: true }), 'No reply 5 h'],
   ['inspection, first in the area', inspection('r', { verifiedInCell: 0, pSevere: 0.9 }), 'Inspect · first in area'],
   ['inspection, likely severe', inspection('r', { verifiedInCell: 2, pSevere: 0.5 }), 'Inspect · likely severe'],
   ['inspection, damage unclear', inspection('r', { verifiedInCell: 2, pSevere: 0.49 }), 'Inspect · damage unclear'],

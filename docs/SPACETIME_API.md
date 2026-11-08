@@ -402,12 +402,50 @@ The top 3 unverified households of each cell by `inspectScore` (the engine's `pe
 ### `assignment`
 `id` (u64), `householdId`, `hex`, `adjuster` (identity), `assignedBy`, `status` (`assigned` / `done` / `cancelled`), `createdAt`, `updatedAt`. A field report by the assigned adjuster, or `close_household` with a reason, marks it `done` automatically.
 
+### `adjuster_location`
+`identity` (PK), `lat`, `lng`, `source` (`demo` = picked on the map / `gps`), `updatedAt`. One row per adjuster with a position. Public so the manager map can show positions (names from `member`). Demo only: a real deployment would restrict it to managers.
+
+### `adjuster_recommendation`: the adjuster "Next best" list
+Top 10 per adjuster, at most 3 per cell. An adjuster with no position has no rows. Clients read their own rows through `my_recommendations`.
+
+| field | type | meaning |
+|---|---|---|
+| id (PK) | u64 | |
+| adjuster | identity | whose list |
+| rank | u8 | 1 = best |
+| householdId, hex | string | |
+| kind | string | `welfare` / `inspection` |
+| priority | string | the cell's priority when the list was built |
+| score | f64 | value per minute; compare only within one priority |
+| distanceKm | f64 | straight line |
+| etaMin | f64 | drive only, not routing (formula below) |
+| reason | string | one line for the card: `No reply 14 h`, `Vulnerable · no reply 14 h`, `Inspect · first in area`, `Inspect · likely severe`, `Inspect · damage unclear` |
+| createdAt | timestamp | when the list was last rebuilt |
+
+**Candidates:** `unaccounted_queue` rows with `escalation = 'field_visit'` (welfare) plus `inspection_candidate` rows (inspection), minus households with an open assignment. A household in both stays welfare.
+
+**Ranking** (`spacetimedb/src/recommend-rank.ts`): deterministic rules; Claude does not rank. Cell priority first, so a nearer P1 never beats a P0. Within a priority, highest value per minute:
+```ts
+const driveMin = ((km * 1.3) / 35) * 60;  // straight-line km x road factor, at 35 km/h
+const score = value / (driveMin + 15);    // 15 min on site
+const welfareValue = 0.5 + 0.5 * Math.min(1, weight * (1 + waitMin / 360));
+const inspectionValue = (inspectScore * 2) / (2 + verifiedHouseholdsInCell);
+```
+
+**When the list changes:**
+- Rebuilt only when the adjuster updates location, refreshes, accepts a task or submits a field report. Never on the tick, so it never replaces a task on its own.
+- Hooks in other reducers: `assign`, `assign_hex`, `accept_recommendation`, `submit_field_report` and `close_household` with a reason remove the household from every adjuster's list. Remaining rows keep their `rank` until that adjuster's next rebuild.
+- `submit_field_report` also moves an adjuster with a `demo` location to that household (`gps` stays) and rebuilds their list.
+- Replies and simulated staff do not touch the list; `accept_recommendation` catches those cases.
+- `join_as` with another role, `leave` and `remove_member` delete the adjuster's location and list. `reset_demo` clears both tables.
+
 ### `reply_inbox`: raw free-text replies for the Claude parser worker
 `id` (u64 PK), `householdId`, `text` (1–500 chars, trimmed), `language` (hint: `household.primaryLanguage`, `''` if none), `status` (`pending` / `parsed` / `failed`), `receivedAt`, `parsedAt` (option timestamp, unset while pending), `error` (`''`; `review: <reasons>` = parsed but a person should look; `parser: <code>; fallback submitted` = Claude failed and the reply went in as "needs help, a person calls back"; `submit: <message>` = the reducer rejected it). The reply page writes it with `submit_raw_reply` (no Anthropic key in the browser) and can watch its own row; `scripts/claude-worker.ts` turns each pending row into `submit_parsed_reply` (docs/CLAUDE_PARSER.md). Cleared with the demo state.
 
 ### Views (per caller)
 - `my_member`: the caller's own member row (0 or 1 rows). Use it to show "joined as ...".
 - `my_assignments`: the caller's own assignments (the adjuster task list).
+- `my_recommendations`: the caller's own `adjuster_recommendation` rows (the "Next best" list).
 
 ### Private tables (not subscribable)
 - `config`: owner, passcodes, static-data stamp.
@@ -433,6 +471,9 @@ Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damag
 | `assign` | householdId, adjusterIdentityHex | manager / owner | New `assigned` row; cancels another adjuster's open assignment for that household |
 | `assign_hex` | hex, adjusterIdentityHex, count (1–50) | manager / owner | Active inspection: assigns the `count` unverified, unassigned households of the cell with the highest `inspectScore` |
 | `update_assignment` | id (u64), status | the assigned adjuster, or manager / owner | Set `assigned` / `done` / `cancelled` |
+| `update_my_location` | lat, lng, source (`demo` / `gps`) | **`adjuster` members only** | Sets the caller's `adjuster_location` and rebuilds their "Next best" list |
+| `refresh_recommendations` | none | **`adjuster` members only** | Rebuilds the caller's list. Rejects with `set your location first` when there is no position |
+| `accept_recommendation` | householdId | **`adjuster` members only** | Self-assigns a household from the caller's list and rebuilds the list. If the task is no longer needed, removes the row and refreshes the list, with no assignment and no error. Rejects with `not in your Next best list` for any other household |
 | `remove_member` | identityHex | manager / owner | Housekeeping |
 | `start_replay` | speed (sim min per second, 0 < speed ≤ 1440) | manager / owner | Starts or resumes the 1-second tick (also changes speed). Suggested: 30 (72 h in 2.4 min) |
 | `set_speed` | speed | manager / owner | Change speed only |
@@ -471,6 +512,7 @@ SELECT * FROM metrics              -- verified coverage, holdout error, source t
 SELECT * FROM replay_state         -- clock, progress, play/pause state
 SELECT * FROM model_state          -- calibration info, trust batch progress
 SELECT * FROM member               -- adjuster picker
+SELECT * FROM adjuster_location    -- adjuster positions on the map (names from member)
 SELECT * FROM assignment
 SELECT * FROM inspection_candidate -- verification queue (≤ 3 per cell)
 SELECT * FROM field_report         -- live event feed
@@ -487,6 +529,8 @@ SELECT * FROM sms_reply WHERE hex = '<selected cell>'            -- replies incl
 ```sql
 SELECT * FROM my_member
 SELECT * FROM my_assignments
+SELECT * FROM my_recommendations                                -- "Next best" card
+SELECT * FROM adjuster_location WHERE identity = <my identity>  -- my position on the map
 SELECT * FROM household WHERE id = 'ca-live-h020813'            -- one query per assigned household
 SELECT * FROM household_estimate WHERE household_id = 'ca-live-h020813'
 SELECT * FROM hex_stats WHERE hex = '88283460b5fffff'            -- context for the card (reason)
@@ -495,6 +539,15 @@ SELECT * FROM claim WHERE household_id = 'ca-live-h020813'
 SELECT * FROM facility WHERE id = '<household.nearestSchoolId>'  -- reunification / shelter point
 ```
 Re-subscribe when `my_assignments` changes. The form calls `submit_field_report`. Show CMIST flags (`age75`, `disability`, `noVehicle`, `limitedEnglish` + `primaryLanguage`, `mobileHome`) and coverage (`policyType`, `windCovered`, `floodPolicy`, `earthquakeEndorsement`) on the card.
+
+"Next best" hooks (the card is the row with the lowest `rank`, not `rank === 1`; see `adjuster_recommendation`):
+```ts
+const [nextBest] = useTable(tables.myRecommendations);
+const updateLocation = useReducer(reducers.updateMyLocation);    // updateLocation({ lat, lng, source: 'demo' })
+const refresh = useReducer(reducers.refreshRecommendations);     // refresh()
+const accept = useReducer(reducers.acceptRecommendation);        // accept({ householdId })
+```
+The manager map uses `useTable(tables.adjusterLocation)` with `member` names.
 
 **Policyholder SMS page** (QR code, e.g. `/reply?db=triage-loop-ca&h=ca-live-h000552&code=<reply passcode>`)
 ```sql

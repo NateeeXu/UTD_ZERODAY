@@ -73,8 +73,7 @@ export function valueOf(c: Candidate, nowMin: number): number {
 export function reasonOf(c: Candidate, nowMin: number): string {
   if (c.kind === 'welfare') {
     const hours = Math.round(Math.max(0, nowMin - c.waitSinceMin) / 60);
-    const wait = hours < 1 ? 'no reply < 1 h' : `no reply ${hours} h`;
-    return c.vulnerable ? `Vulnerable · ${wait}` : wait.charAt(0).toUpperCase() + wait.slice(1);
+    return hours < 1 ? 'No reply < 1 h' : `No reply ${hours} h`; // never name vulnerability on the phone (PRD FA-11)
   }
   if (c.verifiedInCell === 0) return 'Inspect · first in area';
   return c.pSevere >= 0.5 ? 'Inspect · likely severe' : 'Inspect · damage unclear';
