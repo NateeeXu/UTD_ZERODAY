@@ -789,6 +789,11 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
   const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}`;
   const nb = next ? bannerFor(next) : null;
   const rest = all.filter((t) => t !== next);
+  // The pulled-up list: open first (route order), then done (newest first), each under a small header.
+  const sections = [
+    { key: 'open', title: 'Open', list: rest.filter((t) => t.open) },
+    { key: 'done', title: 'Done', list: rest.filter((t) => !t.open) },
+  ].filter((s) => s.list.length > 0);
   // Tap an area: select its task (tap again to cycle when one area holds several homes).
   const pickArea = (hex: string) => {
     const here = all.filter((t) => t.hex === hex);
@@ -844,8 +849,15 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
 
         {sheet === 'peek' && (
           <button type="button" className="adj-peekline" onClick={() => setSheet('next')}>
-            <b>{open.length ? `${open.length} open task${open.length > 1 ? 's' : ''}` : 'No open tasks'}</b>
-            {next && <span>{isNextUp ? 'Next up · ' : ''}{next.label}{next.district ? ` · ${next.district}` : ''}</span>}
+            <b>
+              {open.length ? (done.length ? `${open.length} open` : `${open.length} open task${open.length > 1 ? 's' : ''}`) : done.length ? 'All done' : 'No tasks yet'}
+              {done.length > 0 && <span className="adj-peek-done"> · {done.length} done</span>}
+            </b>
+            <span>
+              {next
+                ? <>{isNextUp ? 'Next up' : next.open ? `Task ${next.number}` : 'Done'} · {next.label}{next.district ? ` · ${next.district}` : ''}</>
+                : 'New tasks appear here automatically.'}
+            </span>
           </button>
         )}
 
@@ -923,12 +935,17 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
           // Always rendered so opening and closing animate; inert while closed so it can't be tabbed into.
           <div className={`adj-more${expanded ? ' open' : ''}`} inert={!expanded}>
             <div className="adj-more-inner">
-              <div className="adj-list">
-                {rest.map((t) => {
-                  const b = bannerFor(t);
-                  return <TaskCard key={t.id} t={t} myId={myId} banner={b} onOpen={() => onOpen(t.id)} onDismiss={() => b && onDismiss(t, b)} onSkip={() => onSkip(t)} />;
-                })}
-              </div>
+              {sections.map(({ key, title, list }) => (
+                <div key={key} className={`adj-listsec ${key}`} role="group" aria-label={`${title}, ${list.length}`}>
+                  <h3 className="adj-listhead">{title}<span> · {list.length}</span></h3>
+                  <div className="adj-list">
+                    {list.map((t) => {
+                      const b = bannerFor(t);
+                      return <TaskCard key={t.id} t={t} myId={myId} banner={b} onOpen={() => onOpen(t.id)} onDismiss={() => b && onDismiss(t, b)} onSkip={() => onSkip(t)} />;
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

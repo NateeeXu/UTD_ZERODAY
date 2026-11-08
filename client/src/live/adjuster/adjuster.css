@@ -109,6 +109,13 @@
 .adj-more { display: grid; grid-template-rows: 0fr; opacity: 0; margin-top: -10px; transition: grid-template-rows 0.34s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.24s ease, margin-top 0.34s ease; }
 .adj-more.open { grid-template-rows: 1fr; opacity: 1; margin-top: 0; }
 .adj-more-inner { min-height: 0; overflow: hidden; }
+/* Pulled-up list sections, "Open · N" then "Done · M"; the done header sits back like its rows (.adj-taskcard.done). */
+.adj-listsec { padding-top: 4px; }
+.adj-listsec + .adj-listsec { padding-top: 14px; }
+.adj .adj-listhead { margin: 0 0 6px; padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--t); }
+.adj-listhead span { color: var(--t2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.adj-listsec.done .adj-listhead { color: var(--t2); }
+.adj-peekline .adj-peek-done { font-size: inherit; font-weight: 500; color: var(--t2); }
 .adj-sheet { transition: box-shadow 0.2s ease; }
 /* Demo start position prompt (replaces the demo label until a start is set) */
 .adj-pick {
