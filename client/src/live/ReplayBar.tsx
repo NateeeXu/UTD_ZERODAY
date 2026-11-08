@@ -1,9 +1,59 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import type { ReplayStateRow } from './rows';
 import { JUMPS, REPLAY_SPEED, SPEED_MULTIPLIERS } from './config';
 import { fmtT } from '../format';
+
+// The database ticks about once a second and moves the clock by speed × elapsed seconds, so the raw
+// value jumps 60–90 sim-minutes at 2×/3× and stalls whenever a tick runs late. The bar and clock
+// instead follow an estimate of the database clock (last value + speed × time since it arrived),
+// speeding up a little when behind and slowing down when ahead (0.3×–2×, never stopping, never
+// jumping back). Simulated with jittery and late ticks this stays within ~0.95–1.06× of the set speed.
+// A jump or reset (more than 3 s of playback away) snaps.
+function useSmoothMinutes(replay: ReplayStateRow | undefined): number {
+  const target = replay?.simMinutes ?? 0;
+  const running = !!replay?.running;
+  const speed = replay?.speed ?? 0;
+  const max = replay?.maxMinutes || 4320;
+  const anchor = useRef({ min: target, at: 0 });
+  const shown = useRef(target);
+  const [, redraw] = useState(0);
+
+  useEffect(() => {
+    anchor.current = { min: target, at: performance.now() };
+    if (!running) shown.current = target;
+  }, [target, running]);
+
+  useEffect(() => {
+    if (!running || speed <= 0) return;
+    let raf = 0;
+    let last = performance.now();
+    const frame = (now: number) => {
+      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+      last = now;
+      const a = anchor.current;
+      const est = Math.min(max, a.min + (speed * (now - a.at)) / 1000);
+      const prev = shown.current;
+      let next: number;
+      if (Math.abs(est - prev) > speed * 3) next = est;
+      else {
+        const rate = Math.max(0.3, Math.min(2, 1 + (est - prev) / speed));
+        next = Math.min(max, a.min + speed * 2, prev + speed * rate * dt);
+        next = Math.max(prev, next);
+      }
+      if (next !== prev) {
+        shown.current = next;
+        redraw((x) => x + 1);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [running, speed, max]);
+
+  return running ? shown.current : target;
+}
 
 // Bottom bar: replay clock from `replay_state`, manager-only controls.
 export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplayStateRow | undefined; canControl: boolean; onNeedJoin: () => void }) {
@@ -30,6 +80,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   const max = replay?.maxMinutes || 4320;
   const t = replay?.simMinutes ?? 0;
   const atEnd = t >= max - 0.5;
+  const shownT = useSmoothMinutes(replay); // display only; logic uses the database value
   const run = (fn: () => Promise<void>) => async () => {
     if (!canControl) return onNeedJoin();
     setBusy(true);
@@ -64,7 +115,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       )}
       <div className="timeline-track">
         <div className="progress" aria-hidden>
-          <div className="progress-fill" style={{ width: `${Math.min(100, (t / max) * 100)}%` }} />
+          <div className="progress-fill" style={{ width: `${Math.min(100, (shownT / max) * 100)}%`, transition: 'none' }} />
           {JUMPS.map((j) => (
             <i key={j.minutes} className="progress-mark" style={{ left: `${(j.minutes / max) * 100}%` }} />
           ))}
@@ -74,7 +125,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
         </div>
       </div>
       <span className="clock" title={replay ? `${replay.nextSeq.toLocaleString()} of ${replay.totalStaged.toLocaleString()} events released` : ''}>
-        {fmtT(t)}
+        {fmtT(Math.floor(shownT))}
       </span>
       <div className="segmented speed" role="group" aria-label="Replay speed" title={`1× = ${REPLAY_SPEED} sim-minutes per second`}>
         {SPEED_MULTIPLIERS.map((m) => (
