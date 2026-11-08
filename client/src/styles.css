@@ -576,3 +576,5 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .hh-panel .detail-body > .btn { margin-top: 8px; }
 .hh-panel .history { margin-bottom: 4px; }
 .p2-list > li + li { margin-top: 4px; }
+.p2-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.p2-body[hidden], .p2-pane[hidden] { display: none; }

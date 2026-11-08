@@ -4,7 +4,7 @@
 //   Requests       — 911 / local agency referrals (life safety only), customer care, inspection requests.
 //   Feed           — latest replies, claims, field reports.
 // The P0 / P1 / P2 switch puts that priority's rows first, on every tab.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings/index.ts';
 import { useHouseholdsById } from './hooks';
@@ -71,11 +71,39 @@ const STEP_ACTION: Record<string, { label: string; how: string; prompt: string; 
   locate: { label: 'Locate', how: 'emergency-contact call', prompt: 'House inspected, nobody seen. Log the emergency-contact call:' },
 };
 
+// Per-viewer memory of the panel (tab, sub-tab, sort, open): a convenience, so it may be missing.
+const UI_KEY = 'triage-outreach-ui';
+type UiState = { open: boolean; tab: OutreachTab; reqTab: RequestTab; first: Priority };
+function loadUi(): Partial<UiState> {
+  try {
+    return JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as Partial<UiState>;
+  } catch {
+    return {};
+  }
+}
+
 export function OutreachPanel(p: Props) {
-  const [open, setOpen] = useState(false); // collapsed by default
-  const [tab, setTab] = useState<OutreachTab>('unacc');
-  const [reqTab, setReqTab] = useState<RequestTab>('referral');
-  const [first, setFirst] = useState<Priority>('P0');
+  const [saved] = useState(loadUi);
+  const [open, setOpen] = useState(saved.open ?? false); // collapsed by default
+  const [tab, setTab] = useState<OutreachTab>(saved.tab ?? 'unacc');
+  const [reqTab, setReqTab] = useState<RequestTab>(saved.reqTab ?? 'referral');
+  const [first, setFirst] = useState<Priority>(saved.first ?? 'P0');
+  useEffect(() => {
+    try {
+      localStorage.setItem(UI_KEY, JSON.stringify({ open, tab, reqTab, first }));
+    } catch {
+      /* ignore */
+    }
+  }, [open, tab, reqTab, first]);
+
+  // Every list mounts (hidden) the first time the panel opens and stays mounted, so tab switches show
+  // rows from the first frame instead of unmounting, resubscribing and flashing empty. The lists that
+  // are not on screen load in the background meanwhile.
+  const [everOpened, setEverOpened] = useState(open);
+  useEffect(() => {
+    if (open) setEverOpened(true);
+  }, [open]);
+  const live = everOpened || open;
   const [expanded, setExpanded] = useState<string | null>(null);
   const [queue] = useTable(tables.unaccountedQueue);
 
@@ -100,10 +128,7 @@ export function OutreachPanel(p: Props) {
     [p.feed, cellPrio, rankOf],
   );
 
-  const ids = useMemo(
-    () => (open && tab === 'unacc' ? queueRows.map((q) => q.householdId) : []),
-    [open, tab, queueRows],
-  );
+  const ids = useMemo(() => (live ? queueRows.map((q) => q.householdId) : []), [live, queueRows]);
   const householdBy = useHouseholdsById(ids);
 
   const pick = (t: OutreachTab) => {
@@ -148,24 +173,69 @@ export function OutreachPanel(p: Props) {
         </button>
       </div>
 
-      {open && (
-        <div className="p2-body">
-          {tab === 'unacc' && (p.adjusters.length > 0 ? (
-            <div className="p2-assign">
-              <span className="small muted">Send adjusters as</span>
-              <select value={p.pickedAdjuster?.identity.toHexString() ?? ''} onChange={(e) => p.onPickAdjuster(e.target.value)}>
-                {p.adjusters.map((a) => <option key={a.identity.toHexString()} value={a.identity.toHexString()}>{a.name}</option>)}
-              </select>
+      {live && (
+        <div className="p2-body" hidden={!open}>
+          {live && (
+            <div className="p2-pane" hidden={tab !== 'unacc'}>
+              {p.adjusters.length > 0 ? (
+                <div className="p2-assign">
+                  <span className="small muted">Send adjusters as</span>
+                  <select value={p.pickedAdjuster?.identity.toHexString() ?? ''} onChange={(e) => p.onPickAdjuster(e.target.value)}>
+                    {p.adjusters.map((a) => <option key={a.identity.toHexString()} value={a.identity.toHexString()}>{a.name}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="p2-assign">
+                  <span className="small muted">No adjuster online, so visits can't be sent yet.</span>
+                  <a className="link small" href={p.adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
+                </div>
+              )}
+              <ul className="p2-list">
+                {queueRows.map((q) => {
+                  const hh = householdBy.get(q.householdId);
+                  const flags = riskFlags(hh);
+                  const kids = p.kidsNote(hh);
+                  const sent = p.sentTo.get(q.householdId);
+                  const a = STEP_ACTION[q.escalation];
+                  const isOpen = expanded === q.householdId;
+                  const direct = !!a?.visit && p.adjusters.length > 0; // a visit with an adjuster online: one click
+                  const onButton = act(() => {
+                    if (direct) p.onAssignHousehold(q.householdId);
+                    else setExpanded(isOpen ? null : q.householdId);
+                  });
+                  return (
+                    <li key={q.householdId} className={`p2-item${isOpen ? ' open' : ''}`}>
+                      <div className="p2-row">
+                        <span className={`chip chip-${prio(q.cellPriority)}`}>{prio(q.cellPriority)}</span>
+                        <button className="p2-main" onClick={() => p.onOpen(q.householdId, q.hex)}>
+                          <b>{homeLabel(q.householdId, p.fictional)} <span className="muted small">· {p.labeler.cell(q.hex)}</span></b>
+                          <span className="small muted">{ESCALATION[q.escalation]?.label ?? q.escalation} · waiting {fmtHM(p.simMinutes - q.waitSinceMin)}{q.vulnerable ? ' · vulnerable' : ''}</span>
+                          {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
+                          {kids && <span className="kids small">{kids}</span>}
+                        </button>
+                        {sent
+                          ? <span className="esc esc-green">Sent · {sent}</span>
+                          : a && (
+                            <button className={`btn small-btn step-btn${a.visit ? ' primary' : ''}`} aria-expanded={direct ? undefined : isOpen} onClick={onButton}>
+                              {a.label}{!direct && <i className="caret" aria-hidden="true" />}
+                            </button>
+                          )}
+                      </div>
+                      {isOpen && a && (
+                        <ContactActions householdId={q.householdId} how={a.how} prompt={a.prompt} canAssign={p.adjusters.length > 0} adjusterUrl={p.adjusterUrl}
+                          onAssign={(id) => { setExpanded(null); p.onAssignHousehold(id); }}
+                          onLog={(id, o, how) => { setExpanded(null); p.onLog(id, o, how); }} />
+                      )}
+                    </li>
+                  );
+                })}
+                {!queueRows.length && <li className="muted empty">Everyone has been heard from.</li>}
+              </ul>
             </div>
-          ) : (
-            <div className="p2-assign">
-              <span className="small muted">No adjuster online, so visits can't be sent yet.</span>
-              <a className="link small" href={p.adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
-            </div>
-          ))}
+          )}
 
-          {tab === 'requests' && (
-            <>
+          {live && (
+            <div className="p2-pane" hidden={tab !== 'requests'}>
               <div className="gseg req-tabs" role="tablist" aria-label="Request type">
                 {([['referral', '911 / agency', '911 / local agency referrals (life safety)'], ['assistance', 'Care', 'Customer care requests'], ['inspection_request', 'Inspection', 'Inspection requests']] as [RequestTab, string, string][]).map(([id, label, title]) => (
                   <button key={id} role="tab" aria-selected={reqTab === id} className={reqTab === id ? 'on' : ''} onClick={() => setReqTab(id)} title={title}>
@@ -173,68 +243,39 @@ export function OutreachPanel(p: Props) {
                   </button>
                 ))}
               </div>
-              {reqTab === 'referral'
-                ? <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onOpen={p.onOpen} />
-                : <RequestList kind={reqTab} rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional}
+              {live && (
+                <div className="p2-pane" hidden={reqTab !== 'referral'}>
+                  <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onOpen={p.onOpen} />
+                </div>
+              )}
+              {(['assistance', 'inspection_request'] as const).map((kind) => live && (
+                <div key={kind} className="p2-pane" hidden={reqTab !== kind}>
+                  <RequestList kind={kind} rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional}
                     latestReply={p.latestReply} sentTo={p.sentTo} canAssign={p.adjusters.length > 0}
-                    onAssign={(id) => act(() => p.onAssignHousehold(id))()} onOpen={p.onOpen} />}
-            </>
+                    onAssign={(id) => act(() => p.onAssignHousehold(id))()} onOpen={p.onOpen} />
+                </div>
+              ))}
+            </div>
           )}
 
-          {tab !== 'requests' && <ul className="p2-list">
-            {tab === 'unacc' && queueRows.map((q) => {
-              const hh = householdBy.get(q.householdId);
-              const flags = riskFlags(hh);
-              const kids = p.kidsNote(hh);
-              const sent = p.sentTo.get(q.householdId);
-              const a = STEP_ACTION[q.escalation];
-              const isOpen = expanded === q.householdId;
-              const direct = !!a?.visit && p.adjusters.length > 0; // a visit with an adjuster online: one click
-              const onButton = act(() => {
-                if (direct) p.onAssignHousehold(q.householdId);
-                else setExpanded(isOpen ? null : q.householdId);
-              });
-              return (
-                <li key={q.householdId} className={`p2-item${isOpen ? ' open' : ''}`}>
-                  <div className="p2-row">
-                    <span className={`chip chip-${prio(q.cellPriority)}`}>{prio(q.cellPriority)}</span>
-                    <button className="p2-main" onClick={() => p.onOpen(q.householdId, q.hex)}>
-                      <b>{homeLabel(q.householdId, p.fictional)} <span className="muted small">· {p.labeler.cell(q.hex)}</span></b>
-                      <span className="small muted">{ESCALATION[q.escalation]?.label ?? q.escalation} · waiting {fmtHM(p.simMinutes - q.waitSinceMin)}{q.vulnerable ? ' · vulnerable' : ''}</span>
-                      {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
-                      {kids && <span className="kids small">{kids}</span>}
+          {live && (
+            <div className="p2-pane" hidden={tab !== 'feed'}>
+              <ul className="p2-list">
+                {feedRows.map((f) => (
+                  <li key={f.key}>
+                    <button className={`feed-item ${f.kind}`} onClick={() => p.onSelectHex(f.hex)}>
+                      <span className="muted small num">{fmtT(f.t)}</span>
+                      <span className="feed-main">
+                        <span className={f.help ? 'danger-text' : ''}>{f.text}</span>
+                        <span className="muted small"><span className={`chip mini chip-${cellPrio(f.hex)}`}>{cellPrio(f.hex)}</span>{p.labeler.cell(f.hex)}{f.live ? ' · live' : ''}</span>
+                      </span>
                     </button>
-                    {sent
-                      ? <span className="esc esc-green">Sent · {sent}</span>
-                      : a && (
-                        <button className={`btn small-btn step-btn${a.visit ? ' primary' : ''}`} aria-expanded={direct ? undefined : isOpen} onClick={onButton}>
-                          {a.label}{!direct && <i className="caret" aria-hidden="true" />}
-                        </button>
-                      )}
-                  </div>
-                  {isOpen && a && (
-                    <ContactActions householdId={q.householdId} how={a.how} prompt={a.prompt} canAssign={p.adjusters.length > 0} adjusterUrl={p.adjusterUrl}
-                      onAssign={(id) => { setExpanded(null); p.onAssignHousehold(id); }}
-                      onLog={(id, o, how) => { setExpanded(null); p.onLog(id, o, how); }} />
-                  )}
-                </li>
-              );
-            })}
-            {tab === 'feed' && feedRows.map((f) => (
-              <li key={f.key}>
-                <button className={`feed-item ${f.kind}`} onClick={() => p.onSelectHex(f.hex)}>
-                  <span className="muted small num">{fmtT(f.t)}</span>
-                  <span className="feed-main">
-                    <span className={f.help ? 'danger-text' : ''}>{f.text}</span>
-                    <span className="muted small"><span className={`chip mini chip-${cellPrio(f.hex)}`}>{cellPrio(f.hex)}</span>{p.labeler.cell(f.hex)}{f.live ? ' · live' : ''}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-            {((tab === 'unacc' && !queueRows.length) || (tab === 'feed' && !p.feed.length)) && (
-              <li className="muted empty">{tab === 'feed' ? 'No events yet. Press Start.' : 'Everyone has been heard from.'}</li>
-            )}
-          </ul>}
+                  </li>
+                ))}
+                {!p.feed.length && <li className="muted empty">No events yet. Press Start.</li>}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </section>
