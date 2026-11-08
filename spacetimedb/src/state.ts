@@ -86,6 +86,8 @@ export function getMetrics(ctx: Ctx) {
     assistanceRequests: 0,
     inspectionRequests: 0,
     locateDue: 0,
+    undeliveredUnaccounted: 0,
+    deliveredNoReply: 0,
     expectedSevereTotal: 0,
     severeTotalLo: 0,
     severeTotalHi: 0,

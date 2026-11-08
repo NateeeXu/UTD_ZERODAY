@@ -111,7 +111,8 @@ export type Need = 'medical' | 'power_for_device' | 'shelter' | 'water_food' | '
 // Need 的取值：medical, power_for_device, shelter, water_food, transport, inspection, other（types-only 文件，不放常量）
 
 export type SimEvent =
-  | { kind: 'sms_sent'; t: Minutes; householdId: string }
+  | { kind: 'sms_sent'; t: Minutes; householdId: string;
+      delivered?: boolean } // v3：运营商送达回执。false = 未送达（手机没电 / 没信号 / 坏了）；缺省视为已送达
   | { kind: 'sms_reply'; t: Minutes; householdId: string; safety: 'safe' | 'needs_help';
       damage: Damage | null; // v3：null = 回复没有描述房子（例如人不在家），损失未知
       lifeSafety?: boolean;  // v3：有生命危险的信号（被困、受伤、煤气、医疗设备断电、泛泛的"救命"）

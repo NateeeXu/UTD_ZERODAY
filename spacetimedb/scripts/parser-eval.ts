@@ -8,7 +8,7 @@
 // data/real/ca-bay-area/live.json and data/real/tx-corpus-christi/live.json with their simulator labels
 // (damage null = unknown). Simulator labels that contradict the spec are relabeled by rule and marked:
 // an inspection request alone is 'safe' (prompt rule 2), not 'needs_help'.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { disabledCreate, MODEL, parseReply, PROMPT_VERSION, type Need, type ParsedReply, type Safety } from './parser.ts';
@@ -25,6 +25,12 @@ const SEED = Number(argOf('--seed') ?? 7);
 const OUT = argOf('--out');
 const NO_CLAUDE = argv.includes('--no-claude');
 const REAL_PER_REGION = 20;
+// --real-all: every distinct free-text reply in the live bundles (about 1,300) instead of 20 per region.
+const REAL_ALL = argv.includes('--real-all');
+// --real-n N: stratified sample of N distinct simulator replies: every life-safety reply, then other
+// needs-help, not-home and safe-at-home replies in turn (cheaper than --real-all).
+const REAL_N = Number(argOf('--real-n') ?? 0);
+const SHOW_FAILURES = Number(argOf('--show') ?? 40);
 
 interface Expected {
   life_safety: boolean;
@@ -36,7 +42,9 @@ interface Expected {
 }
 interface Case {
   id: string;
-  set: 'adversarial' | 'real';
+  set: 'adversarial' | 'handwritten' | 'real';
+  category?: string;
+  ambiguous?: boolean;
   language: string;
   text: string;
   expected: Expected;
@@ -49,12 +57,24 @@ interface Result {
 
 // ----- data -------------------------------------------------------------------
 
-function adversarial(): Case[] {
-  return readFileSync(join(DATA, 'eval', 'sms_parse_adversarial.jsonl'), 'utf8')
+function readCases(file: string, set: 'adversarial' | 'handwritten'): Case[] {
+  return readFileSync(join(DATA, 'eval', file), 'utf8')
     .split('\n')
     .filter(l => l.trim())
     .map(l => JSON.parse(l))
-    .map(r => ({ id: r.id, set: 'adversarial' as const, language: r.language, text: r.text, expected: r.expected, note: r.why }));
+    .map(r => ({ id: r.id, set, category: r.category ?? 'adversarial', ambiguous: !!r.ambiguous, language: r.language, text: r.text, expected: r.expected, note: r.why }));
+}
+
+function adversarial(): Case[] {
+  return readCases('sms_parse_adversarial.jsonl', 'adversarial');
+}
+
+/** Every other data/eval/sms_parse_*.jsonl file (hand-written sets per language pair). */
+function handwritten(): Case[] {
+  return readdirSync(join(DATA, 'eval'))
+    .filter(f => /^sms_parse_.+\.jsonl$/.test(f) && f !== 'sms_parse_adversarial.jsonl')
+    .sort()
+    .flatMap(f => readCases(f, 'handwritten'));
 }
 
 /** FNV-1a, for a seeded, stable order. */
@@ -112,8 +132,20 @@ function real(): Case[] {
     const help = replies.filter(r => !r.lifeSafety && r.safety === 'needs_help');
     const away = replies.filter(r => r.safety === 'safe' && r.notHome);
     const home = replies.filter(r => r.safety === 'safe' && !r.notHome);
-    const picked = [...pickDiverse(ls, 5, seen), ...pickDiverse(help, 5, seen), ...pickDiverse(away, 4, seen)];
-    picked.push(...pickDiverse(home, REAL_PER_REGION - picked.length, seen));
+    let picked: Reply[];
+    if (REAL_N > 0) {
+      const per = Math.round(REAL_N / 2); // per region
+      picked = pickDiverse(ls, ls.length, seen);
+      const rest = per - picked.length;
+      picked.push(...pickDiverse(help, Math.round(rest * 0.35), seen), ...pickDiverse(away, Math.round(rest * 0.25), seen));
+      picked.push(...pickDiverse(home, per - picked.length, seen));
+    } else if (REAL_ALL) {
+      picked = [];
+      for (const r of replies) if (!seen.has(r.text)) { seen.add(r.text); picked.push(r); }
+    } else {
+      picked = [...pickDiverse(ls, 5, seen), ...pickDiverse(help, 5, seen), ...pickDiverse(away, 4, seen)];
+      picked.push(...pickDiverse(home, REAL_PER_REGION - picked.length, seen));
+    }
     for (const r of picked) {
       const inspectionOnly = r.safety === 'needs_help' && !r.lifeSafety && r.needs.length > 0 && r.needs.every(n => n === 'inspection');
       cases.push({
@@ -156,6 +188,13 @@ async function runAll(cases: Case[]): Promise<Result[]> {
 // ----- metrics ------------------------------------------------------------------
 
 const pct = (a: number, b: number) => (b === 0 ? '  n/a' : `${((100 * a) / b).toFixed(1).padStart(5)}%`);
+/** Wilson 95% interval for a proportion, as "[lo-hi%]". */
+function wilson(a: number, b: number): string {
+  if (b === 0) return '';
+  const z = 1.96, p = a / b, d = 1 + (z * z) / b;
+  const c = (p + (z * z) / (2 * b)) / d, h = (z * Math.sqrt((p * (1 - p)) / b + (z * z) / (4 * b * b))) / d;
+  return `[${(100 * Math.max(0, c - h)).toFixed(1)}-${(100 * Math.min(1, c + h)).toFixed(1)}%]`;
+}
 const frac = (a: number, b: number) => `${a}/${b}`.padStart(7);
 
 function metrics(rs: Result[]) {
@@ -171,6 +210,8 @@ function metrics(rs: Result[]) {
     dmgKnown: 0,
     dmgExact: 0,
     dmgWithin1: 0,
+    dmgGiven: 0,
+    dmgGivenWithin1: 0,
     dmgNull: 0,
     dmgNullOk: 0,
     needTp: 0,
@@ -199,6 +240,10 @@ function metrics(rs: Result[]) {
       m.dmgKnown++;
       if (p.damage === e.damage) m.dmgExact++;
       if (p.damage !== null && Math.abs(p.damage - e.damage) <= 1) m.dmgWithin1++;
+      if (p.damage !== null) {
+        m.dmgGiven++;
+        if (Math.abs(p.damage - e.damage) <= 1) m.dmgGivenWithin1++;
+      }
     } else {
       m.dmgNull++;
       if (p.damage === null) m.dmgNullOk++;
@@ -235,11 +280,12 @@ function report(label: string, rs: Result[], strict: boolean): boolean {
     ['valid JSON = 100%', m.valid === m.n],
   ];
   console.log(`\n== ${label} (n=${m.n}) ==`);
-  console.log(`  life-safety recall     ${frac(m.lsTp, m.lsPos)}  ${pct(m.lsTp, m.lsPos)}   (extra referrals: ${m.lsFp})`);
-  console.log(`  false-safe rate        ${frac(m.falseSafe, m.notSafe)}  ${pct(m.falseSafe, m.notSafe)}   (said safe, expected needs_help/unsure)`);
+  console.log(`  life-safety recall     ${frac(m.lsTp, m.lsPos)}  ${pct(m.lsTp, m.lsPos)} ${wilson(m.lsTp, m.lsPos)}   (extra referrals: ${m.lsFp})`);
+  console.log(`  false-safe rate        ${frac(m.falseSafe, m.notSafe)}  ${pct(m.falseSafe, m.notSafe)} ${wilson(m.falseSafe, m.notSafe)}   (said safe, expected needs_help/unsure)`);
   console.log(`  safety exact           ${frac(m.safetyExact, m.n)}  ${pct(m.safetyExact, m.n)}`);
   console.log(`  damage exact           ${frac(m.dmgExact, m.dmgKnown)}  ${pct(m.dmgExact, m.dmgKnown)}`);
   console.log(`  damage within 1        ${frac(m.dmgWithin1, m.dmgKnown)}  ${pct(m.dmgWithin1, m.dmgKnown)}`);
+  console.log(`  ... when a number given${frac(m.dmgGivenWithin1, m.dmgGiven)}  ${pct(m.dmgGivenWithin1, m.dmgGiven)} ${wilson(m.dmgGivenWithin1, m.dmgGiven)}`);
   console.log(`  damage null correct    ${frac(m.dmgNullOk, m.dmgNull)}  ${pct(m.dmgNullOk, m.dmgNull)}`);
   console.log(`  needs F1 (micro)       ${f1.toFixed(3).padStart(7)}   (tp ${m.needTp}, fp ${m.needFp}, fn ${m.needFn})`);
   console.log(`  not_home correct       ${frac(m.notHomeOk, m.n)}  ${pct(m.notHomeOk, m.n)}`);
@@ -249,6 +295,24 @@ function report(label: string, rs: Result[], strict: boolean): boolean {
   console.log(`  latency                mean ${mean.toFixed(0)} ms, p50 ${q(0.5)} ms, p95 ${q(0.95)} ms`);
   if (strict) for (const [name, ok] of checks) console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}`);
   return lsRecall === 1;
+}
+
+function breakdown(title: string, rs: Result[], keyOf: (r: Result) => string) {
+  const groups = new Map<string, Result[]>();
+  for (const r of rs) groups.set(keyOf(r), [...(groups.get(keyOf(r)) ?? []), r]);
+  console.log(`\n== by ${title} ==`);
+  console.log('  group            n   LS recall      false-safe     safety exact');
+  for (const [k, g] of [...groups].sort()) {
+    const m = metrics(g);
+    console.log(`  ${k.padEnd(14)} ${String(m.n).padStart(4)}   ${frac(m.lsTp, m.lsPos)}  ${frac(m.falseSafe, m.notSafe)}  ${pct(m.safetyExact, m.n)}`);
+  }
+}
+
+function confusion(rs: Result[]) {
+  const ks: Safety[] = ['safe', 'needs_help', 'unsure'];
+  console.log('\n== safety confusion (rows expected, columns predicted) ==');
+  console.log(`  ${''.padEnd(11)}${ks.map(k => k.padStart(11)).join('')}`);
+  for (const e of ks) console.log(`  ${e.padEnd(11)}${ks.map(p => String(rs.filter(r => r.c.expected.safety === e && r.p.safety === p).length).padStart(11)).join('')}`);
 }
 
 function failures(rs: Result[]) {
@@ -267,12 +331,15 @@ function failures(rs: Result[]) {
     if (e.missing_people !== undefined && e.missing_people !== p.missing_people) diffs.push(`missing ${e.missing_people}->${p.missing_people}`);
     if (diffs.length === 0) continue;
     n++;
+    const critical = (e.life_safety && !p.life_safety) || (e.safety !== 'safe' && p.safety === 'safe');
+    if (!critical && n > SHOW_FAILURES) continue;
     const extra = [p.error ? `error ${p.error}` : '', p.keyword_hits.length ? `net ${p.keyword_hits.join('+')}` : '', c.note && c.set === 'real' ? c.note : '']
       .filter(Boolean)
       .join('; ');
     console.log(`  ${c.id} [${c.language}] ${JSON.stringify(c.text)}\n      ${diffs.join('; ')}${extra ? `   (${extra})` : ''}`);
   }
   if (n === 0) console.log('  none');
+  else if (n > SHOW_FAILURES) console.log(`  ... ${n} cases differ in total; misses of life safety and false-safes are always listed (--show N, --out file for all)`);
 }
 
 async function main() {
@@ -282,6 +349,7 @@ async function main() {
   }
   let cases: Case[] = [];
   if (SET === 'adversarial' || SET === 'all') cases.push(...adversarial());
+  if (SET === 'handwritten' || SET === 'all') cases.push(...handwritten());
   if (SET === 'real' || SET === 'all') cases.push(...real());
   if (LIMIT > 0) cases = cases.slice(0, LIMIT);
   const relabeled = cases.filter(c => c.note?.startsWith('relabeled')).length;
@@ -291,11 +359,18 @@ async function main() {
   );
   const results = await runAll(cases);
   const adv = results.filter(r => r.c.set === 'adversarial');
+  const hw = results.filter(r => r.c.set === 'handwritten');
   const rl = results.filter(r => r.c.set === 'real');
   let ok = true;
   if (adv.length) ok = report('adversarial', adv, true) && ok;
-  if (rl.length) ok = report('real (sampled)', rl, true) && ok;
-  if (adv.length && rl.length) report('all', results, false);
+  if (hw.length) ok = report('hand-written (6 languages)', hw, true) && ok;
+  if (hw.some(r => r.c.ambiguous)) report('hand-written, unambiguous only', hw.filter(r => !r.c.ambiguous), false);
+  if (rl.length) ok = report(REAL_ALL ? 'simulator replies (all distinct)' : 'real (sampled)', rl, true) && ok;
+  if ([adv, hw, rl].filter(x => x.length).length > 1) report('all', results, false);
+  breakdown('language', results, r => r.c.language || '?');
+  const cat = results.filter(r => r.c.category);
+  if (cat.length) breakdown('category', cat, r => r.c.category!);
+  confusion(results);
   failures(results);
   if (OUT) {
     writeFileSync(

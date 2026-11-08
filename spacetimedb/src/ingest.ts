@@ -19,7 +19,7 @@ export function parseNeeds(s: string): string[] {
 }
 
 export type IngestEvent =
-  | { kind: 'sms_sent'; t: number; householdId: string }
+  | { kind: 'sms_sent'; t: number; householdId: string; delivered?: boolean }
   | {
       kind: 'sms_reply';
       t: number;
@@ -93,6 +93,8 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     assistanceRequests: 0,
     inspectionRequests: 0,
     locateDue: 0,
+    undeliveredUnaccounted: 0,
+    deliveredNoReply: 0,
     updatedAt: ctx.timestamp,
     updatedSimMinutes: 0,
   };
@@ -153,7 +155,7 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: Inges
   switch (ev.kind) {
     case 'sms_sent': {
       markSent();
-      ctx.db.smsSent.insert(base);
+      ctx.db.smsSent.insert({ ...base, delivered: ev.delivered !== false });
       break;
     }
     case 'sms_reply': {
@@ -164,7 +166,7 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: Inges
         // replay; record the text too so replyRate stays <= 1.
         if (!any(ctx.db.smsSent.householdId.filter(hh.id))) {
           markSent();
-          ctx.db.smsSent.insert(base);
+          ctx.db.smsSent.insert({ ...base, delivered: true });
         }
         if (firstOnChannel) {
           stats.smsReplies += 1;

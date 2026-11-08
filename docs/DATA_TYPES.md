@@ -949,3 +949,9 @@ Harbor Bend 的 bundle 没有任何 v2 字段（没有 region、hazardType、fac
 12. `ModelParams.calibration.baseline` 的类型注释写"只看灾害强度"，代码实际用的是 hazard + static 两组特征。
 13. CDC SVI 在 `dataSources` 里只给了署名要求，没说是否属于公有领域。
 14. Bay Area live 的发生时间说法不一：`docs/SPACETIME_API.md` 写 "Thu 10:00"，`data/real/README.md` 写 "10:40 Friday"。bundle 里 `landfallIso = 2026-11-06T18:40:00.000Z`（按 PST 换算是周五 10:40），`eventLocalHour = 10`，`eventWeekday = true`。
+
+## 附：短信送达回执（v3 增量）
+
+- `sms_sent.delivered`（bool）与 `staged_event.delivered`：运营商送达回执，false = 手机关机 / 没电 / 丢失 / 没信号。事件数据 `sms_sent.delivered` 可缺省，缺省视为已送达。
+- `hex_stats` / `metrics` 新增 `undeliveredUnaccounted`（未联系且短信未送达）、`deliveredNoReply`（未联系但短信已送达）。
+- 联系梯子：未送达 → 直接 `agent_call`（紧急联系人），按高风险时限上门；已送达但不回的高风险户 3 小时上门（`DELIVERED_SILENT_VISIT_MIN`）。

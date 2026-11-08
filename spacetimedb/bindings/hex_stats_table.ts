@@ -51,6 +51,8 @@ export default __t.row({
   assistanceRequests: __t.u32().name("assistance_requests"),
   inspectionRequests: __t.u32().name("inspection_requests"),
   locateDue: __t.u32().name("locate_due"),
+  undeliveredUnaccounted: __t.u32().name("undelivered_unaccounted"),
+  deliveredNoReply: __t.u32().name("delivered_no_reply"),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),
 });
