@@ -567,6 +567,40 @@ export const assignment = table(
 );
 
 /**
+ * Last known position of each adjuster. Public so the manager map can show it (demo only: a real
+ * deployment would restrict this to managers).
+ */
+export const adjusterLocation = table(
+  { name: 'adjuster_location', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    lat: t.f64(),
+    lng: t.f64(),
+    source: t.string(), // 'demo' (picked on the map, households are synthetic) | 'gps'
+    updatedAt: t.timestamp(),
+  }
+);
+
+/** "Next best" list per adjuster (src/recommend.ts). Deterministic rules; never changes on the tick. */
+export const adjusterRecommendation = table(
+  { name: 'adjuster_recommendation', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    adjuster: t.identity().index('btree'),
+    rank: t.u8(), // 1 = best
+    householdId: t.string().index('btree'),
+    hex: t.string(),
+    kind: t.string(), // 'welfare' | 'inspection'
+    priority: t.string(),
+    score: t.f64(),
+    distanceKm: t.f64(), // straight line
+    etaMin: t.f64(), // drive only
+    reason: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+/**
  * Raw free-text replies waiting for the Claude parser worker (scripts/claude-worker.ts), so the reply
  * page never needs the Anthropic key. Written by submit_raw_reply; the worker parses each pending row,
  * calls submit_parsed_reply and then mark_reply_parsed. Cleared with the demo state.
@@ -719,6 +753,8 @@ const spacetimedb = schema({
   modelState,
   member,
   assignment,
+  adjusterLocation,
+  adjusterRecommendation,
   replyInbox,
 });
 export default spacetimedb;

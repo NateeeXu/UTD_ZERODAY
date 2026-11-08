@@ -1,7 +1,7 @@
 // Triage Loop SpacetimeDB module entry. Exports the schema (default), lifecycle hooks, views and
 // every reducer. Client reference: docs/SPACETIME_API.md.
 import { t } from 'spacetimedb/server';
-import spacetimedb, { assignment, member } from './schema';
+import spacetimedb, { adjusterRecommendation, assignment, member } from './schema';
 import { ensureSingletons, SINGLETON } from './state';
 
 export default spacetimedb;
@@ -27,6 +27,13 @@ export const myAssignments = spacetimedb.view(
   { name: 'my_assignments', public: true },
   t.array(assignment.rowType),
   ctx => [...ctx.db.assignment.adjuster.filter(ctx.sender)]
+);
+
+/** The caller's own "Next best" list (adjuster phone). */
+export const myRecommendations = spacetimedb.view(
+  { name: 'my_recommendations', public: true },
+  t.array(adjusterRecommendation.rowType),
+  ctx => [...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)]
 );
 
 export * from './reducers/seed';
