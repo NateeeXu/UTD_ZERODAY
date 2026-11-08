@@ -30,7 +30,7 @@ Error asymmetry: calling someone safe who is not is the worst error; an unnecess
 What is actually sent as `output_config.format` (`OUTPUT_SCHEMA` in `scripts/parser.ts`) differs in two ways, because structured outputs reject them: no `minimum` / `maximum` (damage 0–3 and confidence 0–1 are checked in code instead), and `evidence` has fixed keys `life_safety`, `safety`, `damage`, `needs` (every object needs `additionalProperties: false`).
 
 ## System prompt (v2)
-Copied from `SYSTEM_PROMPT` in `scripts/parser.ts` (`PROMPT_VERSION = 'v2'`). The 800-case numbers under Results were measured on v1; v2 adds the lines on children, dependents and requests to check on people, and has not been re-run on the full set.
+Copied from `SYSTEM_PROMPT` in `scripts/parser.ts` (`PROMPT_VERSION = 'v3'`). The 800-case numbers under Results were measured on v1; v2 adds the lines on children, dependents and requests to check on people, and has not been re-run on the full set.
 ```text
 You read one reply to a post-disaster check-in text from State Farm (an insurer, not an emergency
 service). It may be in any language, misspelled, mixed-language, or emoji. Your output decides whether
@@ -52,7 +52,9 @@ Return only the extraction.
 3. needs (concrete requests, not danger by themselves): medical (medication, refill), power_for_device,
    shelter (a place to stay), water_food, transport (a ride, no car), inspection ("come look at the
    house", "need an adjuster", "check the roof"), other. A request to look at the house is inspection,
-   not life_safety.
+   not life_safety. A question about insurance, coverage, claims, deductibles or payment is not a need by
+   itself ("does my policy cover a hotel?" -> no needs, safety "unsure"); add a need only if they say they
+   need the thing ("we have nowhere to sleep, does my policy cover a hotel?" -> shelter).
 4. damage: 0 none; 1 minor (broken glass or dishes, cosmetic cracks, shingles, fence); 2 major
    (structural cracks, doors won't close, water inside, roof partly gone, chimney fell); 3 uninhabitable
    (collapsed, tilted, off the foundation, burned, red-tagged, destroyed). null if the home is not
@@ -68,7 +70,7 @@ Return only the extraction.
 ## Guardrails in code (not in the prompt)
 - **Schema validation** of every response; invalid → treat as a failure.
 - **Keyword net (escalate only).** Multilingual danger words (help/SOS/trapped/gas/fire/oxygen/CPAP/can't breathe, ayuda/atrapado/gas/oxígeno, 救命/被困/煤气/氧气, tulong/naipit/gas, 도와/갇혔/가스/산소, cứu/kẹt/ga/oxy) force `life_safety = true` and human review if Claude said false. The net can never lower anything Claude flagged.
-- **Failure or timeout (> 10 s)** → `safety = unsure`, `life_safety = false`, `damage = null`. It is submitted as needs help without life safety, so the household gets `assistance`: it counts as accounted and customer care calls back (a person reads the text).
+- **Failure or timeout (> 10 s)** → `safety = unsure`, `life_safety = false`, `damage = null`. It is submitted as needs help without life safety, so the household gets `assistance`: it counts as accounted and customer care calls back (a person reads the text). With no concrete need it is call-back only: it does not move the estimates or the cell's priority.
 - **Human review** when `confidence < 0.6`, when `safety = unsure`, or when Claude and the keyword net disagree.
 - **Button replies stay buttons**: if the reply page has explicit buttons, the parser only adds fields; it never overrides what the policyholder clicked.
 
@@ -120,7 +122,7 @@ End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply 
 - **Sets**: (a) 80 sampled template replies from the regenerated `data/real/*/live.json` (labels from the simulator, relabeled by hand where the template is ambiguous); (b) `data/eval/sms_parse_adversarial.jsonl` (40 hand-written hard cases in en/es/zh/vi/tl/ko).
 - **Pass**: life-safety recall **100 %** on both sets; false-safe rate (said `safe`, expected `needs_help`/`unsure`) ≤ 2 %; damage exact ≥ 70 % and within ±1 ≥ 95 % where expected damage is not null; `damage = null` correct ≥ 90 % where expected null; valid JSON 100 %.
 - **Loop**: run, read every failure, change one thing in the prompt, rerun both sets. A guardrail change counts too.
-- **Versioning**: the prompt text lives in `scripts/parser.ts` as `PROMPT_VERSION = 'v2'`; `parser-eval.ts --out` stores it with every result so a later prompt can be compared on the same messages. (The `sms_reply` row stores the text and language, not the version.)
+- **Versioning**: the prompt text lives in `scripts/parser.ts` as `PROMPT_VERSION = 'v3'`; `parser-eval.ts --out` stores it with every result so a later prompt can be compared on the same messages. (The `sms_reply` row stores the text and language, not the version.)
 - **Real-set sampling** (`parser-eval.ts`): 20 free-text replies per region (Bay Area, Corpus Christi), stratified and seeded (`--seed 7`): 5 life-safety, 5 other needs-help, 4 not-home, the rest safe at home, round-robin over languages, deduplicated by text. Simulator labels that contradict rule 2 are relabeled by rule and marked in the output: an inspection request alone is `safe`, not `needs_help` (5 of the 40 with seed 7). False-safe rate = said `safe` / expected `needs_help` or `unsure`.
 
 ## Results
@@ -136,6 +138,8 @@ End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply 
 | damage within 1 when a number is given | 414/414 (100 %); damage unknown correct 357/360 |
 | valid JSON | 800/800 |
 | keyword net | caught 12 cases on top of Claude; mean latency 1.4 s, p95 1.7 s |
+
+Prompt v3 check (real Sonnet calls): 12 coverage cases all correct (7 coverage-only questions in 4 languages, 5 mixed with a real need or danger); 40 adversarial cases with no life-safety miss and no false safe. The 800-case set has not been re-run.
 
 The two life-safety misses ("my 9 yr old is home by himself, I'm stuck at work and can't get to him"; "can someone check on us, my husband is bedbound") are fixed in **prompt v2** (a child or dependent out of a caregiver's reach, and a request to check on people, are life safety; a request to check the house stays an inspection) plus a keyword rule; both now return life_safety true and "come check the roof damage" stays an inspection. v2 was not re-run on the full set (cost decision); only the two fixed cases and the inspection counter-example were checked. Re-run with `npm run parser:eval -- --set all --real-n 160` before relying on new numbers.
 

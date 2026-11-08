@@ -15,7 +15,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const MODEL = 'claude-sonnet-5-5';
-export const PROMPT_VERSION = 'v2';
+export const PROMPT_VERSION = 'v3';
 export const TIMEOUT_MS = 10_000;
 
 export const NEEDS = ['medical', 'power_for_device', 'shelter', 'water_food', 'transport', 'inspection', 'other'] as const;
@@ -75,7 +75,9 @@ Return only the extraction.
 3. needs (concrete requests, not danger by themselves): medical (medication, refill), power_for_device,
    shelter (a place to stay), water_food, transport (a ride, no car), inspection ("come look at the
    house", "need an adjuster", "check the roof"), other. A request to look at the house is inspection,
-   not life_safety.
+   not life_safety. A question about insurance, coverage, claims, deductibles or payment is not a need by
+   itself ("does my policy cover a hotel?" -> no needs, safety "unsure"); add a need only if they say they
+   need the thing ("we have nowhere to sleep, does my policy cover a hotel?" -> shelter).
 4. damage: 0 none; 1 minor (broken glass or dishes, cosmetic cracks, shingles, fence); 2 major
    (structural cracks, doors won't close, water inside, roof partly gone, chimney fell); 3 uninhabitable
    (collapsed, tilted, off the foundation, burned, red-tagged, destroyed). null if the home is not
@@ -570,7 +572,8 @@ export interface ReducerArgs {
 
 /**
  * ParsedReply -> submit_parsed_reply args. 'unsure' becomes needs_help with lifeSafety false (customer
- * care calls back); damage null becomes 255 (unknown); missing_people adds report_member_missing.
+ * care calls back; with no concrete need it does not move the estimates, see isCallbackOnly in the module);
+ * damage null becomes 255 (unknown); missing_people adds report_member_missing.
  */
 export function toReducerArgs(p: ParsedReply, text: string, languageHint = ''): ReducerArgs {
   return {

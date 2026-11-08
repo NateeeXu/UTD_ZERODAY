@@ -36,6 +36,8 @@ export interface HouseholdSignals {
     notHome: boolean;
     channel: 'sms' | 'call';
   } | null;
+  /** Latest reply that says something about safety or needs: what the model sees (see isCallbackOnly). */
+  evidenceReply: HouseholdSignals['reply'];
   claim: { t: number; peril: Peril; reportedDamage: Damage } | null;
   /**
    * Latest field report for the people (safety, t, adjuster) with the latest ASSESSED damage: a report that

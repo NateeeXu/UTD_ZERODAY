@@ -50,8 +50,8 @@ function toEngineSignals(s: HouseholdSignals): EngineSignals {
   return {
     smsSent: s.smsSentT !== null ? 1 : 0,
     firstSmsT: s.smsSentT,
-    reply: s.reply,
-    replies: s.reply ? 1 : 0,
+    reply: s.evidenceReply,
+    replies: s.evidenceReply ? 1 : 0,
     claim: s.claim,
     claims: s.claim ? 1 : 0,
     fieldReport: s.field,

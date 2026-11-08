@@ -689,7 +689,7 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 | R1 | The client (last commit Nov 7 23:44) predates the parser and field-report change (Nov 8 00:41) and delivery receipts (Nov 8 01:11). Its bindings omit `memberMissing` on `submit_field_report` and `note` on `close_household`; the free-text box is not connected; the delivery split is not shown | High: those two calls will not match the current module until the client is updated | Merge, regenerate bindings, pass the two arguments, wire `submit_raw_reply` |
 | R2 | The worker is one Node process on a laptop | High for free text: if it stops, `reply_inbox` rows stay `pending`, including possible life-safety text | `--no-claude` degraded mode exists; no alert for a stale inbox yet |
 | R3 | Maincloud unavailable, weak conference network, or a running replay burning energy | Demo failure or budget | Local server on a hotspot; backup video; adjuster outbox (Spec); pause when not demoing |
-| R4 | Prompt v2 is deployed but not fully re-evaluated | Published numbers are for v1 | `npm run parser:eval -- --set all --real-n 160` |
+| R4 | Prompt v3 is not fully re-evaluated | Published numbers are for v1 | `npm run parser:eval -- --set all --real-n 160` |
 | R5 | Parser failures count as heard from (`assistance`, accounted) | A failed parse leaves the outreach queue | Review flag and customer-care route; see Q3 |
 | R6 | Judges read simulated results as real accuracy | Credibility | Section 0 and the data card state it first |
 
@@ -761,7 +761,7 @@ Items marked (repo) are named in the docs as future work. The others are proposa
 |---|---|---|
 | Immediately | Merge the client, regenerate bindings, pass `memberMissing` and `note`, show the delivery split (R1) | Proposal |
 | Immediately | Five-screen adjuster app and send state machine; free-text reply page wired to `submit_raw_reply` | (repo) `docs/ADJUSTER_APP.md`, `docs/SPACETIME_API.md` |
-| Immediately | Re-run parser eval on prompt v2 | (repo) `docs/CLAUDE_PARSER.md` |
+| Immediately | Re-run parser eval on prompt v3 | (repo) `docs/CLAUDE_PARSER.md` |
 | Immediately | Backend for the adjuster app: `household.address`, `accessNote`, contact attempts, server-side `opId` dedupe, note on `update_assignment`, structured renter fields | (repo) `docs/ADJUSTER_APP.md` |
 | Production integrations | Real SMS provider with carrier receipts and consent; policy and claims systems; referral handoff with consent or legal basis | (repo) `docs/BACKGROUND.md`, sponsor research |
 | Production integrations | OIDC (SpacetimeAuth, Auth0, Clerk), owner-managed members, per-role views over `household` | (repo) `docs/SPACETIME_API.md` |

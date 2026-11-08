@@ -10,6 +10,7 @@
 // A cell's aggregate only changes with its own events, and every event recomputes its cell in the
 // same transaction, so cell_agg is always exact. Untouched cells pick up drifting refs / time at the
 // next full recompute (replay cadence, jump, pause, reset).
+import { isCallbackOnly } from './reply';
 import type { Ctx } from '../schema';
 import { getMetrics, getModelState, getReplay, worldCtxOf, worldStampKey } from '../state';
 import { stubEstimator } from './stub';
@@ -162,7 +163,7 @@ export function staticWorld(ctx: Ctx): Map<string, StaticCell> {
 // ----- gathering -------------------------------------------------------------
 
 function emptySignals(h: HouseholdRow): HouseholdSignals {
-  return { household: toHousehold(h), smsSentT: null, smsDelivered: null, reply: null, claim: null, field: null };
+  return { household: toHousehold(h), smsSentT: null, smsDelivered: null, reply: null, evidenceReply: null, claim: null, field: null };
 }
 
 type EventRows = {
@@ -187,11 +188,11 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
     if (s) s.smsDelivered = s.smsDelivered === true || e.delivered;
   }
   const replyId = new Map<string, bigint>();
+  const evidenceId = new Map<string, bigint>();
   for (const e of rows.replies) {
     const s = byId.get(e.householdId);
-    if (!s || !isLater(e, s.reply, replyId.get(e.householdId))) continue;
-    replyId.set(e.householdId, e.id);
-    s.reply = {
+    if (!s) continue;
+    const reply: HouseholdSignals['reply'] = {
       t: e.t,
       safety: e.safety as 'safe' | 'needs_help',
       damage: e.damageKnown ? (e.damage as Damage) : null,
@@ -200,6 +201,14 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
       notHome: e.notHome,
       channel: e.channel === 'call' ? 'call' : 'sms',
     };
+    if (isLater(e, s.reply, replyId.get(e.householdId))) {
+      replyId.set(e.householdId, e.id);
+      s.reply = reply;
+    }
+    if (!isCallbackOnly(reply) && isLater(e, s.evidenceReply, evidenceId.get(e.householdId))) {
+      evidenceId.set(e.householdId, e.id);
+      s.evidenceReply = reply;
+    }
   }
   const claimId = new Map<string, bigint>();
   for (const e of rows.claims) {
@@ -233,7 +242,7 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
 export function gatherCellSignals(ctx: Ctx, hexId: string, members?: Household[]): HouseholdSignals[] {
   const byId = new Map<string, HouseholdSignals>();
   for (const h of members ?? staticWorld(ctx).get(hexId)?.households ?? [])
-    byId.set(h.id, { household: h, smsSentT: null, smsDelivered: null, reply: null, claim: null, field: null });
+    byId.set(h.id, { household: h, smsSentT: null, smsDelivered: null, reply: null, evidenceReply: null, claim: null, field: null });
   foldEvents(byId, {
     sent: ctx.db.smsSent.hex.filter(hexId),
     replies: ctx.db.smsReply.hex.filter(hexId),

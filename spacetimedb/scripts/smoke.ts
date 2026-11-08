@@ -185,6 +185,19 @@ async function main() {
     );
   }
 
+  // A reply that only asks for a call-back (coverage question, parser unsure) must not move the estimates.
+  const callback = [...db.household.iter()].find(h => h.hex !== target.hex && h.hex !== other?.hex && !h.holdout && h.phoneOnFile && stats(h.hex)?.priority !== 'P0');
+  if (callback) {
+    const cell0 = stats(callback.hex);
+    const help0 = est(callback.id)?.pNeedsHelp ?? 0;
+    await outsider.conn.reducers.submitParsedReply({ householdId: callback.id, safety: 'needs_help', damage: 255, lifeSafety: false, needs: '', notHome: false, text: 'does my policy cover a hotel?', language: 'en', passcode: REPLY_PASSCODE });
+    await sleep(300);
+    const cell1 = stats(callback.hex);
+    const e1 = est(callback.id);
+    check('call-back-only reply leaves the cell alone', cell1?.priority === cell0?.priority && cell1?.helpReplies === cell0?.helpReplies, `${cell0?.priority} -> ${cell1?.priority}, helpReplies ${cell0?.helpReplies} -> ${cell1?.helpReplies}`);
+    check('call-back-only reply goes to customer care without raising pNeedsHelp', e1?.escalation === 'assistance' && (e1?.pNeedsHelp ?? 1) <= help0 + 0.05, `${e1?.escalation}, pNeedsHelp ${help0.toFixed(3)} -> ${e1?.pNeedsHelp.toFixed(3)}`);
+  }
+
   // ----- field reports: house not assessed, missing member, documented closure -----
   const reported = new Set([...db.fieldReport.iter()].map(r => r.householdId));
   const spare = [...db.household.iter()]
