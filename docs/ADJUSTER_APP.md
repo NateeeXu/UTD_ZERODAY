@@ -150,7 +150,7 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
 选中后，选项下方出现一块，按从上到下的顺序：
 - **Needs help**（红色块，最醒目）：
   - 标题 "Anyone in danger? Call 911 now."
-  - 全宽红色大按钮 `Call 911 now`（`<a href="tel:911">`；只打开拨号界面，不会自动拨出）。
+  - 全宽红色大按钮 `Call 911 now`（演示版只弹提示 "Demo only. No call placed."；正式版才用 `<a href="tel:911">`）。
   - 按钮下面一行小字 "Also creates a referral."
   - 勾选框 "Someone who lives here is missing"，勾上后 `memberMissing = true`。
 - **Some seen, someone missing**（琥珀色，一行）："Opens a missing-member referral"。备注的 placeholder 换成 "Who is missing? Last seen where?"。

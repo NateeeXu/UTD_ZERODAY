@@ -326,7 +326,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 | FA-2 | Task list | Must | Branch (partial) | `my_assignments`, plus top unassigned candidates in the branch version |
 | FA-3 | Report people and home separately | Must | Branch (partial) | `submit_field_report`. Options map to `safety` / `memberMissing`: "Safe · everyone accounted for" = `safe` / false; "Needs help" = `needs_help` / false, or true if ticked; "Some seen, someone missing" = `unsure` / true; "Nobody seen · still unaccounted" = `unsure` / false. Branch has Safe, Needs help and Nobody seen, and omits `memberMissing` (R1) |
 | FA-4 | Five-screen app | Must | Spec | Screens below; ordering P0 → P1 → P2, then `pNeedsHelp` |
-| FA-5 | Needs help puts 911 first | Must | Spec | Red block "Anyone in danger? Call 911 now."; `Call 911 now` is `tel:911` and only opens the dialer; "Also creates a referral." |
+| FA-5 | Needs help puts 911 first | Must | Spec | Red block "Anyone in danger? Call 911 now."; `Call 911 now` shows "Demo only. No call placed." in the demo build (`tel:911` in production); "Also creates a referral." |
 | FA-6 | House not assessed | Must | Built; UI Spec | `damage = 255` needs a note ≥ 3 chars; no trust update; house stays queued. Reasons: "Unsafe to enter", "No access (flooded, cordon, red-tagged)", "Dark, no power" |
 | FA-7 | Policy-aware form | Should | Spec | Renters: "Belongings and tonight" instead of structure. Condo: "Unit only · not the building". Welfare check: home section optional |
 | FA-8 | Can't make contact | Should | Built; Branch (partial: closure only, no note) | Skip: `update_assignment(cancelled)`. Close: `close_household` with reason and note |
