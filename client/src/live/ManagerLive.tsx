@@ -428,7 +428,8 @@ function ModelButton({ metrics }: { metrics: MetricsRow | undefined }) {
           <dl>
             <dt>Holdout error (Brier)</dt><dd>{metrics.holdoutN ? metrics.holdoutBrierSevere.toFixed(3) : '—'}</dd>
             <dt>Source trust · hazard / SMS / claims</dt><dd>{pct(metrics.trustHazard)} · {pct(metrics.trustSms)} · {pct(metrics.trustClaims)}</dd>
-            <dt>Confident coverage (P0/P1)</dt><dd>{pct(metrics.verifiedCoverage)}</dd>
+            {/* metrics.verifiedCoverage = verifiedHouseholds / households (ingest.ts): field reports, all areas. */}
+            <dt title="Share of all households with an adjuster's field report">Inspected coverage</dt><dd>{pct(metrics.verifiedCoverage)}</dd>
             <dt>Cells needing a check</dt><dd>{metrics.needsVerificationCells} of {metrics.hexes}</dd>
             <dt>Closed without contact</dt><dd>{metrics.closedNoContact}</dd>
           </dl>
