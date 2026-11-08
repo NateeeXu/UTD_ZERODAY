@@ -435,13 +435,13 @@ function Field({ meName }: { meName: string }) {
           me={mePos} route={mePos ? [mePos, center] : undefined} fitKey={`goto:${t.id}:${mePos ? 'me' : ''}`} padTop={64} padBottom={124} />
         <button type="button" className="adj-round adj-glass" aria-label={`Back to ${t.label}`}
           onClick={() => setRoute({ name: 'home', id: t.id })}><Icon name="back" size={18} stroke={2.2} /></button>
-        <span className="adj-chip-float solo adj-glass">
+        <span className="adj-chip-float adj-glass">
           <LiveBadge state={live} unsent={outbox.items.length} className="soft" />
         </span>
         <section className="adj-float-card adj-glass" aria-label="Distance">
           <div className="adj-float-main">
             <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'No position yet'}</div>
-            <span className="adj-sub">{t.miles != null ? `to ${t.district} center (${t.label})` : 'Shows once the region loads'}</span>
+            <span className="adj-sub">{t.miles != null ? `to ${t.district.split(' · ')[0]} center (${t.label})` : 'Shows once the region loads'}</span>
           </div>
           <button type="button" className="adj-btn dark" onClick={() => setRoute({ name: 'home', id: t.id })}>Open home</button>
           <span className="adj-caption">Demo data: area only</span>
@@ -461,7 +461,7 @@ function Field({ meName }: { meName: string }) {
       <div className="adj">
         <HomeView
           t={t} total={open.length} me={mePos} live={live} unsent={outbox.items.length} hazardType={world?.hazardType}
-          subline={`${t.district} · from ${assignedBy}, ${ago}`} banner={b}
+          subline={`from ${assignedBy}, ${ago}`} banner={b}
           onBack={() => setRoute({ name: 'tasks' })}
           onGo={() => setRoute({ name: 'goto', id: t.id })}
           onReport={() => setRoute({ name: 'report', id: t.id, mode: 'new' })}
@@ -901,7 +901,7 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
   return (
     <>
       <PhoneMap className="adj-hero" areas={[{ hex: t.hex, color: COLOR[t.priority], pill: 'dark', label: t.open ? String(t.number) : '✓' }]}
-        me={me} route={me ? [me, center] : undefined} fitKey={`home:${t.id}`} padTop={56} padBottom={64} />
+        me={me} route={me ? [me, center] : undefined} fitKey={`home:${t.id}`} padTop={52} padBottom={78} />
       <button type="button" className="adj-round adj-glass" aria-label="Back to tasks" onClick={onBack}>
         <Icon name="back" size={18} stroke={2.2} />
       </button>
@@ -909,41 +909,48 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
         {t.open ? `${t.number} of ${total}` : 'Done'}
         <LiveBadge state={live} unsent={unsent} className="soft" />
       </span>
-      <span className="adj-hero-demo adj-glass">Demo data: area only</span>
+      <span className="adj-hero-demo adj-glass">Demo areas</span>
       <button type="button" className="adj-go adj-glass" onClick={onGo}>
-        <Icon name="nav" size={14} stroke={2} />Go to area{t.miles != null ? ` · ${D.fmtMiles(t.miles)}` : ''}
+        <Icon name="nav" size={16} stroke={1.9} />Go to area
       </button>
 
       <main className="adj-panel">
         {banner && <BannerStrip b={banner} onDismiss={onDismiss} onSkip={t.open ? onSkip : undefined} glass />}
         <header className="adj-homehead">
-          <div className="top">
-            <span className={`adj-p ${t.priority}`}>{t.priority}</span>
-            <h1 className="adj-title">{t.label}</h1>
-            <span className="adj-pill">{D.JOB_LABEL[t.job]}</span>
-          </div>
+          <div className="kind"><span className={`adj-p ${t.priority}`}>{t.priority}</span>{D.JOB_LABEL[t.job]}</div>
+          <h1 className="adj-title">{t.label}</h1>
           <div className="sub">
+            <span className="adj-sub">{t.district.split(' · ')[0]}{t.miles != null ? `, ${D.fmtMiles(t.miles)} away` : ''}</span>
             <span className="adj-sub">{subline}</span>
-            {!!t.silent && <span className="adj-sub">No reply {t.silent} h</span>}
           </div>
         </header>
 
+        {needs.length > 0 && (
+          <div className="adj-needs">
+            {needs.map((n) => <span key={n} className="adj-need">{n}</span>)}
+          </div>
+        )}
+
         <div className="adj-lines">
+          <div className="adj-irow">
+            <Icon name="person" size={16} />
+            <span className="grow">{D.peopleStatus(t.est, t.followup)}</span>
+            {!!t.silent && <span className="tail">No reply {t.silent} h</span>}
+          </div>
+          <div className="adj-irow">
+            <Icon name="phone" size={16} />
+            <span className="grow">{t.hh?.phoneOnFile !== false ? 'Phone on file' : 'No phone, try emergency contact'}</span>
+            <span className="tail">{D.contactLine(t.replies, t.sent)}</span>
+            {t.hh?.phoneOnFile !== false && <button type="button" className="adj-btn outline small" onClick={() => setCallTried(true)}>Call</button>}
+          </div>
+          {callTried && <span className="adj-toastline" role="status">Demo household: no real number</span>}
           <div className="adj-irow top">
             <Icon name={D.isRemote(t.job) ? 'phone' : t.type === 'Welfare check' ? 'bell' : 'search'} size={16} />
             <span className="grow stack"><b>{D.isRemote(t.job) ? D.JOB_TITLE[t.job] : why.title}</b>{why.body && <span className="adj-muted">{why.body}</span>}</span>
           </div>
-          {needs.map((n) => (
-            <div key={n} className="adj-irow"><Icon name={needIcon(n)} size={16} /><b className="grow">{n}</b></div>
-          ))}
-          <div className="adj-irow">
-            <Icon name="person" size={16} />
-            <b className="grow">{D.peopleStatus(t.est, t.followup)}</b>
-            <span className="tail">{D.contactLine(t.replies, t.sent)}</span>
-          </div>
           <div className="adj-irow">
             <Icon name="house" size={16} />
-            <b className="grow">{home.head}</b>
+            <span className="grow">{home.head}</span>
             {home.tail && <span className="tail">{home.tail}</span>}
           </div>
           {coverage && (
@@ -953,13 +960,10 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
               {coverage.slice(1).map((c) => <span key={c} className="tail">{c}</span>)}
             </div>
           )}
-          <div className="adj-irow">
+          <button type="button" className="adj-irow act" onClick={onMessage}>
             <Icon name="talk" size={16} />
-            <span className="grow">{t.hh?.phoneOnFile !== false ? 'Phone on file' : 'No phone, try emergency contact'}</span>
-            {t.hh?.phoneOnFile !== false && <button type="button" className="adj-btn outline small" onClick={() => setCallTried(true)}>Call</button>}
-            <button type="button" className="adj-btn outline small" onClick={onMessage}>Message</button>
-          </div>
-          {callTried && <span className="adj-toastline" role="status">Demo household: no real number</span>}
+            <span className="grow">Message policyholder</span>
+          </button>
           {t.notice && (
             <div className="adj-irow">
               <Icon name="bell" size={16} />
@@ -971,8 +975,8 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
       </main>
 
       <footer className="adj-footer">
-        <button type="button" className="adj-link small" onClick={onClose}>Can't make contact?</button>
-        <button type="button" className="adj-btn dark" onClick={onReport}>{D.isRemote(t.job) ? 'Report result' : 'Start field report'}</button>
+        <button type="button" className="adj-link small" onClick={onClose}>Can't make contact</button>
+        <button type="button" className="adj-btn dark" onClick={onReport}>{D.isRemote(t.job) ? 'Report result' : 'Start report'}</button>
       </footer>
     </>
   );

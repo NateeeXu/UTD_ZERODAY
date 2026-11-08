@@ -131,9 +131,9 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
       <div className="adj-scroll">
         <section className="adj-sec" aria-label="People">
           <h2>People</h2>
-          <div className="adj-grid2">
+          <div className="adj-grid3">
             {PEOPLE.map((o) => (
-              <button key={o.v} type="button" className="adj-tile" aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.v === 'nobody' && remote ? 'No answer' : o.label}</button>
+              <button key={o.v} type="button" className={`adj-tile${o.v === 'nobody' ? ' weak' : ''}`} aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.v === 'nobody' && remote ? 'No answer' : o.label}</button>
             ))}
           </div>
           {pick === 'needs_help' && (
@@ -156,15 +156,15 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
 
         <section className="adj-sec" aria-label="Home">
           <div className="adj-sechead">
-            <h2>{target.policy === 'condo' ? 'Unit' : 'Home'}{covered && target.type === 'Welfare check' && <span className="adj-muted" style={{ fontWeight: 500 }}> · optional</span>}</h2>
+            <h2>{target.policy === 'condo' ? 'Unit' : 'Home'} damage{covered && target.type === 'Welfare check' && <span className="adj-muted" style={{ fontWeight: 500 }}> · optional</span>}</h2>
             <span className="adj-muted">{D.POLICY_LABEL[target.policy]}</span>
           </div>
           {covered ? (
             <>
-              <div className="adj-grid3">
+              <div className="adj-grid4">
                 {DAMAGE_NAMES.map((name, d) => (
                   <button key={d} type="button" className="adj-tile" aria-pressed={damageChoice === String(d)}
-                    onClick={() => { setDamageChoice(damageChoice === String(d) ? null : String(d)); setReason(null); }}>{d} {name}</button>
+                    onClick={() => { setDamageChoice(damageChoice === String(d) ? null : String(d)); setReason(null); }}>{name}</button>
                 ))}
                 <button type="button" className="adj-tile weak" aria-pressed={damageChoice === 'na'}
                   onClick={() => { setDamageChoice(damageChoice === 'na' ? null : 'na'); setReason(null); }}>Couldn't assess</button>
@@ -185,8 +185,8 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
           )}
         </section>
 
-        <section className="adj-sec" aria-label="Note">
-          <div className="adj-sechead"><h2>Note</h2><span className="adj-muted">{na ? 'Required' : 'Optional'}</span></div>
+        <section className="adj-sec" aria-label="Needs and note">
+          <div className="adj-sechead"><h2>Needs</h2>{na && <span className="adj-muted">Note required</span>}</div>
           <div className="adj-chips">
             {QUICK.map((q) => (
               <button key={q} type="button" className="adj-chipbtn" aria-pressed={userNote.includes(`${q}. `)} onClick={() => toggleQuick(q)}>{q}</button>
@@ -194,7 +194,7 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
           </div>
           <textarea ref={noteRef} className="adj-note" aria-label="Note" rows={1} maxLength={500} value={userNote}
             onChange={(e) => setUserNote(e.target.value)}
-            placeholder={pick === 'missing' ? 'Who is missing? Last seen where?' : 'What you saw'} />
+            placeholder={pick === 'missing' ? 'Who is missing? Last seen where?' : na ? 'Note (required): why?' : 'Add a note'} />
         </section>
       </div>
 
