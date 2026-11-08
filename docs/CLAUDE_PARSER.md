@@ -120,4 +120,20 @@ End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply 
 
 ## Results
 - **Offline** (2026-11-08): `npm run parser:test` 49/49 pass. Keyword net alone (`parser-eval.ts --no-claude`): life-safety recall **15/15** adversarial and **10/10** real, 0 extra referrals on the 80 cases, 0 false-safe (every non-net case falls back to `unsure`). Damage / needs / valid-JSON numbers are meaningless without Claude.
-- **With Claude**: not run yet (no `ANTHROPIC_API_KEY` in `spacetimedb/.env` when this was written). Run `npm run parser:eval` and paste the summary here.
+- **With Claude** (`claude-sonnet-5-5`, low effort, prompt v1; 2026-11-08; 40 adversarial + 40 sampled simulator replies in 6 languages):
+
+| | adversarial (40) | sampled (40) | all (80) |
+|---|---|---|---|
+| life-safety recall | **15/15 (100 %)** | **10/10 (100 %)** | **25/25 (100 %)** |
+| false-safe rate | 0/22 | 0/15 | **0/37 (0 %)** |
+| extra referrals | 2 | 0 | 2 |
+| safety exact | 80 % | — | 79 % |
+| damage exact / within 1 | 89 % / 94 % | 76 % / 88 % | 80 % / 90 % |
+| damage = unknown correct | 22/22 | — | 29/29 |
+| not at home correct | 40/40 | — | 79/80 |
+| missing people recall | 2/2 | — | 2/2 |
+| valid JSON | 100 % | 100 % | 100 % |
+| keyword net overrides of Claude | 0 | 0 | 0 |
+| latency mean / p95 | 1.6 s / 3.2 s | 1.4 s / 1.7 s | 1.5 s / 2.7 s |
+
+All critical criteria pass (life-safety recall 100 %, false-safe 0 %, valid JSON 100 %). "Damage within 1 >= 95 %" fails at 90 %, and every one of the 5 misses is Claude answering **unknown** for a vague text where the label had a number ("house is a mess, need an adjuster", "la casa está hecha un desastre", "Mọi thứ có vẻ ổn" = "everything seems fine"); whenever Claude gives a number it is within one level (46/46). Unknown keeps the house in the inspection queue, which is the safe direction. Most "safety exact" differences are `safe -> unsure` on vague texts (conservative: a person calls back), and the 2 extra referrals are adversarial texts a human would also escalate. The keyword net never had to override Claude in this run; it stays as the outage fallback.
