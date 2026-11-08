@@ -181,7 +181,12 @@ export function OutreachPanel(p: Props) {
                 <div className="p2-assign">
                   <span className="small muted">Send adjusters as</span>
                   <select value={p.pickedAdjuster?.identity.toHexString() ?? ''} onChange={(e) => p.onPickAdjuster(e.target.value)}>
-                    {p.adjusters.map((a) => <option key={a.identity.toHexString()} value={a.identity.toHexString()}>{a.name}</option>)}
+                    {p.adjusters.map((a) => {
+                      // Same name twice (e.g. after an auto-rejoin): add the identity's last 5 hex digits, as the phone header shows.
+                      const hex = a.identity.toHexString();
+                      const dupe = p.adjusters.some((o) => o.name === a.name && o.identity.toHexString() !== hex);
+                      return <option key={hex} value={hex}>{dupe ? `${a.name} · …${hex.slice(-5)}` : a.name}</option>;
+                    })}
                   </select>
                 </div>
               ) : (

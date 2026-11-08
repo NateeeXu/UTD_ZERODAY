@@ -23,7 +23,9 @@ export const isSuspected = (c: HexStatsRow) =>
 export function pulsingCells(cells: readonly HexStatsRow[]): Set<string> {
   return new Set(
     cells
-      .filter(isSuspected)
+      // The pulse means "nobody has checked here yet": once an adjuster has reported in the cell it stops
+      // (the cell keeps its priority colour if it is still urgent).
+      .filter((c) => isSuspected(c) && c.fieldReports === 0 && c.verifiedHouseholds === 0)
       .sort((a, b) => b.silence * b.hazard * b.households - a.silence * a.hazard * a.households)
       .slice(0, PULSE_TOP)
       .map((c) => c.hex),

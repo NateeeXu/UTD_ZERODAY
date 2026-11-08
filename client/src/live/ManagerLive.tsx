@@ -112,7 +112,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
   const [showFacilities, setShowFacilities] = useState(false);
-  const [res, setRes] = useState<7 | 8>(7);
 
   // Rebuilt only when the cell set itself changes (not on every stats tick).
   const cellKey = useMemo(() => cellSetKey(cells), [cells]);
@@ -269,7 +268,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           fitKey={`${region.id}|${world?.eventId ?? ''}`}
           padLeft={420}
           padRight={40}
-          onResChange={setRes}
           mode={mapMode}
         />
 
@@ -308,7 +306,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} disabled={!facilities.length} />
               Schools and hospitals
             </label>
-            <span className="glass-chip muted" title="Zoom in for neighborhoods (res 8)">{res === 7 ? 'Districts' : 'Neighborhoods'}</span>
           </div>
           {loading && (
             <div className="toast loading" role="status">

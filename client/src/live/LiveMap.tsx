@@ -242,7 +242,11 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     if (!g) return;
     g.sel.clearLayers();
     const u = selId ? unitById.current.get(selId) : null;
-    if (u) L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 2.5, fill: false, interactive: false }).addTo(g.sel);
+    if (u) {
+      // White halo under a heavy black line, so the selection reads clearly next to the red pulse rings.
+      L.polygon(u.shape as L.LatLngExpression[][], { color: '#ffffff', weight: 6.5, opacity: 0.95, fill: false, interactive: false, lineJoin: 'round' }).addTo(g.sel);
+      L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 3, fill: false, interactive: false, lineJoin: 'round' }).addTo(g.sel);
+    }
   }, [selId, res]);
 
   // Schools / universities / hospitals.
