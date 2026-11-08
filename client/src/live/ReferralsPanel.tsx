@@ -1,13 +1,12 @@
-// Life-safety referrals: needs-help replies and missing-member reports (docs/SPACETIME_API.md 0b).
-// Button by household_followup.referralStatus:
-//   '' → "Refer to 911 / agency" (referred) → "Agency acknowledged" (acknowledged) → "Resolved" (resolved)
+// "Needs help" list: life-safety referrals from needs-help replies, adjuster findings and
+// missing-member reports (docs/SPACETIME_API.md 0b). One button per row, from
+// household_followup.referralStatus: '' → "Refer to 911 / agency" → "Agency acknowledged" → "Resolved".
 // escalation = referral_overdue (not referred in 30 min / not acknowledged in 60 min) shows in red.
 import { useMemo, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { useHouseholdsById } from './hooks';
 import { fmtHM, riskFlags } from './accounting';
-import type { MetricsRow } from './rows';
 import type { Labeler } from './labels';
 import { homeLabel } from '../format';
 
@@ -17,14 +16,13 @@ const referralRows = tables.householdEstimate.where((r) =>
 );
 
 const NEXT: Record<string, { status: 'referred' | 'acknowledged' | 'resolved'; label: string }> = {
-  '': { status: 'referred', label: 'Refer to 911 / agency' },
-  referred: { status: 'acknowledged', label: 'Agency acknowledged' },
+  '': { status: 'referred', label: 'Refer to 911' },
+  referred: { status: 'acknowledged', label: 'Acknowledged' },
   acknowledged: { status: 'resolved', label: 'Resolved' },
 };
-const STATUS_TEXT: Record<string, string> = { '': 'Not referred yet', referred: 'Referred · waiting for agency', acknowledged: 'Agency acknowledged' };
+const STATUS_TEXT: Record<string, string> = { '': 'Not referred yet', referred: 'Referred · waiting for agency', acknowledged: 'Agency on it' };
 
-export function ReferralsPanel({ metrics, simMinutes, labeler, fictional, canAct, onNeedJoin, onSelectHex }: {
-  metrics: MetricsRow | undefined;
+export function ReferralList({ simMinutes, labeler, fictional, canAct, onNeedJoin, onSelectHex }: {
   simMinutes: number;
   labeler: Labeler;
   fictional: boolean;
@@ -44,9 +42,10 @@ export function ReferralsPanel({ metrics, simMinutes, labeler, fictional, canAct
     return [...rows]
       .map((e) => ({ e, f: followBy.get(e.householdId) }))
       .sort((a, b) => rank(a.e.escalation, a.f?.referralStatus ?? '') - rank(b.e.escalation, b.f?.referralStatus ?? '')
-        || (a.f?.reportedSimMinutes ?? 0) - (b.f?.reportedSimMinutes ?? 0));
+        || (a.f?.reportedSimMinutes ?? 0) - (b.f?.reportedSimMinutes ?? 0))
+      .slice(0, 40);
   }, [rows, followBy]);
-  const householdBy = useHouseholdsById(useMemo(() => list.slice(0, 30).map((x) => x.e.householdId), [list]));
+  const householdBy = useHouseholdsById(useMemo(() => list.map((x) => x.e.householdId), [list]));
 
   const act = async (householdId: string, status: 'referred' | 'acknowledged' | 'resolved') => {
     if (!canAct) return onNeedJoin();
@@ -61,24 +60,18 @@ export function ReferralsPanel({ metrics, simMinutes, labeler, fictional, canAct
     }
   };
 
-  const overdue = metrics?.overdueReferrals ?? 0;
   return (
-    <section className="glass referrals">
-      <div className="ref-head">
-        <b>Referrals</b>
-        <span className="small muted">{metrics?.openReferrals ?? list.length} open{metrics?.membersMissing ? ` · ${metrics.membersMissing} missing members` : ''}</span>
-        {overdue > 0 && <span className="ref-overdue">{overdue} overdue</span>}
-      </div>
-      {error && <p className="form-error small ref-pad">{error}</p>}
-      <ul className="ref-list">
-        {list.slice(0, 30).map(({ e, f }) => {
+    <>
+      {error && <p className="form-error small p2-pad">{error}</p>}
+      <ul className="p2-list">
+        {list.map(({ e, f }) => {
           const status = f?.referralStatus ?? '';
           const next = NEXT[status];
           const late = e.escalation === 'referral_overdue';
           const since = f?.reportedSimMinutes ? simMinutes - f.reportedSimMinutes : null;
           const flags = riskFlags(householdBy.get(e.householdId));
           return (
-            <li key={e.householdId} className={`ref-row${late ? ' late' : ''}`}>
+            <li key={e.householdId} className={`p2-row${late ? ' late' : ''}`}>
               <button className="p2-main" onClick={() => onSelectHex(e.hex)}>
                 <b>{homeLabel(e.householdId, fictional)} <span className="muted small">· {labeler.cell(e.hex)}</span></b>
                 <span className="small">
@@ -96,8 +89,8 @@ export function ReferralsPanel({ metrics, simMinutes, labeler, fictional, canAct
             </li>
           );
         })}
-        {!list.length && <li className="muted empty">No open referrals. Needs-help replies and missing-member reports land here.</li>}
+        {!list.length && <li className="muted empty">Nobody has asked for help yet. HELP replies and missing-member reports appear here.</li>}
       </ul>
-    </section>
+    </>
   );
 }

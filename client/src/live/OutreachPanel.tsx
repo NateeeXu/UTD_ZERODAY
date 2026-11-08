@@ -1,17 +1,18 @@
 // P2: collapsible tab panel under the unaccounted card.
 //   Not heard from — unaccounted_queue, ranked across cells by risk × waiting time
-//   Needs help     — household_estimate with P(needs help) > 0.1
+//   Needs help     — people who asked for help / reported a missing member (referrals)
 //   Feed           — latest SMS replies, claims, field reports
 // The P0 / P1 / P2 switch puts that priority's rows first.
 import { useMemo, useState } from 'react';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings/index.ts';
-import { actionEstimates, useHouseholdsById } from './hooks';
+import { useHouseholdsById } from './hooks';
+import { ReferralList } from './ReferralsPanel';
 import { EscalationChip, fmtHM, riskFlags } from './accounting';
 import { prio, type Priority } from './mapModel';
-import type { HexStatsRow, HouseholdRow, MemberRow } from './rows';
+import type { HexStatsRow, HouseholdRow, MemberRow, MetricsRow } from './rows';
 import type { Labeler } from './labels';
-import { fmtT, homeLabel, pct } from '../format';
+import { fmtT, homeLabel } from '../format';
 
 export type OutreachTab = 'unacc' | 'help' | 'feed';
 
@@ -40,6 +41,9 @@ interface Props {
   pickedAdjuster: MemberRow | undefined;
   onPickAdjuster: (hex: string) => void;
   assignError: string | null;
+  metrics: MetricsRow | undefined;
+  canAct: boolean;
+  onNeedJoin: () => void;
 }
 
 const TABS: { id: OutreachTab; label: string }[] = [
@@ -54,7 +58,6 @@ export function OutreachPanel(p: Props) {
   const [tab, setTab] = useState<OutreachTab>('unacc');
   const [first, setFirst] = useState<Priority>('P0');
   const [queue] = useTable(tables.unaccountedQueue);
-  const [estimates] = useTable(actionEstimates);
 
   // Rank of a priority given the chosen "first" priority: chosen first, then the usual P0 > P1 > P2.
   const rankOf = useMemo(() => {
@@ -70,18 +73,10 @@ export function OutreachPanel(p: Props) {
       .slice(0, 40);
   }, [queue, p.simMinutes, rankOf]);
 
-  const helpRows = useMemo(() => {
-    return estimates
-      .filter((e) => !e.verified)
-      .map((e) => ({ e, cell: p.cellBy.get(e.hex) }))
-      .filter((x): x is { e: (typeof estimates)[number]; cell: HexStatsRow } => !!x.cell)
-      .sort((a, b) => rankOf(a.cell.priority) - rankOf(b.cell.priority) || b.e.pNeedsHelp - a.e.pNeedsHelp)
-      .slice(0, 30);
-  }, [estimates, p.cellBy, rankOf]);
 
   const ids = useMemo(
-    () => (open ? (tab === 'unacc' ? queueRows.map((q) => q.householdId) : tab === 'help' ? helpRows.map((x) => x.e.householdId) : []) : []),
-    [open, tab, queueRows, helpRows],
+    () => (open && tab === 'unacc' ? queueRows.map((q) => q.householdId) : []),
+    [open, tab, queueRows],
   );
   const householdBy = useHouseholdsById(ids);
 
@@ -100,12 +95,15 @@ export function OutreachPanel(p: Props) {
           {TABS.map((t) => (
             <button key={t.id} role="tab" aria-selected={open && tab === t.id} className={open && tab === t.id ? 'on' : tab === t.id ? 'soft' : ''} onClick={() => pick(t.id)}>
               {t.label}
+              {t.id === 'help' && (p.metrics?.openReferrals ?? 0) > 0 && (
+                <span className={`tab-badge${(p.metrics?.overdueReferrals ?? 0) > 0 ? ' red' : ''}`}>{p.metrics?.openReferrals}</span>
+              )}
             </button>
           ))}
         </div>
         <label className="p2-sort" title="Sort: show this priority first">
           <span className="sr-only">Show this priority first</span>
-          <select value={first} onChange={(e) => { setFirst(e.target.value as Priority); setOpen(true); }} disabled={tab === 'feed'}>
+          <select value={first} onChange={(e) => { setFirst(e.target.value as Priority); setOpen(true); }} disabled={tab !== 'unacc'}>
             {ORDER.map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
@@ -127,7 +125,10 @@ export function OutreachPanel(p: Props) {
             </div>
           )}
           {p.assignError && <p className="form-error small p2-pad">{p.assignError}</p>}
-          <ul className="p2-list">
+          {tab === 'help' && (
+            <ReferralList simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onSelectHex={p.onSelectHex} />
+          )}
+          {tab !== 'help' && <ul className="p2-list">
             {tab === 'unacc' && queueRows.map((q) => {
               const hh = householdBy.get(q.householdId);
               const flags = riskFlags(hh);
@@ -148,19 +149,6 @@ export function OutreachPanel(p: Props) {
                 </li>
               );
             })}
-            {tab === 'help' && helpRows.map(({ e, cell }) => {
-              const flags = riskFlags(householdBy.get(e.householdId));
-              return (
-                <li key={e.householdId} className="p2-row">
-                  <span className={`chip chip-${prio(cell.priority)}`}>{prio(cell.priority)}</span>
-                  <button className="p2-main" onClick={() => p.onSelectHex(cell.hex)}>
-                    <b>{homeLabel(e.householdId, p.fictional)} <span className="muted small">· {p.labeler.cell(cell.hex)}</span></b>
-                    {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
-                  </button>
-                  <span className="small num">help {pct(e.pNeedsHelp)}</span>
-                </li>
-              );
-            })}
             {tab === 'feed' && p.feed.map((f) => (
               <li key={f.key}>
                 <button className={`feed-item ${f.kind}`} onClick={() => p.onSelectHex(f.hex)}>
@@ -172,10 +160,10 @@ export function OutreachPanel(p: Props) {
                 </button>
               </li>
             ))}
-            {((tab === 'unacc' && !queueRows.length) || (tab === 'help' && !helpRows.length) || (tab === 'feed' && !p.feed.length)) && (
-              <li className="muted empty">{tab === 'feed' ? 'No events yet. Press Start.' : tab === 'unacc' ? 'Everyone has been heard from.' : 'Nothing here yet.'}</li>
+            {((tab === 'unacc' && !queueRows.length) || (tab === 'feed' && !p.feed.length)) && (
+              <li className="muted empty">{tab === 'feed' ? 'No events yet. Press Start.' : 'Everyone has been heard from.'}</li>
             )}
-          </ul>
+          </ul>}
         </div>
       )}
     </section>

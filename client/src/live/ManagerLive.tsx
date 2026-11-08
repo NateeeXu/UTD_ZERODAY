@@ -6,14 +6,13 @@ import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './con
 import { LiveMap } from './LiveMap';
 import { JoinDialog } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
-import { LiveQrCard } from './LiveQrCard';
+import { QrButton } from './LiveQrCard';
 import { useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
 import { CAUSE, COLOR, RANK, prio, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
-import { ReferralsPanel } from './ReferralsPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow } from './rows';
 import { homeLabel, pct } from '../format';
 
@@ -178,6 +177,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   return (
     <div className="manager live">
       <RegionHeader region={region} onRegion={onRegion} fictional={fictional}>
+        <QrButton household={qrHousehold} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
         {me ? (
@@ -198,7 +198,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           flash={flash}
           fitKey={region.id}
           padLeft={420}
-          padRight={420}
+          padRight={40}
           onResChange={setRes}
           mode={mapMode}
         />
@@ -218,6 +218,9 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             pickedAdjuster={pickedAdjuster}
             onPickAdjuster={setAdjusterHex}
             assignError={assignError}
+            metrics={metrics}
+            canAct={isManager}
+            onNeedJoin={() => setJoining(true)}
           />
         </div>
 
@@ -253,8 +256,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           </span>
         </div>
 
-        <div className="right-rail">
-          {sel ? (
+        {sel && (
+          <div className="right-rail">
             <CellDetail
               unit={sel}
               label={labelFor(sel)}
@@ -268,19 +271,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               fictional={fictional}
               noteFor={kidsNote}
             />
-          ) : (
-            <ReferralsPanel
-              metrics={metrics}
-              simMinutes={simMinutes}
-              labeler={labeler}
-              fictional={fictional}
-              canAct={isManager}
-              onNeedJoin={() => setJoining(true)}
-              onSelectHex={selectFromHex}
-            />
-          )}
-          {!sel && <LiveQrCard household={qrHousehold} />}
-        </div>
+          </div>
+        )}
       </div>
 
       <ReplayBar replay={replay} canControl={isManager} onNeedJoin={() => setJoining(true)} />

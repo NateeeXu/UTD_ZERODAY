@@ -56,6 +56,7 @@ import SeedWorldReducer from "./seed_world_reducer.ts";
 import SetPasscodesReducer from "./set_passcodes_reducer.ts";
 import SetRecomputeCadenceReducer from "./set_recompute_cadence_reducer.ts";
 import SetSpeedReducer from "./set_speed_reducer.ts";
+import SetStaffSimReducer from "./set_staff_sim_reducer.ts";
 import StartReplayReducer from "./start_replay_reducer.ts";
 import StepReplayReducer from "./step_replay_reducer.ts";
 import SubmitFieldReportReducer from "./submit_field_report_reducer.ts";
@@ -86,6 +87,7 @@ import MyMemberRow from "./my_member_table.ts";
 import ReplayStateRow from "./replay_state_table.ts";
 import SmsReplyRow from "./sms_reply_table.ts";
 import SmsSentRow from "./sms_sent_table.ts";
+import StaffSimRow from "./staff_sim_table.ts";
 import UnaccountedQueueRow from "./unaccounted_queue_table.ts";
 import WorldRow from "./world_table.ts";
 
@@ -200,6 +202,9 @@ const tablesSchema = __schema({
   householdEstimate: __table({
     name: 'household_estimate',
     indexes: [
+      { accessor: 'escalation', name: 'household_estimate_escalation_idx_btree', algorithm: 'btree', columns: [
+        'escalation',
+      ] },
       { accessor: 'hex', name: 'household_estimate_hex_idx_btree', algorithm: 'btree', columns: [
         'hex',
       ] },
@@ -317,6 +322,17 @@ const tablesSchema = __schema({
       { name: 'sms_sent_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, SmsSentRow),
+  staffSim: __table({
+    name: 'staff_sim',
+    indexes: [
+      { accessor: 'id', name: 'staff_sim_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'staff_sim_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, StaffSimRow),
   unaccountedQueue: __table({
     name: 'unaccounted_queue',
     indexes: [
@@ -382,6 +398,7 @@ const reducersSchema = __reducers(
   __reducerSchema("set_passcodes", SetPasscodesReducer),
   __reducerSchema("set_recompute_cadence", SetRecomputeCadenceReducer),
   __reducerSchema("set_speed", SetSpeedReducer),
+  __reducerSchema("set_staff_sim", SetStaffSimReducer),
   __reducerSchema("start_replay", StartReplayReducer),
   __reducerSchema("step_replay", StepReplayReducer),
   __reducerSchema("submit_field_report", SubmitFieldReportReducer),

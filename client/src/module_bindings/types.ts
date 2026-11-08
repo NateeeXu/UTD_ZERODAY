@@ -423,6 +423,29 @@ export const SmsSent = __t.object("SmsSent", {
 });
 export type SmsSent = __Infer<typeof SmsSent>;
 
+export const StaffContact = __t.object("StaffContact", {
+  householdId: __t.string(),
+  failedCalls: __t.u8(),
+  lastCallMin: __t.f64(),
+});
+export type StaffContact = __Infer<typeof StaffContact>;
+
+export const StaffSim = __t.object("StaffSim", {
+  id: __t.u32(),
+  enabled: __t.bool(),
+  callsPerHour: __t.u32(),
+  visitsPerHour: __t.u32(),
+  lastRunMin: __t.f64(),
+  callsMade: __t.u32(),
+  callsReached: __t.u32(),
+  visitsMade: __t.u32(),
+  referralsMade: __t.u32(),
+  referralsResolved: __t.u32(),
+  helpFound: __t.u32(),
+  updatedAt: __t.timestamp(),
+});
+export type StaffSim = __Infer<typeof StaffSim>;
+
 export const StagedEvent = __t.object("StagedEvent", {
   seq: __t.u32(),
   t: __t.u32(),

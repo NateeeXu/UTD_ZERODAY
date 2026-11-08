@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useReducer } from 'spacetimedb/react';
-import { reducers } from '../module_bindings/index.ts';
+import { useReducer, useTable } from 'spacetimedb/react';
+import { reducers, tables } from '../module_bindings/index.ts';
 import type { ReplayStateRow } from './rows';
 import { JUMPS, REPLAY_SPEED, SPEED_MULTIPLIERS } from './config';
 import { fmtT } from '../format';
@@ -12,6 +12,9 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   const jump = useReducer(reducers.jumpTo);
   const reset = useReducer(reducers.resetDemo);
   const setSpeed = useReducer(reducers.setSpeed);
+  const setStaffSim = useReducer(reducers.setStaffSim);
+  const [staffRows] = useTable(tables.staffSim);
+  const staff = staffRows[0];
   const [mult, setMult] = useState<number | null>(null); // null = follow the database
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,6 +88,17 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
           <button key={j.minutes} className="btn" onClick={run(() => jump({ minutes: j.minutes }))} disabled={busy}>{j.label}</button>
         ))}
       </div>
+      <button
+        className={`staff-switch${staff?.enabled ? ' on' : ''}`}
+        role="switch"
+        aria-checked={!!staff?.enabled}
+        disabled={busy || !staff}
+        title="Simulated agents call and adjusters visit the top of the outreach queue every 30 sim-minutes. Turn off to show the silent map with no staff."
+        onClick={run(() => setStaffSim({ enabled: !staff?.enabled, callsPerHour: staff?.callsPerHour ?? 0, visitsPerHour: staff?.visitsPerHour ?? 0 }))}
+      >
+        <i aria-hidden="true" />
+        Simulated staff {staff?.enabled ? 'on' : 'off'}
+      </button>
       <button className="btn ghost" onClick={run(() => reset())} disabled={busy}>Reset</button>
       {error && <span className="form-error small">{error}</span>}
       {replay?.running && <span className="muted small energy">Running uses Maincloud energy — pause when not demoing</span>}

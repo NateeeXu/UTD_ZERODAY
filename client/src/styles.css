@@ -494,3 +494,18 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .p2-sort::after { content: ''; width: 6px; height: 6px; right: 11px; border-right: 1.6px solid #555; border-bottom: 1.6px solid #555; transform: translateY(-70%) rotate(45deg); }
 .p2-toggle { display: inline-flex; align-items: center; justify-content: center; color: #333; }
+.staff-switch { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.staff-switch i { width: 30px; height: 18px; border-radius: 999px; background: #d5d5d8; position: relative; transition: background 0.2s; }
+.staff-switch i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: transform 0.2s; }
+.staff-switch.on i { background: #0f7a55; }
+.staff-switch.on i::after { transform: translateX(12px); }
+.staff-switch:disabled { opacity: 0.5; cursor: default; }
+.tab-badge { margin-left: 5px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(120,120,128,0.2); color: #333; }
+.tab-badge.red { background: var(--p0); color: #fff; }
+.p2-row.late { background: rgba(217,58,53,0.1); box-shadow: inset 3px 0 0 var(--p0); }
+.qr-backdrop { z-index: 3000; }
+.qr-modal { padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 16px; border-radius: 28px; }
+.qr-card.large { flex-direction: column; text-align: center; border: none; background: none; padding: 0; gap: 14px; }
+.qr-card.large .qr-text { max-width: 320px; font-size: 15px; align-items: center; }
+.qr-card.large .qr-ph { width: 280px; height: 280px; }
+.qr-card.large img { border-radius: 12px; background: #fff; padding: 10px; }
