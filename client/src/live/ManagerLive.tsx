@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
@@ -7,6 +7,7 @@ import { LiveMap } from './LiveMap';
 import { JoinDialog } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { LiveQrCard } from './LiveQrCard';
+import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
 import { CAUSE, COLOR, RANK, prio, type MapUnit, type Priority } from './mapModel';
 import type { HexStatsRow, HouseholdRow } from './rows';
@@ -14,16 +15,44 @@ import { addressOf, fmtT, pct } from '../format';
 
 export function ManagerLive() {
   const [region, setRegion] = useState<RegionConfig>(initialRegion);
+  const onRegion = (r: RegionConfig) => {
+    rememberRegion(r.id);
+    setRegion(r);
+  };
+  if (!region.db) return <SnapshotManager key={region.id} region={region} onRegion={onRegion} />;
   return (
-    <LiveProvider key={region.db} screen="manager" db={region.db!}>
-      <ManagerScreen
-        region={region}
-        onRegion={(r) => {
-          rememberRegion(r.id);
-          setRegion(r);
-        }}
-      />
+    <LiveProvider key={region.db} screen="manager" db={region.db}>
+      <ManagerScreen region={region} onRegion={onRegion} />
     </LiveProvider>
+  );
+}
+
+// Shared top bar: product label, region switcher, right-hand slot.
+export function RegionHeader({ region, onRegion, fictional, children }: {
+  region: RegionConfig; onRegion: (r: RegionConfig) => void; fictional: boolean; children?: ReactNode;
+}) {
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <strong>Triage Loop</strong>
+        <span className="muted small">
+          {fictional ? 'Synthetic exercise · fictional town · no real customer data' : 'Synthetic exercise · real geography and census data · no real customer data'}
+        </span>
+      </div>
+      <div className="segmented" role="group" aria-label="Region">
+        {REGIONS.map((r) => {
+          const available = !!(r.db || r.preview);
+          return (
+            <button key={r.id} className={r.id === region.id ? 'on' : ''} disabled={!available}
+              title={r.db ? `Live · ${r.db}` : r.preview ? 'Preview snapshot (live database not published yet)' : 'Not available'}
+              onClick={() => available && r.id !== region.id && onRegion(r)}>
+              {r.label}{!r.db && r.preview ? ' · preview' : ''}
+            </button>
+          );
+        })}
+      </div>
+      <div className="topbar-right">{children}</div>
+    </header>
   );
 }
 
@@ -176,29 +205,14 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   return (
     <div className="manager live">
-      <header className="topbar">
-        <div className="brand">
-          <strong>Triage Loop</strong>
-          <span className="muted small">
-            {fictional ? 'Synthetic exercise · fictional town · no real customer data' : 'Synthetic exercise · real geography and census data · no real customer data'}
-          </span>
-        </div>
-        <div className="segmented" role="group" aria-label="Region">
-          {REGIONS.map((r) => (
-            <button key={r.id} className={r.id === region.id ? 'on' : ''} disabled={!r.db} title={r.db ? r.db : 'Database not published yet'} onClick={() => r.db && onRegion(r)}>
-              {r.label}
-            </button>
-          ))}
-        </div>
-        <div className="topbar-right">
-          <ConnectionBadge />
-          {me ? (
-            <span className="small">{me.role === 'manager' ? 'Manager' : me.role} · <b>{me.name}</b></span>
-          ) : (
-            <button className="btn" onClick={() => setJoining(true)}>Join as manager</button>
-          )}
-        </div>
-      </header>
+      <RegionHeader region={region} onRegion={onRegion} fictional={fictional}>
+        <ConnectionBadge />
+        {me ? (
+          <span className="small">{me.role === 'manager' ? 'Manager' : me.role} · <b>{me.name}</b></span>
+        ) : (
+          <button className="btn" onClick={() => setJoining(true)}>Join as manager</button>
+        )}
+      </RegionHeader>
 
       <div className="metrics-strip">
         <span className="ms-title">{world?.name ?? '…'}{world ? ` · ${world.hazardType}` : ''}</span>
@@ -369,7 +383,7 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName }: {
+export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
@@ -379,6 +393,7 @@ function CellDetail({ unit, label, households, candidates, openAssignments, onAs
   onClose: () => void;
   canAssign: boolean;
   adjusterName: string | undefined;
+  readOnly?: boolean;
 }) {
   const kidHexes = new Set(unit.kids.map((k) => k.hex));
   const top = candidates.filter((c) => kidHexes.has(c.hex)).sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 6);
@@ -412,6 +427,7 @@ function CellDetail({ unit, label, households, candidates, openAssignments, onAs
         {unit.si >= 0.2 && (
           <p className="small silence-line">Silence {pct(unit.si)} · {CAUSE[unit.sc] ?? (unit.sc || 'cause unclear')}</p>
         )}
+        {!readOnly && <>
         <h3 className="eyebrow divider">Inspect first</h3>
         <ul className="hh-list">
           {top.map((c) => (
@@ -425,11 +441,12 @@ function CellDetail({ unit, label, households, candidates, openAssignments, onAs
           ))}
           {!top.length && <li className="muted small">No open inspection candidates here.</li>}
         </ul>
+        </>}
       </div>
-      <div className="detail-actions">
+      {!readOnly && <div className="detail-actions">
         <span className="assigned small">{assigned ? `${assigned} inspection${assigned > 1 ? 's' : ''} assigned` : canAssign ? (adjusterName ? `To ${adjusterName}` : 'No adjuster joined yet') : 'Join as manager to assign'}</span>
         <button className="btn primary" onClick={() => onAssign(target.hex)}>Assign 3 inspections</button>
-      </div>
+      </div>}
     </aside>
   );
 }

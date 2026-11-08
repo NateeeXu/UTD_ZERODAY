@@ -3,10 +3,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { LiveProvider } from './LiveProvider';
-import { initialRegion } from './config';
+import { initialLiveRegion } from './config';
 
 export function ReplyLive({ householdId, code }: { householdId: string | null; code: string }) {
-  const region = useMemo(initialRegion, []);
+  const region = useMemo(initialLiveRegion, []);
   if (!householdId) {
     return (
       <div className="phone sms">

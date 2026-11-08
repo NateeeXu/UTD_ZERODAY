@@ -7,14 +7,15 @@ export type RegionId = 'harbor' | 'tx' | 'ca';
 export interface RegionConfig {
   id: RegionId;
   label: string;
-  db: string | null; // null = database not published yet
+  db: string | null;              // null = database not published yet
+  preview: 'tx' | 'ca' | null;    // read-only snapshot from docs/preview/preview-data.js while db is null
 }
 
 // Region → database. Override per region with env vars once Nate publishes them.
 export const REGIONS: RegionConfig[] = [
-  { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev' },
-  { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? null },
-  { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? null },
+  { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? null, preview: 'tx' },
+  { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? null, preview: 'ca' },
+  { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null },
 ];
 
 const REGION_KEY = 'triage-region';
@@ -28,7 +29,13 @@ export function initialRegion(): RegionConfig {
     /* storage blocked */
   }
   const want = fromUrl ?? saved;
-  return REGIONS.find((r) => r.id === want && r.db) ?? REGIONS.find((r) => r.db)!;
+  return REGIONS.find((r) => r.id === want && (r.db || r.preview)) ?? REGIONS.find((r) => r.db || r.preview)!;
+}
+
+// Phone screens need a live database: fall back to the first region that has one.
+export function initialLiveRegion(): RegionConfig {
+  const r = initialRegion();
+  return r.db ? r : REGIONS.find((x) => x.db)!;
 }
 
 export function rememberRegion(id: RegionId) {

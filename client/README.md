@@ -24,7 +24,9 @@ VITE_SPACETIME_DB=triage-loop-nateeexu-dev              # Harbor Bend dev databa
 VITE_SPACETIME_DB_TX=<corpus christi database>          # enables the region button
 VITE_SPACETIME_DB_CA=<bay area database>
 ```
-`?region=harbor|tx|ca` in the URL (before the `#`) picks a region; the choice is remembered.
+- `?region=tx|ca|harbor` in the URL (before the `#`) picks a region; the choice is remembered.
+- **Regions without a live database** (`VITE_SPACETIME_DB_TX` / `_CA` unset) open a read-only **preview snapshot**: A's approved data in `docs/preview/preview-data.js` at t = 2 h / 6 h / 24 h. It uses the same map and panels, without replay, assignments or QR.
+- Set the env var and the same button goes live. The adjuster and reply screens always use a region with a live database.
 
 ## Bindings (`src/module_bindings/`)
 - Copied from `spacetimedb/bindings/`.

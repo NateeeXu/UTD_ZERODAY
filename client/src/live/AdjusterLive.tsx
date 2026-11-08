@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
-import { initialRegion } from './config';
+import { initialLiveRegion } from './config';
 import { JoinDialog } from './JoinDialog';
 import { makeLabeler } from './labels';
 import { prio, RANK } from './mapModel';
@@ -10,7 +10,7 @@ import type { HouseholdRow } from './rows';
 import { addressOf, fmtT, pct } from '../format';
 
 export function AdjusterLive() {
-  const region = useMemo(initialRegion, []);
+  const region = useMemo(initialLiveRegion, []);
   return (
     <LiveProvider screen="adjuster" db={region.db!}>
       <AdjusterScreen />
