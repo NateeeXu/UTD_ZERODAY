@@ -30,6 +30,8 @@ async function main() {
   const bundle = JSON.parse(readFileSync(bundlePath, 'utf8')) as EventBundle;
   const params = JSON.parse(readFileSync(modelPath, 'utf8')) as ModelParams;
   const { conn } = await connect(ownerToken());
+  // The offline engine only sees the bundle + these reports, so simulated staff must be off.
+  await conn.reducers.setStaffSim({ enabled: false, callsPerHour: 0, visitsPerHour: 0 });
   await conn.reducers.resetDemo({});
   await conn.reducers.jumpTo({ minutes: T });
   await subscribe(conn, [
@@ -132,6 +134,8 @@ async function main() {
   });
   if (firstReasonDiff) console.log('first reason difference:', firstReasonDiff);
   console.log(ok ? 'PARITY OK' : 'PARITY MISMATCH');
+  await conn.reducers.setStaffSim({ enabled: true, callsPerHour: 0, visitsPerHour: 0 });
+  await conn.reducers.resetDemo({});
   conn.disconnect();
   process.exit(ok ? 0 : 1);
 }

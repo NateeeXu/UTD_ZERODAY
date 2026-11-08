@@ -44,6 +44,8 @@ async function main() {
     outsider: outsider.identity.toHexString().slice(0, 16),
   });
 
+  // Exact counter checks below: simulated staff (which files its own reports) stays off during the smoke test.
+  await owner.conn.reducers.setStaffSim({ enabled: false, callsPerHour: 0, visitsPerHour: 0 });
   await owner.conn.reducers.resetDemo({});
   check('owner reset_demo', true);
 
@@ -181,6 +183,8 @@ async function main() {
   // Remove the throwaway smoke-test members so the demo member list stays clean.
   await manager.conn.reducers.leave({});
   await adjuster.conn.reducers.leave({});
+  await owner.conn.reducers.setStaffSim({ enabled: true, callsPerHour: 0, visitsPerHour: 0 });
+  await owner.conn.reducers.resetDemo({});
   for (const c of [owner, manager, adjuster, outsider]) c.conn.disconnect();
   console.log(failures ? `\n${failures} check(s) FAILED` : '\nall checks passed');
 }

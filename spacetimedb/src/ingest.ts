@@ -7,6 +7,7 @@ import { SenderError } from 'spacetimedb/server';
 import type { Ctx } from './schema';
 import { freshLearning, getMetrics, getModelState, getReplay, worldCtxOf } from './state';
 import { gatherHouseholdSignals, recomputeCells, recomputeHex, toHexCell } from './fusion';
+import { resetStaffCounters } from './staff';
 import { batchScores, DEFAULT_TRUST, nextTrust, sourceOpinions, TRUST_BATCH } from './fusion/trust';
 import type { Damage, Peril, Safety } from './fusion/contract';
 
@@ -32,7 +33,7 @@ export type IngestEvent =
       note: string;
     };
 
-export type Source = 'replay' | 'live';
+export type Source = 'replay' | 'live' | 'staff_sim';
 
 function any(it: Iterable<unknown>): boolean {
   for (const _ of it) return true;
@@ -378,7 +379,8 @@ export function refreshHoldoutMetrics(ctx: Ctx) {
   for (const h of ctx.db.household.holdout.filter(true)) {
     const truth = ctx.db.simTruth.householdId.find(h.id);
     const est = ctx.db.householdEstimate.householdId.find(h.id);
-    if (!truth || !est) continue;
+    // Verified households are known, not predicted: score the model only where it still has to guess.
+    if (!truth || !est || est.verified) continue;
     const ySevere = truth.damage >= 2 ? 1 : 0;
     const yHelp = truth.safety === 'needs_help' ? 1 : 0;
     n++;
@@ -410,6 +412,8 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.inspectionCandidate.clear();
   ctx.db.householdFollowup.clear();
   ctx.db.unaccountedQueue.clear();
+  ctx.db.staffContact.clear();
+  resetStaffCounters(ctx);
   ctx.db.replayTick.clear();
 
   const rs = getReplay(ctx);

@@ -196,7 +196,7 @@ const eventColumns = {
   householdId: t.string().index('btree'),
   hex: t.string().index('btree'),
   t: t.u32(), // minutes after landfall
-  source: t.string(), // 'replay' (from data/live.json) | 'live' (submitted during the demo)
+  source: t.string(), // 'replay' (from data/live.json) | 'live' (submitted during the demo) | 'staff_sim'
   ingestedBy: t.identity(),
   ingestedAt: t.timestamp(),
 };
@@ -312,7 +312,7 @@ export const householdEstimate = table(
     verified: t.bool(),
     inspectScore: t.f64(), // 0..1, higher = send an adjuster here first (severity x uncertainty)
     accounted: t.bool(), // replied, filed a claim or has a field report
-    escalation: t.string(), // next contact step, see ESCALATION in fusion/index.ts
+    escalation: t.string().index('btree'), // next contact step, see ESCALATION in fusion/index.ts
     updatedAt: t.timestamp(),
   }
 );
@@ -378,6 +378,40 @@ export const unaccountedQueue = table(
     escalation: t.string(), // next action: sms_sent | sms_resend | agent_call | field_visit | recheck
     vulnerable: t.bool(),
     cellPriority: t.string(),
+  }
+);
+
+/**
+ * Singleton (id = 0): simulated staff working the outreach queue during the replay (demo only).
+ * Every STAFF_STEP_MIN sim minutes: the referral desk refers new needs-help reports (the agency
+ * acknowledges and resolves on a timer), agents call the top of unaccounted_queue, adjusters visit
+ * households that calls could not reach. Outcomes come from the private sim truth.
+ */
+export const staffSim = table(
+  { name: 'staff_sim', public: true },
+  {
+    id: t.u32().primaryKey(),
+    enabled: t.bool(),
+    callsPerHour: t.u32(),
+    visitsPerHour: t.u32(),
+    lastRunMin: t.f64(),
+    callsMade: t.u32(),
+    callsReached: t.u32(),
+    visitsMade: t.u32(),
+    referralsMade: t.u32(),
+    referralsResolved: t.u32(),
+    helpFound: t.u32(), // households that needed help and were found by a staff call or visit
+    updatedAt: t.timestamp(),
+  }
+);
+
+/** Private: staff call attempts per household. */
+export const staffContact = table(
+  { name: 'staff_contact' },
+  {
+    householdId: t.string().primaryKey(),
+    failedCalls: t.u8(), // consecutive unanswered calls (reset when reached)
+    lastCallMin: t.f64(),
   }
 );
 
@@ -603,6 +637,8 @@ const spacetimedb = schema({
   inspectionCandidate,
   householdFollowup,
   unaccountedQueue,
+  staffSim,
+  staffContact,
   metrics,
   modelState,
   member,
