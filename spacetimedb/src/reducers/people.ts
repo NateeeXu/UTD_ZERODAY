@@ -7,6 +7,7 @@ import { Identity } from 'spacetimedb';
 import spacetimedb, { type Ctx } from '../schema';
 import { isOwner, memberOf, requireAdjuster, requireManager, ROLES, SINGLETON, simNow, type Role } from '../state';
 import { onEvent } from '../ingest';
+import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
 
 function checkDamage(damage: number) {
@@ -218,5 +219,87 @@ export const updateAssignment = spacetimedb.reducer(
     const mine = a.adjuster.equals(ctx.sender);
     if (!mine) requireManager(ctx);
     ctx.db.assignment.id.update({ ...a, status, updatedAt: ctx.timestamp });
+  }
+);
+
+// ----- "No one overlooked": follow-ups ---------------------------------------
+
+function checkReplyAccess(ctx: Ctx, passcode: string) {
+  const role = memberOf(ctx)?.role;
+  if (role === 'policyholder_demo' || role === 'manager' || isOwner(ctx)) return;
+  const cfg = passcodes(ctx);
+  if (passcode !== cfg.replyPasscode && passcode !== cfg.staffPasscode)
+    throw new SenderError('join as policyholder_demo or provide the reply passcode');
+}
+
+type FollowupPatch = Partial<{ memberMissing: boolean; reportedSimMinutes: number; referralStatus: string; referralSimMinutes: number; closureReason: string; closedBy: string }>;
+
+function upsertFollowup(ctx: Ctx, householdId: string, patch: FollowupPatch) {
+  const hh = ctx.db.household.id.find(householdId);
+  if (!hh) throw new SenderError(`unknown household ${householdId}`);
+  const prev = ctx.db.householdFollowup.householdId.find(householdId);
+  const row = {
+    householdId,
+    hex: hh.hex,
+    memberMissing: prev?.memberMissing ?? false,
+    reportedSimMinutes: prev?.reportedSimMinutes ?? 0,
+    referralStatus: prev?.referralStatus ?? '',
+    referralSimMinutes: prev?.referralSimMinutes ?? 0,
+    closureReason: prev?.closureReason ?? '',
+    closedBy: prev?.closedBy ?? '',
+    ...patch,
+    updatedAt: ctx.timestamp,
+  };
+  if (prev) ctx.db.householdFollowup.householdId.update(row);
+  else ctx.db.householdFollowup.insert(row);
+  recomputeHex(ctx, hh.hex);
+}
+
+/** Policyholder page: "Someone in my household is unaccounted for". Opens a referral. */
+export const reportMemberMissing = spacetimedb.reducer(
+  { name: 'report_member_missing' },
+  { householdId: t.string(), passcode: t.string() },
+  (ctx, { householdId, passcode }) => {
+    checkReplyAccess(ctx, passcode);
+    const prev = ctx.db.householdFollowup.householdId.find(householdId);
+    // A repeat report keeps the original clock; a report after a resolved referral opens a new one.
+    if (prev?.memberMissing && prev.referralStatus !== 'resolved') return;
+    const now = simNow(ctx);
+    // Keep a referral already open for this household (e.g. from a needs-help reply).
+    const open = prev && (prev.referralStatus === 'referred' || prev.referralStatus === 'acknowledged');
+    upsertFollowup(ctx, householdId, open ? { memberMissing: true, reportedSimMinutes: now } : { memberMissing: true, reportedSimMinutes: now, referralStatus: '', referralSimMinutes: 0 });
+  }
+);
+
+/** Referral lifecycle for people who need help: referred -> acknowledged -> resolved (manager). */
+export const updateReferral = spacetimedb.reducer(
+  { name: 'update_referral' },
+  { householdId: t.string(), status: t.string() },
+  (ctx, { householdId, status }) => {
+    requireManager(ctx);
+    if (status !== 'referred' && status !== 'acknowledged' && status !== 'resolved')
+      throw new SenderError("status must be 'referred', 'acknowledged' or 'resolved'");
+    // referralSimMinutes = when it was referred (overdue clock), or when it was resolved (a later
+    // needs-help reply opens a new referral).
+    upsertFollowup(ctx, householdId, status === 'acknowledged' ? { referralStatus: status } : { referralStatus: status, referralSimMinutes: simNow(ctx) });
+  }
+);
+
+/**
+ * No silent closure: a household leaves "unaccounted" only with evidence or a documented reason.
+ * reason: 'vacant' | 'not_in_area' | 'unreachable_after_visit' (needs an adjuster assignment) | '' to reopen.
+ */
+export const closeHousehold = spacetimedb.reducer(
+  { name: 'close_household' },
+  { householdId: t.string(), reason: t.string() },
+  (ctx, { householdId, reason }) => {
+    const me = memberOf(ctx);
+    if (!(me && (me.role === 'manager' || me.role === 'adjuster')) && !isOwner(ctx))
+      throw new SenderError('only managers or adjusters can close a household');
+    if (!['vacant', 'not_in_area', 'unreachable_after_visit', ''].includes(reason))
+      throw new SenderError("reason must be 'vacant', 'not_in_area', 'unreachable_after_visit' or '' (reopen)");
+    if (reason === 'unreachable_after_visit' && [...ctx.db.assignment.householdId.filter(householdId)].length === 0)
+      throw new SenderError('unreachable_after_visit needs an adjuster assignment for this household first');
+    upsertFollowup(ctx, householdId, { closureReason: reason, closedBy: reason ? (me?.name ?? 'owner') : '' });
   }
 );

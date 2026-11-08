@@ -288,6 +288,13 @@ export const hexStats = table(
     unaccounted: t.u32(),
     vulnerable: t.u32(), // CMIST-vulnerable households (75+, disability, no vehicle, limited English, medical device, 65+ alone)
     unaccountedVulnerable: t.u32(),
+    highRiskUnaccounted: t.u32(), // unaccounted and (vulnerable, pNeedsHelp >= 0.3 or P0 cell)
+    longestWaitMin: t.f64(), // longest time a high-risk household has gone unaccounted (sim minutes)
+    openReferrals: t.u32(), // needs help / member missing, not resolved yet
+    overdueReferrals: t.u32(), // referred but not acknowledged within REFERRAL_ACK_MIN
+    membersMissing: t.u32(), // households reporting someone unaccounted for
+    closedNoContact: t.u32(), // closed with a documented reason instead of contact
+    recheckDue: t.u32(), // heard from, but a high-risk "safe" is older than RECHECK_MIN
     updatedAt: t.timestamp(),
     updatedSimMinutes: t.f64(),
   }
@@ -333,6 +340,47 @@ export const inspectionCandidate = table(
   }
 );
 
+/**
+ * Follow-up state per household ("no one overlooked"): a reported missing household member,
+ * the referral lifecycle for people who need help, and a documented closure reason.
+ */
+export const householdFollowup = table(
+  { name: 'household_followup', public: true },
+  {
+    householdId: t.string().primaryKey(),
+    hex: t.string().index('btree'),
+    memberMissing: t.bool(),
+    referralStatus: t.string(), // '' | 'referred' | 'acknowledged' | 'resolved'
+    referralSimMinutes: t.f64(), // sim minute it was referred
+    reportedSimMinutes: t.f64(), // sim minute a missing member was reported (starts the referral timer)
+    closureReason: t.string(), // '' | 'vacant' | 'not_in_area' | 'unreachable_after_visit'
+    closedBy: t.string(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+/**
+ * Outreach queue ("no one overlooked"): the top QUEUE_PER_CELL households of every cell that still need
+ * contact (not heard from yet, or a high-risk "safe" that has expired). Rows are time-independent so they
+ * are rewritten only when the ranking changes; the client ranks across cells with
+ *   score = weight * (1 + (replay_state.simMinutes - waitSinceMin) / QUEUE_AGING_MIN)
+ * so every hour of silence raises a household (aging: low-risk households cannot starve).
+ * The cell's full list is household_estimate where hex = X and (accounted = false or escalation = 'recheck').
+ */
+export const unaccountedQueue = table(
+  { name: 'unaccounted_queue', public: true },
+  {
+    householdId: t.string().primaryKey(),
+    hex: t.string().index('btree'),
+    rank: t.u8(), // 1 = first in this cell
+    weight: t.f64(), // risk x vulnerability x cell priority (time-independent part of the score)
+    waitSinceMin: t.f64(), // sim minute the wait started (outreach text, landfall, or "safe" expiry)
+    escalation: t.string(), // next action: sms_sent | sms_resend | agent_call | field_visit | recheck
+    vulnerable: t.bool(),
+    cellPriority: t.string(),
+  }
+);
+
 /** Singleton (id = 0): global dashboard metrics. */
 export const metrics = table(
   { name: 'metrics', public: true },
@@ -353,6 +401,13 @@ export const metrics = table(
     vulnerable: t.u32(),
     vulnerableAccounted: t.u32(),
     vulnerableAccountedRate: t.f64(), // equity check: compare with accountedRate
+    highRiskUnaccounted: t.u32(),
+    longestWaitMin: t.f64(), // the longest wait among high-risk unaccounted households
+    openReferrals: t.u32(),
+    overdueReferrals: t.u32(),
+    membersMissing: t.u32(),
+    closedNoContact: t.u32(),
+    recheckDue: t.u32(),
     p0Cells: t.u32(),
     p1Cells: t.u32(),
     p2Cells: t.u32(),
@@ -546,6 +601,8 @@ const spacetimedb = schema({
   hexStats,
   householdEstimate,
   inspectionCandidate,
+  householdFollowup,
+  unaccountedQueue,
   metrics,
   modelState,
   member,

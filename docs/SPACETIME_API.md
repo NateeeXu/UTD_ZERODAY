@@ -40,20 +40,47 @@ All three run the v2 module (engine v2) and use the same private passcodes.
 
 ## 0b. "No one overlooked" (accounted / unaccounted)
 
-A household is **accounted for** once it replied by SMS, filed a claim or got a field report. Everyone else is **unaccounted**, never "fine".
+**Accounted** = we heard from the household (SMS reply, claim, field report, missing-member report, open referral) or a manager/adjuster closed it with a documented reason. Everyone else is **unaccounted**, never "fine". `accounted` never flips back on its own, so the headline number only rises over the replay.
+
+Five guarantees, each backed by data the frontend can show:
+1. **Nobody is silently "fine"**: silence = unaccounted; the only exits are contact or a documented closure (`close_household`).
+2. **Everyone has a next step**: every household has an `escalation`, and the ladder ends with a person at the door (low-risk households too, after 48 h).
+3. **Nobody starves in the queue**: `unaccounted_queue` ranks by risk x waiting time, so every hour of silence raises a household.
+4. **"Safe" expires for high-risk people**: a vulnerable / high-risk household whose last contact is older than 12 h goes back to the queue as `recheck`.
+5. **Life-safety reports cannot stall**: a needs-help reply or a missing member opens a referral with timers (not referred in 30 min, or not acknowledged in 60 min → `referral_overdue`).
 
 | Where | Columns |
 |---|---|
-| `metrics` | `accounted`, `unaccounted` (the number to drive to zero), `accountedRate`, `vulnerable`, `vulnerableAccounted`, `vulnerableAccountedRate` (equity check: compare with `accountedRate`) |
-| `hex_stats` | `accounted`, `unaccounted`, `vulnerable`, `unaccountedVulnerable` per cell |
+| `metrics` | `accounted`, `unaccounted`, `accountedRate`; `vulnerable`, `vulnerableAccounted`, `vulnerableAccountedRate` (equity check vs `accountedRate`); `highRiskUnaccounted`, `longestWaitMin` (longest a high-risk household has gone without contact); `recheckDue`; `openReferrals`, `overdueReferrals`, `membersMissing`; `closedNoContact` |
+| `hex_stats` | the same counters per cell (`accounted`, `unaccounted`, `vulnerable`, `unaccountedVulnerable`, `highRiskUnaccounted`, `longestWaitMin`, `recheckDue`, `openReferrals`, `overdueReferrals`, `membersMissing`, `closedNoContact`) |
 | `household_estimate`, `inspection_candidate` | `accounted` (bool), `escalation` |
+| `household_followup` | per household: `memberMissing`, `reportedSimMinutes`, `referralStatus` (`''` / `referred` / `acknowledged` / `resolved`), `referralSimMinutes` (when referred, or when resolved), `closureReason` (`vacant` / `not_in_area` / `unreachable_after_visit`), `closedBy` |
+| `unaccounted_queue` | top 5 per cell that still need contact: `rank`, `weight`, `waitSinceMin`, `escalation`, `vulnerable`, `cellPriority` |
 
-`escalation` is the next contact step for each household:
-- Not heard from: `sms_sent` (< 2 h since the text) → `sms_resend` (< 6 h) → `agent_call` (< 12 h, or a low-risk P2 cell) → `field_visit`.
-- Heard from: `emergency_referral` (replied needs help, no visit yet) → `accounted` → `verified` (field report).
+`escalation` values:
+- **Not heard from** (high-risk = vulnerable, pNeedsHelp ≥ 0.3, or a P0 cell; the step never moves backwards):
+  - high-risk: `sms_sent` → `sms_resend` (30 min) → `agent_call` (90 min) → `field_visit` (4 h)
+  - standard: `sms_sent` → `sms_resend` (2 h) → `agent_call` (6 h) → `field_visit` (12 h; 48 h for low-risk P2 cells)
+  - no phone on file: `agent_call` (agent / emergency contact) → `field_visit`
+- **Needs help** (reply or missing member, until resolved): `emergency_referral` → `referral_pending` → `referral_acknowledged`; `referral_overdue` when a timer runs out. Pick the button from `household_followup.referralStatus`: `''` → "Refer to 911 / local agency", `referred` → "Agency acknowledged", `acknowledged` → "Resolved".
+- **Heard from**: `accounted`, `recheck` (high-risk, last contact > 12 h ago), `verified` (field report), `closed` (documented reason).
+
+Queue score (rank across cells on the client; rows only change when the ranking changes):
+```ts
+const score = q.weight * (1 + (replay.simMinutes - q.waitSinceMin) / 360);
+queue.sort((a, b) => score(b) - score(a));
+```
+
+Reducers:
+| Reducer | Who | Effect |
+|---|---|---|
+| `report_member_missing(householdId, passcode)` | reply page (policyholder_demo, manager, or reply passcode) | "Someone in my household is unaccounted for": opens a referral (a repeat report keeps the original clock) |
+| `update_referral(householdId, status)` | manager | `referred` / `acknowledged` / `resolved`; a needs-help reply after `resolved` opens a new referral |
+| `close_household(householdId, reason)` | manager or adjuster | `vacant`, `not_in_area`, `unreachable_after_visit` (needs an assignment first), or `''` to reopen |
 
 Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
-Dashboard idea: a big "Unaccounted: N → 0" number, the unaccounted list from `inspection_candidate` where `accounted = false`, and the two rates side by side.
+Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", the outreach queue with one action button per `escalation`, a referrals panel (overdue in red), and `accountedRate` vs `vulnerableAccountedRate` side by side.
+Measured on the 72 h Harbor Bend replay with no staff actions: accounted 0 → 1,212 (5 h) → 1,748 (72 h), never decreasing; recheck due 616 at 72 h; Bay Area `jump_to(4320)` stays under 1 s.
 
 ## 1. What runs inside Spacetime
 

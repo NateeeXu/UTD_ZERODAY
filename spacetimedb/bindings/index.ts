@@ -36,6 +36,7 @@ import {
 // Import all reducer arg schemas
 import AssignReducer from "./assign_reducer.ts";
 import AssignHexReducer from "./assign_hex_reducer.ts";
+import CloseHouseholdReducer from "./close_household_reducer.ts";
 import JoinAsReducer from "./join_as_reducer.ts";
 import JumpToReducer from "./jump_to_reducer.ts";
 import LeaveReducer from "./leave_reducer.ts";
@@ -44,6 +45,7 @@ import PauseReplayReducer from "./pause_replay_reducer.ts";
 import RecomputeAllReducer from "./recompute_all_reducer.ts";
 import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
 import RemoveMemberReducer from "./remove_member_reducer.ts";
+import ReportMemberMissingReducer from "./report_member_missing_reducer.ts";
 import ResetDemoReducer from "./reset_demo_reducer.ts";
 import SeedFacilitiesReducer from "./seed_facilities_reducer.ts";
 import SeedHexesReducer from "./seed_hexes_reducer.ts";
@@ -60,6 +62,7 @@ import SubmitFieldReportReducer from "./submit_field_report_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
+import UpdateReferralReducer from "./update_referral_reducer.ts";
 import WipeWorldReducer from "./wipe_world_reducer.ts";
 
 // Import all procedure arg schemas
@@ -73,6 +76,7 @@ import HexRow from "./hex_table.ts";
 import HexStatsRow from "./hex_stats_table.ts";
 import HouseholdRow from "./household_table.ts";
 import HouseholdEstimateRow from "./household_estimate_table.ts";
+import HouseholdFollowupRow from "./household_followup_table.ts";
 import InspectionCandidateRow from "./inspection_candidate_table.ts";
 import MemberRow from "./member_table.ts";
 import MetricsRow from "./metrics_table.ts";
@@ -82,6 +86,7 @@ import MyMemberRow from "./my_member_table.ts";
 import ReplayStateRow from "./replay_state_table.ts";
 import SmsReplyRow from "./sms_reply_table.ts";
 import SmsSentRow from "./sms_sent_table.ts";
+import UnaccountedQueueRow from "./unaccounted_queue_table.ts";
 import WorldRow from "./world_table.ts";
 
 /** Type-only namespace exports for generated type groups. */
@@ -206,6 +211,20 @@ const tablesSchema = __schema({
       { name: 'household_estimate_household_id_key', constraint: 'unique', columns: ['householdId'] },
     ],
   }, HouseholdEstimateRow),
+  householdFollowup: __table({
+    name: 'household_followup',
+    indexes: [
+      { accessor: 'hex', name: 'household_followup_hex_idx_btree', algorithm: 'btree', columns: [
+        'hex',
+      ] },
+      { accessor: 'householdId', name: 'household_followup_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+    ],
+    constraints: [
+      { name: 'household_followup_household_id_key', constraint: 'unique', columns: ['householdId'] },
+    ],
+  }, HouseholdFollowupRow),
   inspectionCandidate: __table({
     name: 'inspection_candidate',
     indexes: [
@@ -298,6 +317,20 @@ const tablesSchema = __schema({
       { name: 'sms_sent_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, SmsSentRow),
+  unaccountedQueue: __table({
+    name: 'unaccounted_queue',
+    indexes: [
+      { accessor: 'hex', name: 'unaccounted_queue_hex_idx_btree', algorithm: 'btree', columns: [
+        'hex',
+      ] },
+      { accessor: 'householdId', name: 'unaccounted_queue_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+    ],
+    constraints: [
+      { name: 'unaccounted_queue_household_id_key', constraint: 'unique', columns: ['householdId'] },
+    ],
+  }, UnaccountedQueueRow),
   world: __table({
     name: 'world',
     indexes: [
@@ -329,6 +362,7 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("assign", AssignReducer),
   __reducerSchema("assign_hex", AssignHexReducer),
+  __reducerSchema("close_household", CloseHouseholdReducer),
   __reducerSchema("join_as", JoinAsReducer),
   __reducerSchema("jump_to", JumpToReducer),
   __reducerSchema("leave", LeaveReducer),
@@ -337,6 +371,7 @@ const reducersSchema = __reducers(
   __reducerSchema("recompute_all", RecomputeAllReducer),
   __reducerSchema("refresh_metrics", RefreshMetricsReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
+  __reducerSchema("report_member_missing", ReportMemberMissingReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),
   __reducerSchema("seed_facilities", SeedFacilitiesReducer),
   __reducerSchema("seed_hexes", SeedHexesReducer),
@@ -353,6 +388,7 @@ const reducersSchema = __reducers(
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
   __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),
+  __reducerSchema("update_referral", UpdateReferralReducer),
   __reducerSchema("wipe_world", WipeWorldReducer),
 );
 

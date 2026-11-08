@@ -173,6 +173,13 @@ export const HexStats = __t.object("HexStats", {
   unaccounted: __t.u32(),
   vulnerable: __t.u32(),
   unaccountedVulnerable: __t.u32(),
+  highRiskUnaccounted: __t.u32(),
+  longestWaitMin: __t.f64(),
+  openReferrals: __t.u32(),
+  overdueReferrals: __t.u32(),
+  membersMissing: __t.u32(),
+  closedNoContact: __t.u32(),
+  recheckDue: __t.u32(),
   updatedAt: __t.timestamp(),
   updatedSimMinutes: __t.f64(),
 });
@@ -220,6 +227,19 @@ export const HouseholdEstimate = __t.object("HouseholdEstimate", {
   updatedAt: __t.timestamp(),
 });
 export type HouseholdEstimate = __Infer<typeof HouseholdEstimate>;
+
+export const HouseholdFollowup = __t.object("HouseholdFollowup", {
+  householdId: __t.string(),
+  hex: __t.string(),
+  memberMissing: __t.bool(),
+  referralStatus: __t.string(),
+  referralSimMinutes: __t.f64(),
+  reportedSimMinutes: __t.f64(),
+  closureReason: __t.string(),
+  closedBy: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type HouseholdFollowup = __Infer<typeof HouseholdFollowup>;
 
 export const HouseholdInput = __t.object("HouseholdInput", {
   id: __t.string(),
@@ -290,6 +310,13 @@ export const Metrics = __t.object("Metrics", {
   vulnerable: __t.u32(),
   vulnerableAccounted: __t.u32(),
   vulnerableAccountedRate: __t.f64(),
+  highRiskUnaccounted: __t.u32(),
+  longestWaitMin: __t.f64(),
+  openReferrals: __t.u32(),
+  overdueReferrals: __t.u32(),
+  membersMissing: __t.u32(),
+  closedNoContact: __t.u32(),
+  recheckDue: __t.u32(),
   p0Cells: __t.u32(),
   p1Cells: __t.u32(),
   p2Cells: __t.u32(),
@@ -433,6 +460,18 @@ export const TruthInput = __t.object("TruthInput", {
   peril: __t.string(),
 });
 export type TruthInput = __Infer<typeof TruthInput>;
+
+export const UnaccountedQueue = __t.object("UnaccountedQueue", {
+  householdId: __t.string(),
+  hex: __t.string(),
+  rank: __t.u8(),
+  weight: __t.f64(),
+  waitSinceMin: __t.f64(),
+  escalation: __t.string(),
+  vulnerable: __t.bool(),
+  cellPriority: __t.string(),
+});
+export type UnaccountedQueue = __Infer<typeof UnaccountedQueue>;
 
 export const World = __t.object("World", {
   id: __t.u32(),
