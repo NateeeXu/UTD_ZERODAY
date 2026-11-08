@@ -94,7 +94,6 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
   const pending = useRef<((c: string) => void) | null>(null);
   const [out, setOut] = useState<Out[]>([]);
   const [text, setText] = useState('');
-  const [demoNote, setDemoNote] = useState(false);
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
 
@@ -167,8 +166,6 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
   return (
     <Page
       helpSent={helpSent}
-      demoNote={demoNote}
-      onCall911={() => setDemoNote(true)}
       onAddCode={() => { pending.current = null; setSheet(true); }}
       composer={{ text, setText, onSubmit: sendText, enabled: known }}
       sheet={sheet && <PasscodeSheet onSave={saveCode} onClose={() => { pending.current = null; setSheet(false); }} />}
@@ -213,18 +210,16 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
 
 // No household id in the link: same frame, no connection needed.
 function BadLinkPage() {
-  const [demoNote, setDemoNote] = useState(false);
   return (
-    <Page helpSent={false} demoNote={demoNote} onCall911={() => setDemoNote(true)} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), enabled: false }}>
+    <Page helpSent={false} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), enabled: false }}>
       <p className="rp-note" role="alert">{BAD_LINK}</p>
     </Page>
   );
 }
 
-function Page({ helpSent, demoNote, onCall911, onAddCode, composer, sheet, children }: {
+// Call 911 is visual only in this demo: it never dials and shows no message.
+function Page({ helpSent, onAddCode, composer, sheet, children }: {
   helpSent: boolean;
-  demoNote: boolean;
-  onCall911: () => void;
   onAddCode?: () => void;
   composer: { text: string; setText: (v: string) => void; onSubmit: (e: FormEvent) => void; enabled: boolean };
   sheet?: ReactNode;
@@ -232,7 +227,6 @@ function Page({ helpSent, demoNote, onCall911, onAddCode, composer, sheet, child
 }) {
   const [menu, setMenu] = useState(false);
   const canSend = composer.enabled && composer.text.trim().length > 0;
-  const note = demoNote && <p className="rp-demo" aria-live="polite">Demo only. No call placed.</p>;
   return (
     <div className="rp">
       <div className="rp-top">
@@ -253,18 +247,16 @@ function Page({ helpSent, demoNote, onCall911, onAddCode, composer, sheet, child
         <div className="rp-sub">
           <span className="rp-auto"><ChatIcon /> Automated assistant</span>
           {!helpSent && (
-            <button type="button" className="rp-911" onClick={onCall911}><PhoneIcon /> Call 911</button>
+            <button type="button" className="rp-911"><PhoneIcon /> Call 911</button>
           )}
         </div>
-        {!helpSent && note}
       </div>
 
       {helpSent && (
         <div className="rp-help" role="status">
-          <button type="button" className="rp-911-solid" onClick={onCall911}><PhoneIcon size={22} /> Call 911</button>
+          <button type="button" className="rp-911-solid"><PhoneIcon size={22} /> Call 911</button>
           <p className="rp-help-title">Referral created</p>
           <p className="rp-help-sub">Call 911 now if anyone is in danger.</p>
-          {note}
         </div>
       )}
 
