@@ -188,6 +188,8 @@ export const HexStats = __t.object("HexStats", {
   assistanceRequests: __t.u32(),
   inspectionRequests: __t.u32(),
   locateDue: __t.u32(),
+  undeliveredUnaccounted: __t.u32(),
+  deliveredNoReply: __t.u32(),
   updatedAt: __t.timestamp(),
   updatedSimMinutes: __t.f64(),
 });
@@ -330,6 +332,8 @@ export const Metrics = __t.object("Metrics", {
   assistanceRequests: __t.u32(),
   inspectionRequests: __t.u32(),
   locateDue: __t.u32(),
+  undeliveredUnaccounted: __t.u32(),
+  deliveredNoReply: __t.u32(),
   expectedSevereTotal: __t.f64(),
   severeTotalLo: __t.f64(),
   severeTotalHi: __t.f64(),
@@ -459,6 +463,7 @@ export const SmsSent = __t.object("SmsSent", {
   source: __t.string(),
   ingestedBy: __t.identity(),
   ingestedAt: __t.timestamp(),
+  delivered: __t.bool(),
 });
 export type SmsSent = __Infer<typeof SmsSent>;
 
@@ -506,6 +511,7 @@ export const StagedEvent = __t.object("StagedEvent", {
   needs: __t.string(),
   notHome: __t.bool(),
   channel: __t.string(),
+  delivered: __t.bool(),
 });
 export type StagedEvent = __Infer<typeof StagedEvent>;
 
@@ -526,6 +532,7 @@ export const StagedEventInput = __t.object("StagedEventInput", {
   needs: __t.string(),
   notHome: __t.bool(),
   channel: __t.string(),
+  delivered: __t.bool(),
 });
 export type StagedEventInput = __Infer<typeof StagedEventInput>;
 

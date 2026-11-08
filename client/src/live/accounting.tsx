@@ -34,6 +34,9 @@ export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined })
       {lagging && <span className="p1-lag">Vulnerable residents lagging · they go first in the queue</span>}
 
       <div className="p1-stats">
+        {/* Unaccounted split by the carrier's delivery receipt (households without a phone are in neither). */}
+        <Stat label="Text not delivered" title="Not heard from, and the check-in text was not delivered (phone off, dead or out of signal)" value={n(metrics?.undeliveredUnaccounted)} />
+        <Stat label="Delivered · no reply" title="Not heard from, although the check-in text was delivered" value={n(metrics?.deliveredNoReply)} />
         <Stat label="High-risk unaccounted" value={n(metrics?.highRiskUnaccounted)} />
         <Stat label="Longest wait · high-risk" value={metrics ? fmtHM(metrics.longestWaitMin) : '—'} />
         <Stat label="To locate" title="House inspected, nobody seen: emergency contact next" value={n(metrics?.locateDue)} />
