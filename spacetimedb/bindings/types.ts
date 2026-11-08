@@ -100,6 +100,17 @@ export const Config = __t.object("Config", {
 });
 export type Config = __Infer<typeof Config>;
 
+export const DisasterRequest = __t.object("DisasterRequest", {
+  id: __t.u64(),
+  region: __t.string(),
+  status: __t.string(),
+  error: __t.string(),
+  requestedBy: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type DisasterRequest = __Infer<typeof DisasterRequest>;
+
 export const Facility = __t.object("Facility", {
   id: __t.string(),
   kind: __t.string(),

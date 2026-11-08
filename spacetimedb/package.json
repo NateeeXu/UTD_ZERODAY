@@ -26,7 +26,8 @@
     "worker": "node --env-file=.env scripts/claude-worker.ts",
     "parser:eval": "node --env-file=.env scripts/parser-eval.ts",
     "parser:test": "node scripts/parser-test.ts",
-    "imessage:bridge": "node --env-file=.env scripts/imessage-bridge.ts"
+    "imessage:bridge": "node --env-file=.env scripts/imessage-bridge.ts",
+    "disaster:worker": "node --env-file=.env scripts/disaster-worker.ts"
   },
   "license": "MIT",
   "dependencies": {

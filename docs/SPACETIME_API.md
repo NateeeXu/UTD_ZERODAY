@@ -452,6 +452,9 @@ const inspectionValue = (inspectScore * 2) / (2 + verifiedHouseholdsInCell);
 - `{task}` is `inspect your home` (`kind = 'inspection'`) or `check on your household` (`welfare`). Neither text promises an arrival time.
 - No notice when the task was no longer needed, and none for manager assignments (`assign`, `assign_hex`).
 
+### `disaster_request`: the "New random disaster" button
+`id` (u64 PK), `region` (`tx` hurricane / `ca` earthquake), `status` (`queued` / `running` / `done` / `failed`), `error` (`''`, or why it failed), `requestedBy`, `createdAt`, `updatedAt`. At most one row: the current or latest request. Survives `wipe_world` and `reset_demo`, because the load it asks for runs them. `scripts/disaster-worker.ts` (section 9) does the work; with no worker a request stays `queued` until cancelled.
+
 ### `reply_inbox`: raw free-text replies for the Claude parser worker
 `id` (u64 PK), `householdId`, `text` (1–500 chars, trimmed), `language` (hint: `household.primaryLanguage`, `''` if none), `status` (`pending` / `parsed` / `failed`), `receivedAt`, `parsedAt` (option timestamp, unset while pending), `error` (`''`; `review: <reasons>` = parsed but a person should look; `parser: <code>; fallback submitted` = Claude failed and the reply went in as "needs help, a person calls back"; `submit: <message>` = the reducer rejected it). The reply page writes it with `submit_raw_reply` (no Anthropic key in the browser) and can watch its own row; `scripts/claude-worker.ts` turns each pending row into `submit_parsed_reply` (docs/CLAUDE_PARSER.md). Cleared with the demo state.
 
@@ -489,6 +492,9 @@ Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damag
 | `accept_recommendation` | householdId | **`adjuster` members only** | Self-assigns a household from the caller's list, notifies the policyholder (`chat_message` plus a queued `imessage_outbox` row, see section 4) and rebuilds the list. If the task is no longer needed, removes the row and refreshes the list, with no assignment, no notice and no error. Rejects with `not in your Next best list` for any other household |
 | `send_chat_message` | householdId, text (1–500 chars after trimming) | **`adjuster` members only**, with a non-cancelled assignment on that household | Appends a `chat_message` (`sender = 'adjuster'`). Also works after the visit (`done`). In the app only, never sent by iMessage. Rejects with `only the assigned adjuster can message this household` |
 | `mark_imessage` | id (u64), status (`sent` / `failed`), error (truncated to 200) | manager / owner | Delivery result from `scripts/imessage-bridge.ts`: sets `status`, `error` and `updatedAt` on `imessage_outbox` |
+| `request_new_disaster` | region (`tx` / `ca`) | manager / owner | Queues one random disaster. Rejected while another is `queued` or `running`. Replaces the previous finished row. |
+| `cancel_disaster_request` | — | manager / owner | Deletes a `queued` request. Rejected once it is `running`. |
+| `update_disaster_request` | id (u64), status, error (truncated to 200) | owner | Worker only. Allowed: `queued` to `running` or `failed`; `running` to `done` or `failed`. |
 | `remove_member` | identityHex | manager / owner | Housekeeping |
 | `start_replay` | speed (sim min per second, 0 < speed ≤ 1440) | manager / owner | Starts or resumes the 1-second tick (also changes speed). Suggested: 30 (72 h in 2.4 min) |
 | `set_speed` | speed | manager / owner | Change speed only |
@@ -666,6 +672,7 @@ spacetime logs -s maincloud <db-name> -f
 - Claude parser worker: runs on a laptop next to the demo, not in Spacetime. Put `ANTHROPIC_API_KEY` in `spacetimedb/.env` (gitignored, never in the frontend) and run `npm run worker` (reads `SPACETIME_HOST` / `SPACETIME_DB` / `STAFF_PASSCODE` from `.env`; one worker per world database, `--db <name>`). See docs/CLAUDE_PARSER.md.
 - Task notices add two tables (`chat_message`, `imessage_outbox`) and two reducers: republish each database and regenerate the client bindings.
 - iMessage bridge (optional): runs on a Mac next to the demo, not in Spacetime, and sends task notices through Messages.app, because Apple has no public API. All households are synthetic, so every notice goes to the one recipient in `IMESSAGE_DEMO_TO` (`spacetimedb/.env`, gitignored); the database holds no phone number. Run `npm run imessage:bridge` (reads `SPACETIME_HOST` / `SPACETIME_DB` / `STAFF_PASSCODE` from `.env` and joins as a manager; one process per world database, `npm run imessage:bridge -- --db <name>`). One-way: iMessage replies are not read, so the text says to reply in the app. It sends only notices created after it starts, at most 20 per run; later rows stay `queued`. `--dry-run` prints what it would send, sends nothing and marks nothing. Each send is recorded with `mark_imessage`.
+- Random disaster worker (optional): runs on a Mac next to the demo, because the generator reads `data/real` and loading needs the owner token. Run `npm run disaster:worker -- --host wss://maincloud.spacetimedb.com --db triage-loop-nateeexu-dev` in `spacetimedb/`. On Maincloud it refuses every database except dev, and only runs requests made after it starts.
 
 ## 10. Limits and measured costs
 

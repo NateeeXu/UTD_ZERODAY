@@ -393,6 +393,35 @@ async function main() {
     }
   }
 
+  // "New random disaster" button: the reducers only queue; scripts/disaster-worker.ts does the work.
+  await subscribe(manager.conn, ['SELECT * FROM disaster_request']);
+  const disasterRows = () => [...manager.conn.db.disasterRequest.iter()];
+  await expectReject('disaster request by adjuster', adjuster.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await expectReject('disaster request by outsider', outsider.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await expectReject('disaster request with unknown region', manager.conn.reducers.requestNewDisaster({ region: 'mars' }));
+  await manager.conn.reducers.requestNewDisaster({ region: 'ca' });
+  let dr = disasterRows();
+  check('disaster request queued', dr.length === 1 && dr[0].status === 'queued' && dr[0].requestedBy === 'Smoke Manager', JSON.stringify(dr.map(r => r.status)));
+  await expectReject('second disaster request while one is open', manager.conn.reducers.requestNewDisaster({ region: 'tx' }));
+  await expectReject('disaster status from a manager', manager.conn.reducers.updateDisasterRequest({ id: dr[0].id, status: 'running', error: '' }));
+  await expectReject('disaster queued straight to done', owner.conn.reducers.updateDisasterRequest({ id: dr[0].id, status: 'done', error: '' }));
+  await manager.conn.reducers.cancelDisasterRequest({});
+  check('queued disaster request cancelled', disasterRows().length === 0);
+  await manager.conn.reducers.requestNewDisaster({ region: 'tx' });
+  const running = disasterRows()[0];
+  await owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'running', error: '' });
+  await expectReject('cancel while the disaster is loading', manager.conn.reducers.cancelDisasterRequest({}));
+  await expectReject('disaster request while one is loading', manager.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await owner.conn.reducers.resetDemo({});
+  await sleep(300);
+  check('disaster request survives reset_demo', disasterRows()[0]?.status === 'running');
+  await owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'done', error: '' });
+  await expectReject('cancelled or finished request cannot restart', owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'running', error: '' }));
+  await manager.conn.reducers.requestNewDisaster({ region: 'ca' });
+  dr = disasterRows();
+  check('new request replaces the finished one', dr.length === 1 && dr[0].status === 'queued' && dr[0].id !== running.id);
+  await manager.conn.reducers.cancelDisasterRequest({});
+
   const mEnd = metrics();
   console.log('\nfinal metrics:', pick(mEnd, ['fieldReports', 'verifiedHouseholds', 'verifiedCoverage', 'p0Cells', 'p1Cells', 'p2Cells', 'needsVerificationCells', 'trustHazard', 'trustSms', 'trustClaims', 'trustUpdates', 'engine']));
 

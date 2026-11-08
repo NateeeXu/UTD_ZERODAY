@@ -41,7 +41,7 @@ Audience: hackathon judges and the team. Repository state described here: backen
 | Reply parser, 800 cases in 6 languages (prompt v1) | Life-safety recall 222/224 (99.1%); false-safe 2/386 (0.5%); valid JSON 800/800 |
 | `submit_field_report` round trip (local server) | 4–5 ms |
 
-**Build state.** The backend is built: 30 tables, 3 views and 40 reducers, plus the engine, simulators, random disasters and Claude worker. The live client is on a branch: manager map, KPIs, outreach and referral panels, severe-damage range, staff switch, a basic adjuster form and a button reply page. It predates the last backend changes, so free-text replies, the delivery-receipt split and the five-screen adjuster app have no screens yet, and two reducer calls need regenerated bindings (R1 in section 11).
+**Build state.** The backend is built: 31 tables, 3 views and 43 reducers, plus the engine, simulators, random disasters and Claude worker. The live client is on a branch: manager map, KPIs, outreach and referral panels, severe-damage range, staff switch, a basic adjuster form and a button reply page. It predates the last backend changes, so free-text replies, the delivery-receipt split and the five-screen adjuster app have no screens yet, and two reducer calls need regenerated bindings (R1 in section 11).
 
 **What we do not claim.** Calibration comes from simulated events, so it shows the pipeline is internally consistent, not that it is accurate in a real hurricane. The honest claim is "no policyholder overlooked", not "no one". We never say the system predicts who is trapped, guarantees anything, or promises a response time.
 
@@ -375,7 +375,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 
 | ID | Requirement | Pri | Status | Acceptance criteria |
 |---|---|---|---|---|
-| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. CLI only |
+| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. A manager request can also queue one on the dev database for `scripts/disaster-worker.ts` on the demo Mac |
 | RD-2 | Plausible hurricanes | Should | Built | Category drawn 42 / 25 / 19 / 13 / 1% (Cat 1–5), landfall 27.3–28.1° N, surge by category, random local time |
 | RD-3 | Plausible earthquakes | Should | Built | 7 fault traces, weights mostly from the USGS 2014–2043 forecast; magnitude within the fault's range; finite rupture, Atkinson & Wald (2007) intensity |
 | RD-4 | Historical-analog presets | Should | Built | `celia-type-direct-hit`, `harvey-type-stall`, `hanna-type-cat1`, `haywired-m705`, `hayward-1868-night`, `calaveras-north-m686`; named "hypothetical, inspired by" |
@@ -544,8 +544,8 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 |---|---|---|---|
 | Contract and simulators | `shared/types.ts`, `sim/src`, `sim/real` | Offline, Node | Shared types; worlds, events, truth, random disasters |
 | Engine and calibration | `engine/src`, `engine/scripts/calibrate.ts` | Offline; copied into the module by `npm run sync-engine` | Features, inference, intervals, active inspection, learning; leave-one-event-out training and evaluation |
-| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 30 tables, 3 views, 40 reducers |
-| Owner scripts | `spacetimedb/scripts` | Node | `seed`, `smoke`, `parity`, `bench`, `new-disaster`, `sync-engine` |
+| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 31 tables, 3 views, 43 reducers |
+| Owner scripts | `spacetimedb/scripts` | Node | `seed`, `smoke`, `parity`, `bench`, `new-disaster`, `disaster-worker`, `sync-engine` |
 | Claude worker | `spacetimedb/scripts/claude-worker.ts` | Node beside the demo | The one required runtime outside the database. It needs outbound HTTP, which reducers cannot make |
 | iMessage bridge (optional) | `spacetimedb/scripts/imessage-bridge.ts` | Node on a Mac beside the demo | Sends task notices through Messages.app to one demo phone (TN-4); one-way |
 | Client | `client/` on `origin/frontend/app` | Static web | Three screens; subscribes per screen to stay small on 20–30k households |

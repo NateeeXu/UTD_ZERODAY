@@ -37,6 +37,7 @@ import {
 import AcceptRecommendationReducer from "./accept_recommendation_reducer.ts";
 import AssignReducer from "./assign_reducer.ts";
 import AssignHexReducer from "./assign_hex_reducer.ts";
+import CancelDisasterRequestReducer from "./cancel_disaster_request_reducer.ts";
 import CloseHouseholdReducer from "./close_household_reducer.ts";
 import JoinAsReducer from "./join_as_reducer.ts";
 import JumpToReducer from "./jump_to_reducer.ts";
@@ -50,6 +51,7 @@ import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
 import RefreshRecommendationsReducer from "./refresh_recommendations_reducer.ts";
 import RemoveMemberReducer from "./remove_member_reducer.ts";
 import ReportMemberMissingReducer from "./report_member_missing_reducer.ts";
+import RequestNewDisasterReducer from "./request_new_disaster_reducer.ts";
 import ResetDemoReducer from "./reset_demo_reducer.ts";
 import SeedFacilitiesReducer from "./seed_facilities_reducer.ts";
 import SeedHexesReducer from "./seed_hexes_reducer.ts";
@@ -70,6 +72,7 @@ import SubmitRawReplyReducer from "./submit_raw_reply_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
+import UpdateDisasterRequestReducer from "./update_disaster_request_reducer.ts";
 import UpdateMyLocationReducer from "./update_my_location_reducer.ts";
 import UpdateReferralReducer from "./update_referral_reducer.ts";
 import WipeWorldReducer from "./wipe_world_reducer.ts";
@@ -82,6 +85,7 @@ import AdjusterRecommendationRow from "./adjuster_recommendation_table.ts";
 import AssignmentRow from "./assignment_table.ts";
 import ChatMessageRow from "./chat_message_table.ts";
 import ClaimRow from "./claim_table.ts";
+import DisasterRequestRow from "./disaster_request_table.ts";
 import FacilityRow from "./facility_table.ts";
 import FieldReportRow from "./field_report_table.ts";
 import HexRow from "./hex_table.ts";
@@ -185,6 +189,17 @@ const tablesSchema = __schema({
       { name: 'claim_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ClaimRow),
+  disasterRequest: __table({
+    name: 'disaster_request',
+    indexes: [
+      { accessor: 'id', name: 'disaster_request_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'disaster_request_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, DisasterRequestRow),
   facility: __table({
     name: 'facility',
     indexes: [
@@ -473,6 +488,7 @@ const reducersSchema = __reducers(
   __reducerSchema("accept_recommendation", AcceptRecommendationReducer),
   __reducerSchema("assign", AssignReducer),
   __reducerSchema("assign_hex", AssignHexReducer),
+  __reducerSchema("cancel_disaster_request", CancelDisasterRequestReducer),
   __reducerSchema("close_household", CloseHouseholdReducer),
   __reducerSchema("join_as", JoinAsReducer),
   __reducerSchema("jump_to", JumpToReducer),
@@ -486,6 +502,7 @@ const reducersSchema = __reducers(
   __reducerSchema("refresh_recommendations", RefreshRecommendationsReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
   __reducerSchema("report_member_missing", ReportMemberMissingReducer),
+  __reducerSchema("request_new_disaster", RequestNewDisasterReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),
   __reducerSchema("seed_facilities", SeedFacilitiesReducer),
   __reducerSchema("seed_hexes", SeedHexesReducer),
@@ -506,6 +523,7 @@ const reducersSchema = __reducers(
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
   __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),
+  __reducerSchema("update_disaster_request", UpdateDisasterRequestReducer),
   __reducerSchema("update_my_location", UpdateMyLocationReducer),
   __reducerSchema("update_referral", UpdateReferralReducer),
   __reducerSchema("wipe_world", WipeWorldReducer),
