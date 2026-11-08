@@ -10,7 +10,8 @@ import { LiveQrCard } from './LiveQrCard';
 import { actionEstimates, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, RANK, prio, type MapUnit, type Priority } from './mapModel';
+import { CAUSE, COLOR, RANK, prio, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import { AccountingBar, EscalationChip, makeKidsNote, riskFlags } from './accounting';
 import type { HexStatsRow, HouseholdRow } from './rows';
 import { fmtT, homeLabel, pct } from '../format';
 
@@ -57,7 +58,7 @@ export function RegionHeader({ region, onRegion, fictional, children }: {
   );
 }
 
-type Tab = 'act' | 'verify' | 'feed';
+type Tab = 'unacc' | 'act' | 'verify' | 'feed';
 
 interface FeedItem {
   key: string;
@@ -114,7 +115,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const fictional = world ? !world.region : false; // until `world` arrives, assume real geography (never invent names)
 
   const [joining, setJoining] = useState(false);
-  const [tab, setTab] = useState<Tab>('act');
+  const [tab, setTab] = useState<Tab>('unacc');
+  const [mapMode, setMapMode] = useState<MapMode>('priority');
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [showFacilities, setShowFacilities] = useState(false);
   const [res, setRes] = useState<7 | 8>(7);
@@ -173,15 +175,22 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     return items.sort((a, b) => b.t - a.t || b.at - a.at).slice(0, 50);
   }, [smsReplies, claims, fieldReports]);
 
-  // Household details only for rows on screen (action queue + selected cell's candidates).
+  // "Not heard from yet": engine candidates nobody has heard from, most urgent first.
+  const unaccountedQueue = useMemo(
+    () => candidates.filter((c) => !c.accounted).sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 40),
+    [candidates],
+  );
+  const kidsNote = useMemo(() => makeKidsNote(facilities, cellBy, !!world?.schoolHours), [facilities, cellBy, world?.schoolHours]);
+
+  // Household details only for rows on screen (queues + selected cell's candidates).
   const detailIds = useMemo(() => {
-    const ids = actionQueue.map((x) => x.e.householdId);
+    const ids = [...actionQueue.map((x) => x.e.householdId), ...unaccountedQueue.map((c) => c.householdId)];
     if (sel) {
       const kids = new Set(sel.kids.map((k) => k.hex));
       for (const c of candidates) if (kids.has(c.hex)) ids.push(c.householdId);
     }
     return ids;
-  }, [actionQueue, sel, candidates]);
+  }, [actionQueue, unaccountedQueue, sel, candidates]);
   const householdBy = useHouseholdsById(detailIds);
 
   // QR target: a household with a phone in the most urgent silent cell, so a judge's reply lands somewhere visible.
@@ -223,16 +232,22 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
         )}
       </RegionHeader>
 
-      <div className="metrics-strip">
-        <span className="ms-title" title={world?.name}>{world?.name ?? '…'}</span>
-        {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
-          <span key={p}><i className="sw" style={{ background: COLOR[p] }} /><b>{counts[p]}</b> {p}</span>
-        ))}
-        <span><b>{metrics?.needsVerificationCells ?? 0}</b> need verification</span>
-        <span className="sep" />
-        <span>Verified coverage <b>{pct(metrics?.verifiedCoverage ?? 0)}</b></span>
-        <span>Holdout error <b>{metrics?.holdoutN ? metrics.holdoutBrierSevere.toFixed(3) : '—'}</b></span>
-        <span>Source trust <b>{metrics ? `${pct(metrics.trustHazard)} · ${pct(metrics.trustSms)} · ${pct(metrics.trustClaims)}` : '—'}</b> <span className="muted">hazard · SMS · claims</span></span>
+      <div className="kpi-bar">
+        <AccountingBar metrics={metrics} />
+        <div className="kpi-side">
+          <span className="ms-title" title={world?.name}>{world?.name ?? '…'}</span>
+          <span className="kpi-row">
+            {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
+              <span key={p}><i className="sw" style={{ background: COLOR[p] }} /><b>{counts[p]}</b> {p}</span>
+            ))}
+            <span><b>{metrics?.needsVerificationCells ?? 0}</b> need verification</span>
+          </span>
+          <span className="kpi-row muted">
+            <span>Verified coverage <b>{pct(metrics?.verifiedCoverage ?? 0)}</b></span>
+            <span>Holdout error <b>{metrics?.holdoutN ? metrics.holdoutBrierSevere.toFixed(3) : '—'}</b></span>
+            <span title="hazard · SMS · claims">Trust <b>{metrics ? `${pct(metrics.trustHazard)} · ${pct(metrics.trustSms)} · ${pct(metrics.trustClaims)}` : '—'}</b></span>
+          </span>
+        </div>
       </div>
 
       <div className="stage">
@@ -245,12 +260,17 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           onSelect={setSelected}
           flash={flash}
           fitKey={region.id}
-          padRight={420}
+          padRight={460}
           onResChange={setRes}
+          mode={mapMode}
         />
 
         <div className="overlay top-left">
           <div className="map-chips">
+            <div className="segmented small-seg" role="group" aria-label="Map shading">
+              <button className={mapMode === 'priority' ? 'on' : ''} aria-pressed={mapMode === 'priority'} onClick={() => setMapMode('priority')}>Priority</button>
+              <button className={mapMode === 'unaccounted' ? 'on' : ''} aria-pressed={mapMode === 'unaccounted'} onClick={() => setMapMode('unaccounted')}>Unaccounted</button>
+            </div>
             <span className="pill">{res === 7 ? 'Districts · H3 res 7' : 'Neighborhoods · H3 res 8'}</span>
             <label className="check chip-check">
               <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} disabled={!facilities.length} />
@@ -270,7 +290,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
             <span key={p}><i style={{ background: COLOR[p] }} />{p === 'P0' ? 'P0 act now' : p}</span>
           ))}
-          <span><span className="ramp-mini"><i style={{ opacity: 0.2 }} /><i style={{ opacity: 0.5 }} /><i style={{ opacity: 0.85 }} /></span>Fainter = less confident</span>
+          <span><span className="ramp-mini"><i style={{ opacity: 0.2 }} /><i style={{ opacity: 0.5 }} /><i style={{ opacity: 0.85 }} /></span>{mapMode === 'unaccounted' ? 'Stronger = more households not heard from' : 'Fainter = less confident'}</span>
           <span>
             <svg width="16" height="14" aria-hidden><polygon points="8,1 15,4.5 15,10 8,13 1,10 1,4.5" fill="none" stroke={COLOR.P0} strokeWidth="2" /></svg>
             Pulsing = top 10 silent high-hazard areas
@@ -290,17 +310,19 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               canAssign={isManager}
               adjusterName={pickedAdjuster?.name}
               fictional={fictional}
+              noteFor={kidsNote}
             />
           ) : (
             <aside className="card queues">
               <nav className="tabs" role="tablist">
-                <button role="tab" aria-selected={tab === 'act'} className={tab === 'act' ? 'on' : ''} onClick={() => setTab('act')}>Action queue</button>
+                <button role="tab" aria-selected={tab === 'unacc'} className={tab === 'unacc' ? 'on' : ''} onClick={() => setTab('unacc')}>Not heard from</button>
+                <button role="tab" aria-selected={tab === 'act'} className={tab === 'act' ? 'on' : ''} onClick={() => setTab('act')}>Act now</button>
                 <button role="tab" aria-selected={tab === 'verify'} className={tab === 'verify' ? 'on' : ''} onClick={() => setTab('verify')}>
-                  To verify <span className="count">{verifyQueue.length}</span>
+                  Verify <span className="count">{verifyQueue.length}</span>
                 </button>
-                <button role="tab" aria-selected={tab === 'feed'} className={tab === 'feed' ? 'on' : ''} onClick={() => setTab('feed')}>Live feed</button>
+                <button role="tab" aria-selected={tab === 'feed'} className={tab === 'feed' ? 'on' : ''} onClick={() => setTab('feed')}>Feed</button>
               </nav>
-              {tab === 'verify' && (
+              {(tab === 'verify' || tab === 'unacc') && (
                 <div className="assign-bar">
                   <span className="small muted">Assign to</span>
                   <select className="btn" value={pickedAdjuster?.identity.toHexString() ?? ''} onChange={(e) => setAdjusterHex(e.target.value)} disabled={!adjusters.length}>
@@ -310,6 +332,26 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               )}
               {assignError && <p className="form-error small pad">{assignError}</p>}
               <ul className="area-list scroll">
+                {tab === 'unacc' && unaccountedQueue.map((c) => {
+                  const hh = householdBy.get(c.householdId);
+                  const flags = riskFlags(hh);
+                  const kids = kidsNote(hh);
+                  return (
+                    <li key={c.householdId}>
+                      <div className="area-row">
+                        <Chip p={prio(c.cellPriority)} unverified={c.cellVerification === 'needs_verification'} />
+                        <button className="area-row-main link" onClick={() => selectFromHex(c.hex)}>
+                          <b>{homeLabel(c.householdId, fictional)} <span className="muted small">· {labeler.cell(c.hex)}</span></b>
+                          {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
+                          {kids && <span className="kids small">{kids}</span>}
+                        </button>
+                        {c.escalation === 'field_visit'
+                          ? <button className="btn primary small-btn" onClick={() => doAssign(c.hex)}>Send adjuster</button>
+                          : <EscalationChip step={c.escalation} />}
+                      </div>
+                    </li>
+                  );
+                })}
                 {tab === 'act' && actionQueue.map(({ e, cell }) => (
                   <li key={e.householdId}>
                     <button className="area-row" onClick={() => selectFromHex(cell.hex)}>
@@ -348,8 +390,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
                     </button>
                   </li>
                 ))}
-                {((tab === 'act' && !actionQueue.length) || (tab === 'verify' && !verifyQueue.length) || (tab === 'feed' && !feed.length)) && (
-                  <li className="muted empty">{tab === 'feed' ? 'No events yet. Press Start.' : 'Nothing here yet.'}</li>
+                {((tab === 'unacc' && !unaccountedQueue.length) || (tab === 'act' && !actionQueue.length) || (tab === 'verify' && !verifyQueue.length) || (tab === 'feed' && !feed.length)) && (
+                  <li className="muted empty">{tab === 'feed' ? 'No events yet. Press Start.' : tab === 'unacc' ? 'Everyone in the top candidates has been heard from.' : 'Nothing here yet.'}</li>
                 )}
               </ul>
             </aside>
@@ -365,11 +407,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 }
 
 function unitFromCell(c: HexStatsRow): MapUnit {
-  return {
-    id: c.hex, res: 8, kids: [c], p: prio(c.priority), v: c.verification === 'verified' ? 'verified' : 'needs_verification',
-    c: c.confidence, n: c.households, ex: c.expectedSevere, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: c.fieldReports,
-    si: c.silence, sc: c.silenceCause, r: c.reason, shape: [], center: [0, 0],
-  };
+  return unitsFor([c], 8)[0];
 }
 
 function householdLine(h: HouseholdRow | undefined, fictional: boolean): string {
@@ -393,7 +431,7 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false, fictional = false }: {
+export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false, fictional = false, noteFor }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
@@ -405,6 +443,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   adjusterName: string | undefined;
   readOnly?: boolean;
   fictional?: boolean;
+  noteFor?: (h: HouseholdRow | undefined) => string | null;
 }) {
   const kidHexes = new Set(unit.kids.map((k) => k.hex));
   const top = candidates.filter((c) => kidHexes.has(c.hex)).sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 6);
@@ -446,6 +485,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
               <span className="hh-main">
                 <b>{homeLabel(c.householdId, fictional)}</b>
                 <span className="muted small">{householdLine(households.get(c.householdId), fictional).split(' · ').slice(1).join(' · ') || 'no vulnerability flags'}</span>
+                {noteFor?.(households.get(c.householdId)) && <span className="kids small">{noteFor(households.get(c.householdId))}</span>}
               </span>
               <span className="small num">help {pct(c.pNeedsHelp)} · severe {pct(c.pSevere)}</span>
             </li>

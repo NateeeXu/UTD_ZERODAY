@@ -5,7 +5,7 @@ import type { RegionConfig } from './config';
 import { CellDetail, RegionHeader } from './ManagerLive';
 import { LiveMap } from './LiveMap';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, isSuspected, prio, RANK, type MapUnit, type Priority } from './mapModel';
+import { CAUSE, COLOR, isSuspected, prio, RANK, unitsFor, type MapUnit, type Priority } from './mapModel';
 import { loadPreview, snapshotFacilities, snapshotRows, type PreviewData } from './snapshot';
 import type { HexStatsRow } from './rows';
 import { pct } from '../format';
@@ -58,11 +58,7 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
     [cells],
   );
 
-  const select = (c: HexStatsRow) => setSelected({
-    id: c.hex, res: 8, kids: [c], p: prio(c.priority), v: c.verification === 'verified' ? 'verified' : 'needs_verification',
-    c: c.confidence, n: c.households, ex: c.expectedSevere, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: 0,
-    si: c.silence, sc: c.silenceCause, r: c.reason, shape: [], center: [0, 0],
-  });
+  const select = (c: HexStatsRow) => setSelected(unitsFor([c], 8)[0]);
 
   const when = snap?.eventLocalHour != null
     ? ` · event at ${String(snap.eventLocalHour).padStart(2, '0')}:00 local, ${snap.eventWeekday ? 'weekday' : 'weekend'}`

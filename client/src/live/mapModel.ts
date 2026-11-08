@@ -46,6 +46,8 @@ export interface MapUnit {
   si: number;          // silence of the most silent high-hazard child
   sc: string;          // its silence cause
   r: string;           // reason of the top child
+  un: number;          // unaccounted households (no reply, claim or field report yet)
+  uv: number;          // unaccounted vulnerable households
   shape: [number, number][][] | [number, number][][][]; // Leaflet [lat, lng]
   center: [number, number];
 }
@@ -55,7 +57,7 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
     return cells.map((c) => ({
       id: c.hex, res, kids: [c], p: prio(c.priority), v: c.verification === 'verified' ? 'verified' : 'needs_verification',
       c: c.confidence, n: c.households, ex: c.expectedSevere, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: c.fieldReports,
-      si: c.silence, sc: c.silenceCause, r: c.reason,
+      si: c.silence, sc: c.silenceCause, r: c.reason, un: c.unaccounted, uv: c.unaccountedVulnerable,
       shape: [cellToBoundary(c.hex) as [number, number][]], center: cellToLatLng(c.hex) as [number, number],
     }));
   }
@@ -87,6 +89,8 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
       fr: kids.reduce((s, k) => s + k.fieldReports, 0),
       si: silentKid.silence, sc: silentKid.silenceCause,
       r: top.reason,
+      un: kids.reduce((s, k) => s + k.unaccounted, 0),
+      uv: kids.reduce((s, k) => s + k.unaccountedVulnerable, 0),
       shape: cellsToMultiPolygon(kids.map((k) => k.hex)) as [number, number][][][],
       center: [centers.reduce((s, c) => s + c[0], 0) / centers.length, centers.reduce((s, c) => s + c[1], 0) / centers.length],
     });
@@ -123,6 +127,17 @@ export function tooltipHtml(u: MapUnit, label: string): string {
     `<div class="tip-title"><i style="background:${COLOR[u.p]}"></i>${esc(label)} · ${u.p}` +
     `<span class="tip-status ${u.v === 'verified' ? 'ok' : ''}">${status}</span></div>` +
     `<div class="tip-why">${esc(driverLine(u))}</div>` +
-    `<div class="tip-meta">${u.n.toLocaleString()} homes · ~${Math.round(u.ex).toLocaleString()} likely severe · ${Math.round(u.c * 100)}% confident</div>`
+    `<div class="tip-meta">${u.n.toLocaleString()} homes · ~${Math.round(u.ex).toLocaleString()} likely severe · ${Math.round(u.c * 100)}% confident</div>` +
+    (Number.isFinite(u.un)
+      ? `<div class="tip-unacc${u.un > 0 ? '' : ' done'}">Unaccounted ${u.un.toLocaleString()} of ${u.n.toLocaleString()} · vulnerable unaccounted ${u.uv.toLocaleString()}</div>`
+      : '')
   );
+}
+
+export type MapMode = 'priority' | 'unaccounted';
+
+// Style A: opacity carries the second dimension. Priority mode → confidence; Unaccounted mode → share not heard from.
+export function intensity(u: MapUnit, mode: MapMode): number {
+  if (mode === 'unaccounted') return u.n > 0 && Number.isFinite(u.un) ? u.un / u.n : 0;
+  return u.c;
 }

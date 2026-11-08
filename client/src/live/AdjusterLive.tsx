@@ -6,6 +6,7 @@ import { initialLiveRegion } from './config';
 import { JoinDialog } from './JoinDialog';
 import { makeLabeler } from './labels';
 import { useEstimatesById, useHouseholdsById } from './hooks';
+import { makeKidsNote } from './accounting';
 import { prio, RANK } from './mapModel';
 import type { HouseholdRow } from './rows';
 import { fmtT, homeLabel, pct } from '../format';
@@ -29,12 +30,14 @@ function AdjusterScreen() {
   const [candidates] = useTable(tables.inspectionCandidate);
   const [worldRows] = useTable(tables.world);
   const [replayRows] = useTable(tables.replayState);
+  const [facilities] = useTable(tables.facility);
   const me = myMember[0];
   const [openId, setOpenId] = useState<string | null>(null);
 
   const assignedIdsAll = useMemo(() => mine.map((a) => a.householdId), [mine]);
   const estimateBy = useEstimatesById(assignedIdsAll);
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
+  const kidsNote = useMemo(() => makeKidsNote(facilities, cellBy, !!worldRows[0]?.schoolHours), [facilities, cellBy, worldRows]);
   const fictional = worldRows[0] ? !worldRows[0].region : false;
   const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cells.length, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -64,7 +67,7 @@ function AdjusterScreen() {
   }
 
   const open = openId ? householdBy.get(openId) : undefined;
-  if (open) return <HouseholdCard hh={open} area={labeler.cell(open.hex)} fictional={fictional} onDone={() => setOpenId(null)} />;
+  if (open) return <HouseholdCard hh={open} area={labeler.cell(open.hex)} fictional={fictional} kids={kidsNote(open)} onDone={() => setOpenId(null)} />;
 
   const open_ = assigned.filter((a) => a.status === 'assigned').length;
   return (
@@ -126,7 +129,7 @@ function flags(h: HouseholdRow): string {
   return f.length ? ` · ${f.join(' · ')}` : '';
 }
 
-function HouseholdCard({ hh, area, fictional, onDone }: { hh: HouseholdRow; area: string; fictional: boolean; onDone: () => void }) {
+function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow; area: string; fictional: boolean; kids: string | null; onDone: () => void }) {
   const [replies] = useTable(tables.smsReply.where((r) => r.householdId.eq(hh.id)));
   const [claims] = useTable(tables.claim.where((r) => r.householdId.eq(hh.id)));
   const [reports] = useTable(tables.fieldReport.where((r) => r.householdId.eq(hh.id)));
@@ -164,6 +167,7 @@ function HouseholdCard({ hh, area, fictional, onDone }: { hh: HouseholdRow; area
         <button className="link muted back" onClick={onDone}>← Tasks</button>
         <h2>{homeLabel(hh.id, fictional)}</h2>
         <p className="muted small">{area}</p>
+        {kids && <p className="kids-banner">{kids}</p>}
         <div className="tags">
           <Tag on={hh.windCovered}>Wind</Tag>
           <Tag on={hh.floodPolicy}>Flood policy</Tag>

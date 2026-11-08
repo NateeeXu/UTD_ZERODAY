@@ -20,4 +20,6 @@ export default __t.row({
   uncertainty: __t.f64(),
   cellPriority: __t.string().name("cell_priority"),
   cellVerification: __t.string().name("cell_verification"),
+  accounted: __t.bool(),
+  escalation: __t.string(),
 });

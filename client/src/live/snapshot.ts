@@ -32,7 +32,7 @@ export function snapshotRows(cells: SnapCell[]): HexStatsRow[] {
   return cells.map((c) => ({
     hex: c.hex, priority: c.p, verification: c.v, confidence: c.c, severity: c.s, silence: c.si, hazard: c.hz,
     silenceCause: c.sc ?? '', reason: c.r, households: c.n, expectedSevere: c.ex, smsReplies: c.rep, smsSent: c.sent,
-    claims: c.cl, fieldReports: 0,
+    claims: c.cl, fieldReports: 0, unaccounted: Number.NaN, unaccountedVulnerable: Number.NaN, // not in the preview data
   }) as unknown as HexStatsRow);
 }
 

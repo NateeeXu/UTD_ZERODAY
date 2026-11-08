@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary, cellToLatLng } from 'h3-js';
 import type { FacilityRow, HexStatsRow } from './rows';
-import { COLOR, LOD_ZOOM, pulsingCells, tooltipHtml, unitsFor, type MapUnit } from './mapModel';
+import { COLOR, LOD_ZOOM, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 
@@ -18,9 +18,10 @@ interface Props {
   fitKey: string;                       // refit when this changes (region switch)
   padRight?: number;
   onResChange?: (res: 7 | 8) => void;
+  mode?: MapMode;
 }
 
-export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, onResChange }: Props) {
+export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, onResChange, mode = 'priority' }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup } | null>(null);
@@ -80,12 +81,13 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     const topKids = pulsingCells(cells);
     for (const u of unitsFor(cells, res)) {
       const color = COLOR[u.p];
+      const k = intensity(u, mode);
       const poly = L.polygon(u.shape as L.LatLngExpression[][], {
         color,
         weight: res === 7 ? 1 : 0.6,
-        opacity: 0.35 + 0.5 * u.c,
+        opacity: 0.35 + 0.5 * k,
         fillColor: color,
-        fillOpacity: 0.12 + 0.73 * u.c,
+        fillOpacity: 0.12 + 0.73 * k,
       });
       poly.bindTooltip(tooltipHtml(u, cb.current.labelFor(u)), { sticky: true, className: 'tip' });
       poly.on('click', () => cb.current.onSelect(u));
@@ -98,7 +100,7 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
         L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 2.5, fill: false, interactive: false }).addTo(g.sel);
       }
     }
-  }, [cells, res, zoom, selected, labelFor]); // labelFor: rebuild tooltips when names change (e.g. world row arrives)
+  }, [cells, res, zoom, selected, labelFor, mode]); // labelFor: rebuild tooltips when names change (e.g. world row arrives)
 
   // Schools / universities / hospitals.
   useEffect(() => {
@@ -106,7 +108,8 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     const g = groups.current;
     if (!m || !g) return;
     g.fac.clearLayers();
-    for (const f of facilities) {
+    // Schools, universities and hospitals only (the table also has fire stations, shelters, masts).
+    for (const f of facilities.filter((x) => x.kind === 'school' || x.kind === 'university' || x.kind === 'hospital')) {
       const school = f.kind !== 'hospital';
       L.circleMarker([f.lat, f.lng], {
         radius: f.kind === 'university' ? 5 : 3,

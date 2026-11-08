@@ -331,3 +331,53 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .leaflet-container path.leaflet-interactive:focus,
 .leaflet-container path.leaflet-interactive:focus-visible { outline: none; }
 .leaflet-container { -webkit-tap-highlight-color: transparent; }
+
+/* ---- "No one overlooked" KPI bar ---- */
+.kpi-bar { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 10px 24px; border-bottom: 1px solid var(--line); }
+.kpi { display: flex; align-items: center; gap: 32px; flex-wrap: wrap; }
+.hero { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 12px; align-items: baseline; }
+.hero-label { grid-column: 1 / 3; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.hero-num { font-size: 32px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.hero-unit { color: var(--muted); align-self: end; padding-bottom: 4px; }
+.hero-track { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.hero-bar { width: 220px; height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.hero-bar > div { height: 100%; background: #0f7a55; border-radius: 4px; transition: width 0.8s ease; }
+.hero-sub { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.equity { display: flex; flex-direction: column; gap: 6px; min-width: 300px; }
+.eq-row { display: grid; grid-template-columns: 150px 1fr 40px; align-items: center; gap: 10px; font-size: 12.5px; }
+.eq-label { color: var(--muted); }
+.eq-bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.eq-bar > div { height: 100%; background: var(--text); border-radius: 4px; transition: width 0.8s ease; }
+.eq-val { text-align: right; font-variant-numeric: tabular-nums; }
+.eq-row.warn .eq-label, .eq-row.warn .eq-val { color: var(--p0); }
+.eq-row.warn .eq-bar > div { background: var(--p0); }
+.equity-warn { font-size: 12px; font-weight: 600; color: var(--p0); }
+.kpi-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.kpi-side .ms-title { font-weight: 600; max-width: 460px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.kpi-row .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.kpi-row.muted b { color: var(--text); }
+
+/* Not-heard-from rows */
+.manager.live .overlay.right { width: 400px; }
+.queues .tabs button { padding: 12px 4px; font-size: 13px; }
+.risk { color: #9b1f1b; }
+.kids { color: #2b5fb4; font-weight: 500; }
+.esc { flex-shrink: 0; align-self: center; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.esc-muted { background: var(--soft); color: var(--muted); }
+.esc-amber { background: rgba(238, 125, 43, 0.14); color: #9a4a10; }
+.esc-blue { background: rgba(43, 95, 180, 0.12); color: #234f97; }
+.esc-red { background: var(--p0); color: #fff; }
+.esc-green { background: rgba(15, 122, 85, 0.12); color: #0b5c40; }
+.small-seg button { height: 28px; padding: 0 10px; font-size: 12px; }
+.tip-unacc { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(17, 17, 17, 0.08); font-weight: 500; color: #9b1f1b; }
+.tip-unacc.done { color: #0b5c40; }
+.kids-banner { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: rgba(43, 95, 180, 0.1); color: #234f97; font-size: 13px; font-weight: 500; }
+.reply-choices { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.reply-choices .btn { height: 48px; }
+.reply-choices .wide { grid-column: 1 / 3; height: auto; min-height: 44px; padding: 8px 12px; white-space: normal; }
+.hero { display: flex; flex-direction: column; gap: 2px; }
+.hero-line { display: flex; align-items: baseline; gap: 8px; }
+.hero-unit { padding-bottom: 0; }
+.hero-track { margin-top: 4px; }
+.queues .tabs button { white-space: nowrap; padding: 12px 2px; font-size: 12.5px; }
