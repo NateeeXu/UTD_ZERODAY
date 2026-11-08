@@ -1,0 +1,13 @@
+/* Unaccounted card (AccountingCard): collapse toggle. The card's base styles live in styles.css. */
+.p1-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.p1-toggle {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 28px; margin: -6px -8px -6px 0; padding: 0 8px;
+  border: 0; border-radius: 8px; background: transparent; color: #555; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.p1-toggle:hover { background: rgba(120, 120, 128, 0.12); color: #111; }
+.p1-toggle:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.p1-toggle svg { transition: transform 0.2s ease; }
+.p1-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.p1-details { display: flex; flex-direction: column; gap: 6px; }
+.p1-key { margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { .p1-toggle svg { transition: none; } }
