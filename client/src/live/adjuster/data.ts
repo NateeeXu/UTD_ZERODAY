@@ -88,6 +88,21 @@ export function useImessageFor(ids: readonly string[]): Map<string, ImessageRow>
   }, [rows, key]);
 }
 
+/** Chat rows for all my households (the Messages tab), grouped by household, oldest first. */
+export function useChatFor(ids: readonly string[]): Map<string, ChatRow[]> {
+  const key = idKey(ids);
+  const q = useMemo(() => {
+    const list = listOf(key);
+    return tables.chatMessage.where((r) => list.map((id) => r.householdId.eq(id)).reduce((a, b) => a.or(b)));
+  }, [key]);
+  const [rows] = useTable(q, { enabled: key.length > 0 });
+  return useMemo(() => {
+    const m = group(key ? rows : EMPTY);
+    for (const list of m.values()) list.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    return m;
+  }, [rows, key]);
+}
+
 /** One household's chat thread, oldest first. Subscribed only while the thread is open. */
 export function useChatThread(householdId: string | null): { rows: ChatRow[]; ready: boolean } {
   const q = useMemo(() => tables.chatMessage.where((r) => r.householdId.eq(householdId ?? NONE)), [householdId]);

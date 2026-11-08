@@ -17,6 +17,7 @@ const PATHS: Record<string, string[]> = {
   refresh: ['M23 4v6h-6', 'M20.49 15a9 9 0 1 1-2.12-9.36L23 10'],
   close: ['M18 6L6 18', 'M6 6l12 12'],
   down: ['M6 9l6 6 6-6'],
+  map: ['M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z', 'M8 2v16', 'M16 6v16'],
 };
 
 export function Icon({ name, size = 22, stroke = 1.8 }: { name: keyof typeof PATHS | string; size?: number; stroke?: number }) {

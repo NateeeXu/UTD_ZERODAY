@@ -291,3 +291,70 @@
 .adj-send { height: 48px; min-width: 76px; }
 .adj-count { align-self: flex-end; font-variant-numeric: tabular-nums; }
 .adj-msgbtn { width: 48px; padding: 0; flex-shrink: 0; }
+
+/* Tab bar (Tasks, Messages, Profile): a floating Apple-style glass capsule over the map */
+.adj { --tabbar: 64px; }
+.adj-tabbar {
+  position: absolute; left: 14px; right: 14px; bottom: calc(10px + var(--bot)); z-index: 850; height: var(--tabbar); padding: 6px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(28px) saturate(190%); backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+}
+.adj-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: none; border-radius: 999px;
+  background: none; font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; color: #77777c; cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.adj-tab.on { color: #222; background: rgba(0, 0, 0, 0.07); }
+.adj-tab:active { transform: scale(0.96); }
+.adj-tab .ico { position: relative; display: flex; }
+.adj-badge {
+  position: absolute; top: -5px; left: calc(100% - 9px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #222; color: #fff; font-size: 11px; font-weight: 700; line-height: 15px; text-align: center; border: 1.5px solid #fff;
+}
+/* The Tasks sheet sits above the tab bar */
+.adj.has-tabs .adj-sheet {
+  bottom: calc(18px + var(--tabbar) + var(--bot));
+  max-height: calc(100dvh - 118px - var(--tabbar) - var(--top));
+}
+
+/* Messages and Profile pages: iOS grouped look in the app's ink-and-white style */
+.adj-tabpage {
+  position: absolute; inset: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #f2f2f4;
+  padding: calc(10px + var(--top)) 16px calc(var(--tabbar) + 34px + var(--bot));
+}
+.adj-tabhead { display: flex; align-items: center; justify-content: space-between; min-height: 56px; padding: 0 4px; }
+.adj-tabhead h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; }
+.adj-group { background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); flex-shrink: 0; }
+.adj-group > * + * { border-top: 1px solid var(--line); }
+.adj-group.adj-empty { padding: 22px 16px; }
+.adj-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 10px 16px; border-left: none; border-right: none;
+  border-bottom: none; background: none; font: inherit; color: inherit; text-align: left;
+}
+.adj-group > .adj-row:first-child { border-top: none; }
+button.adj-row { cursor: pointer; }
+button.adj-row:active { background: var(--soft); }
+.adj-row .grow { flex: 1; min-width: 0; }
+.adj-row .stack { display: flex; flex-direction: column; }
+.adj-row .tail { color: var(--t2); font-variant-numeric: tabular-nums; }
+.adj-row > svg { color: #b0b0b4; }
+.adj-tabnote { padding: 0 6px; line-height: 1.4; }
+/* Message threads */
+.adj-throw { min-height: 72px; }
+.adj-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--chip); color: #444; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.adj-throw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.adj-throw-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.adj-throw-top b { font-weight: 600; }
+.adj-throw-top .time { flex-shrink: 0; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
+.adj-throw-prev { font-size: 14px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adj-throw.unread .adj-throw-top b { font-weight: 700; }
+.adj-throw.unread .adj-throw-prev { color: var(--t); font-weight: 500; }
+.adj-dot { width: 10px; height: 10px; border-radius: 50%; background: #222; flex-shrink: 0; }
+/* Profile card */
+.adj-me { display: flex; align-items: center; gap: 14px; padding: 16px; }
+.adj-initials { width: 56px; height: 56px; border-radius: 50%; background: #222; color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.adj-me-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.adj-me-main b { font-size: 19px; font-weight: 700; }

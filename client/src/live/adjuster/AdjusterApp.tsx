@@ -15,7 +15,7 @@ import type {
   AssignmentRow, FieldReportRow, HexRow, HexStatsRow, HouseholdEstimateRow, HouseholdFollowupRow, HouseholdRow, MemberRow, SmsReplyRow,
 } from '../rows';
 import * as D from './derive';
-import { useFollowupsFor, useHexRows, useImessageFor, useRepliesFor, useReportsFor, useSentFor, type ImessageRow } from './data';
+import { useChatFor, useFollowupsFor, useHexRows, useImessageFor, useRepliesFor, useReportsFor, useSentFor, type ChatRow, type ImessageRow } from './data';
 import { ChatScreen, NotifiedCard, NotifiedChips } from './Chat';
 import { useOutbox, type Draft, type ReportMode, type SentRecord } from './outbox';
 import { PhoneMap, type MapArea } from './PhoneMap';
@@ -50,13 +50,14 @@ interface Task {
   notice?: ImessageRow;
 }
 
+type Tab = 'tasks' | 'messages' | 'me';
 type Route =
-  | { name: 'tasks' }
+  | { name: Tab }
   | { name: 'home'; id: string; close?: boolean }
   | { name: 'goto'; id: string }
   | { name: 'report'; id: string; mode: ReportMode; prefillOp?: string; opId?: string }
   | { name: 'sent'; opId: string }
-  | { name: 'chat'; id: string; from: 'tasks' | 'home' };
+  | { name: 'chat'; id: string; from: 'tasks' | 'home' | 'messages' };
 
 export function AdjusterApp() {
   const [myMember, memberReady] = useTable(tables.myMember);
@@ -203,6 +204,7 @@ function Field({ meName }: { meName: string }) {
   );
   const mePos = savedPos ?? staging;
   const hasStart = !!mePos;
+  const [moving, setMoving] = useState(false);
   const isDefaultStart = !!staging && (!savedPos || (savedPos[0] === staging[0] && savedPos[1] === staging[1]));
   // The card is the row with the lowest rank (rows of taken tasks disappear; the rest keep their ranks).
   const nextBest: NextBest | null = useMemo(() => {
@@ -294,6 +296,32 @@ function Field({ meName }: { meName: string }) {
   }, [active, estimateBy, repliesBy, reportsBy, sentBy, followupBy, cellBy, householdBy, hexBy, labeler, mePos, sim, myId, unsentIds, imessageBy]);
   const byId = useMemo(() => new Map([...open, ...done].map((t) => [t.id, t])), [open, done]);
 
+  // ---- Messages tab: one thread per task; unread = a policyholder message after the last one I opened ----
+  const chatBy = useChatFor(ids);
+  const [chatSeen, setChatSeen] = useState<Record<string, string>>(loadChatSeen);
+  const openChatId = route.name === 'chat' ? route.id : null;
+  const openChatLast = openChatId ? chatBy.get(openChatId)?.at(-1)?.id : undefined;
+  useEffect(() => {
+    if (!openChatId || openChatLast == null) return;
+    setChatSeen((cur) => {
+      if (cur[openChatId] && BigInt(cur[openChatId]) >= openChatLast) return cur;
+      const next = { ...cur, [openChatId]: String(openChatLast) };
+      try { localStorage.setItem(CHAT_SEEN_KEY, JSON.stringify(next)); } catch { /* private mode: unread resets on reload */ }
+      return next;
+    });
+  }, [openChatId, openChatLast]);
+  const threads: Thread[] = useMemo(() => {
+    const list = [...open, ...done].flatMap((t) => {
+      const rows = chatBy.get(t.id) ?? [];
+      if (!t.open && !rows.length) return [];
+      const seenId = chatSeen[t.id] ? BigInt(chatSeen[t.id]) : -1n;
+      const unread = rows.some((r) => r.sender === 'policyholder' && r.id > seenId);
+      return [{ t, last: rows.at(-1), unread }];
+    });
+    return list.sort((x, y) => (x.last && y.last ? (y.last.id > x.last.id ? 1 : -1) : x.last ? -1 : y.last ? 1 : 0));
+  }, [open, done, chatBy, chatSeen]);
+  const unreadCount = threads.filter((x) => x.unread).length;
+
   // "New task assigned" (no address, no household details)
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -340,7 +368,7 @@ function Field({ meName }: { meName: string }) {
         <ChatScreen
           householdId={t.id} label={t.label} meName={meName} canSend={live === 'live'}
           live={<LiveBadge state={live} unsent={outbox.items.length} className="soft" />}
-          onBack={() => setRoute(route.from === 'home' ? { name: 'home', id: t.id } : { name: 'tasks' })}
+          onBack={() => setRoute(route.from === 'home' ? { name: 'home', id: t.id } : { name: route.from })}
         />
         {toastEl}
       </div>
@@ -467,10 +495,36 @@ function Field({ meName }: { meName: string }) {
     );
   }
 
+  const tab: Tab = route.name === 'messages' ? 'messages' : route.name === 'me' ? 'me' : 'tasks';
+  const tabBar = <TabBar tab={tab} unread={unreadCount} onTab={(k) => { setMoving(false); setRoute({ name: k }); }} />;
+  if (route.name === 'messages') {
+    return (
+      <div className="adj">
+        <MessagesView threads={threads} meName={meName} badge={badge} onOpen={(id) => setRoute({ name: 'chat', id, from: 'messages' })} />
+        {tabBar}
+        {toastEl}
+      </div>
+    );
+  }
+  if (route.name === 'me') {
+    return (
+      <div className="adj">
+        <ProfileView
+          meName={whoAmI} region={initialLiveRegion().label} sim={sim} badge={badge} open={open.length} done={done.length}
+          unsent={outbox.items.length} isDefaultStart={isDefaultStart} hasStart={hasStart}
+          onMoveStart={() => { setMoving(true); setRoute({ name: 'tasks' }); }}
+        />
+        {tabBar}
+        {toastEl}
+      </div>
+    );
+  }
+
   const accepted = acceptedId ? byId.get(acceptedId) : undefined;
   return (
-    <div className="adj">
+    <div className="adj has-tabs">
       <TasksView
+        moving={moving} setMoving={setMoving}
         open={open} done={done} me={mePos} hasStart={hasStart} isDefaultStart={isDefaultStart} regionCenter={regionCenter} meName={whoAmI} sim={sim} badge={badge}
         nextBest={nextBest} accepting={accepting} onSetStart={setStart} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
         accepted={accepted} onDismissAccepted={() => setAcceptedId(null)}
@@ -481,7 +535,114 @@ function Field({ meName }: { meName: string }) {
         onDismiss={(t, b) => dismiss(`${t.a.id}:${b.key}`)}
         onSkip={(t) => void skipTask(t)}
       />
+      {tabBar}
       {toastEl}
+    </div>
+  );
+}
+
+// ---- Tab bar (Tasks, Messages, Profile): floating Apple-style glass, on the three main screens only ----
+const TAB_SPACE = 82; // tab bar height + its gap, kept clear on the Tasks map
+const CHAT_SEEN_KEY = 'adj-chat-seen-v1';
+function loadChatSeen(): Record<string, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAT_SEEN_KEY) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+type Thread = { t: Task; last?: ChatRow; unread: boolean };
+
+const TABS: { key: Tab; label: string; icon: string }[] = [
+  { key: 'tasks', label: 'Tasks', icon: 'map' },
+  { key: 'messages', label: 'Messages', icon: 'talk' },
+  { key: 'me', label: 'Profile', icon: 'person' },
+];
+function TabBar({ tab, unread, onTab }: { tab: Tab; unread: number; onTab: (k: Tab) => void }) {
+  return (
+    <nav className="adj-tabbar" aria-label="Main">
+      {TABS.map((x) => (
+        <button key={x.key} type="button" className={`adj-tab${tab === x.key ? ' on' : ''}`} aria-current={tab === x.key ? 'page' : undefined} onClick={() => onTab(x.key)}>
+          <span className="ico">
+            <Icon name={x.icon} size={23} stroke={tab === x.key ? 2.2 : 1.8} />
+            {x.key === 'messages' && unread > 0 && <span className="adj-badge" aria-label={`${unread} unread`}>{unread}</span>}
+          </span>
+          <span className="lbl">{x.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+const fmtChatTime = (r: ChatRow) => {
+  const d = r.createdAt.toDate();
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+function MessagesView({ threads, meName, badge, onOpen }: { threads: Thread[]; meName: string; badge: React.ReactNode; onOpen: (id: string) => void }) {
+  return (
+    <div className="adj-tabpage">
+      <header className="adj-tabhead"><h1>Messages</h1>{badge}</header>
+      {threads.length === 0 ? (
+        <div className="adj-group adj-empty">No tasks yet. Each task gets a thread with its policyholder.</div>
+      ) : (
+        <div className="adj-group">
+          {threads.map(({ t, last, unread }) => {
+            const who = !last ? '' : last.sender === 'policyholder' ? '' : last.sender === 'system' ? 'Automated: '
+              : last.senderName === meName ? 'You: ' : `${last.senderName || 'Adjuster'}: `;
+            return (
+              <button key={t.id} type="button" className={`adj-row adj-throw${unread ? ' unread' : ''}`} onClick={() => onOpen(t.id)}>
+                <span className="adj-avatar"><Icon name="house" size={19} stroke={1.9} /></span>
+                <span className="adj-throw-main">
+                  <span className="adj-throw-top">
+                    <b>{t.label}</b>
+                    <span className="time">{last ? fmtChatTime(last) : t.open ? `Task ${t.number}` : 'Done'}</span>
+                  </span>
+                  <span className="adj-throw-prev">{last ? `${who}${last.text}` : 'No messages yet'}</span>
+                </span>
+                {unread ? <i className="adj-dot" aria-label="Unread" /> : <Icon name="chevron" size={16} stroke={2} />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <p className="adj-muted adj-tabnote">Messages go to the policyholder's check-in page. No arrival times or payment promises.</p>
+    </div>
+  );
+}
+
+function ProfileView({ meName, region, sim, badge, open, done, unsent, isDefaultStart, hasStart, onMoveStart }: {
+  meName: string; region: string; sim: number; badge: React.ReactNode; open: number; done: number; unsent: number;
+  isDefaultStart: boolean; hasStart: boolean; onMoveStart: () => void;
+}) {
+  const initials = meName.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('') || '?';
+  return (
+    <div className="adj-tabpage">
+      <header className="adj-tabhead"><h1>Profile</h1>{badge}</header>
+      <div className="adj-group">
+        <div className="adj-me">
+          <span className="adj-initials" aria-hidden="true">{initials}</span>
+          <span className="adj-me-main"><b>{meName}</b><span className="adj-muted">Field adjuster · {region}</span></span>
+        </div>
+      </div>
+      <div className="adj-group">
+        <div className="adj-row"><span className="grow">Open tasks</span><span className="tail">{open}</span></div>
+        <div className="adj-row"><span className="grow">Done</span><span className="tail">{done}</span></div>
+        <div className="adj-row">
+          <span className="grow">Unsent reports</span>
+          {unsent > 0 ? <span className="adj-tag amber">{unsent} waiting</span> : <span className="tail">None</span>}
+        </div>
+        <div className="adj-row"><span className="grow">Exercise time</span><span className="tail">{fmtT(sim)}</span></div>
+      </div>
+      <div className="adj-group">
+        <button type="button" className="adj-row" onClick={onMoveStart}>
+          <span className="grow stack"><span>Start position</span><span className="adj-muted">{!hasStart ? 'Not set' : isDefaultStart ? 'Default start' : 'Set on the map'}</span></span>
+          <span className="adj-link small">Move start</span>
+        </button>
+      </div>
+      <p className="adj-muted adj-tabnote">Demo data: synthetic households, areas not addresses. No real calls, texts or GPS.</p>
     </div>
   );
 }
@@ -558,7 +719,8 @@ function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
 }
 
 // ---- Screen 1: Tasks ----
-function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onSetStart, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
+function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onSetStart, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
+  moving: boolean; setMoving: (on: boolean) => void;
   open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; isDefaultStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
   bannerFor: (t: Task) => D.Banner | null; myId?: Parameters<typeof D.taskBanner>[0]['me'];
   nextBest: NextBest | null; accepting: boolean; onSetStart: (lat: number, lng: number) => void; onAccept: () => void; onRefresh: () => void;
@@ -568,7 +730,6 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
   const [expanded, setExpanded] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   // Picking a start: only before the region has loaded (no default yet), or after "Move start".
-  const [moving, setMoving] = useState(false);
   const picking = !hasStart || moving;
   const showBest = hasStart && !!nextBest;
   const drag = useRef<{ y: number; moved: boolean } | null>(null);
@@ -598,7 +759,7 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
     <>
       <PhoneMap
         areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
-        padBottom={(expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
+        padBottom={TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
         fallbackCenter={regionCenter}
         onAreaClick={picking ? undefined : pickArea}
         onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
