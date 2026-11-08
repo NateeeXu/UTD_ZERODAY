@@ -18,3 +18,7 @@
 .right-rail .hh-panel .hh-history li > span:first-child { font-variant-numeric: tabular-nums; }
 .right-rail .hh-panel .hh-history li.muted { display: block; }
 .right-rail .hh-panel .hh-history .hh-ev { overflow: hidden; text-overflow: ellipsis; }
+/* Area panel: "On the way" / "Matched" rows. Adjuster first, then the home and distance. */
+.right-rail .card.detail .otw-list .hh-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.right-rail .card.detail .otw-list .hh-main .link { font: inherit; }
+.right-rail .card.detail .otw-list .otw-state.going { color: #0b5c40; font-weight: 600; }

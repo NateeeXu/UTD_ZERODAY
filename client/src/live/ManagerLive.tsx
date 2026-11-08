@@ -11,8 +11,10 @@ import { QrButton } from './LiveQrCard';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
+import { cellToLatLng } from 'h3-js';
 import { COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import './cell-detail.css';
+import './live-toast.css';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
@@ -88,6 +90,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   }, [adjusterLocations, members]);
   const [myMember, memberReady] = useTable(tables.myMember);
   const [assignments] = useTable(tables.assignment);
+  // Each adjuster's "Next best" list (backend rules, src/recommend.ts); the area panel shows who is matched where.
+  const [recommendations] = useTable(tables.adjusterRecommendation);
 
   const [flash, setFlash] = useState<{ hex: string; key: number } | null>(null);
   const [toast, setToast] = useState<{ key: number; title: string; detail: string } | null>(null);
@@ -152,13 +156,30 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     for (const a of assignments) if (a.status === 'assigned') m.set(a.hex, (m.get(a.hex) ?? 0) + 1);
     return m;
   }, [assignments]);
-  // Every assigned or completed inspection with its adjuster's name, for the area panel's "Assigned" list.
+  // Every assigned or completed task with its adjuster's name, for the area panel's "On the way" list.
+  // Distance: from the adjuster's last position to the area's centre (the phone routes to the area, not the address).
   const assignedHomes = useMemo<AssignedHome[]>(() => {
     const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
+    const where = new Map(adjusterLocations.map((l) => [l.identity.toHexString(), l]));
     return assignments
       .filter((a) => a.status !== 'cancelled')
-      .map((a) => ({ householdId: a.householdId, hex: a.hex, status: a.status, adjuster: names.get(a.adjuster.toHexString()) ?? 'adjuster', at: a.updatedAt.toDate().getTime() }));
-  }, [assignments, members]);
+      .map((a) => {
+        const id = a.adjuster.toHexString();
+        const from = where.get(id);
+        return {
+          householdId: a.householdId, hex: a.hex, status: a.status, adjuster: names.get(id) ?? 'adjuster', at: a.updatedAt.toDate().getTime(),
+          km: from && a.status === 'assigned' ? kmToCell(from, a.hex) : null,
+        };
+      });
+  }, [assignments, members, adjusterLocations]);
+  // Matched but not accepted: each adjuster's Next best #1, unless that home already has an open assignment.
+  const matched = useMemo<MatchedPick[]>(() => {
+    const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
+    const taken = new Set(assignments.filter((a) => a.status === 'assigned').map((a) => a.householdId));
+    return recommendations
+      .filter((r) => r.rank === 1 && !taken.has(r.householdId))
+      .map((r) => ({ householdId: r.householdId, hex: r.hex, adjuster: names.get(r.adjuster.toHexString()) ?? 'adjuster', km: r.distanceKm }));
+  }, [recommendations, assignments, members]);
   // Household → name of the adjuster it is assigned to (open assignments only).
   const sentTo = useMemo(() => {
     const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
@@ -295,6 +316,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
         <div className="left-rail">
           <AccountingCard metrics={metrics} />
+          {/* The live-event toast sits just right of the queue panel (p2), level with its top. */}
+          <div className="p2-slot">
           <OutreachPanel
             simMinutes={simMinutes}
             cellBy={cellBy}
@@ -315,6 +338,14 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             canAct={isManager}
             onNeedJoin={() => setJoining(true)}
           />
+          {toast && (
+            <div className="toast" key={toast.key} role="status">
+              <span className="dot" />
+              <span><b>{toast.title}</b> · {toast.detail}</span>
+              <span className="muted">just now</span>
+            </div>
+          )}
+          </div>
         </div>
 
         <div className="overlay map-tools">
@@ -334,13 +365,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             <div className="toast loading" role="status">
               <span className="dot" />
               <span>{loading}</span>
-            </div>
-          )}
-          {toast && (
-            <div className="toast" key={toast.key} role="status">
-              <span className="dot" />
-              <span><b>{toast.title}</b> · {toast.detail}</span>
-              <span className="muted">just now</span>
             </div>
           )}
         </div>
@@ -415,6 +439,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               label={labelFor(sel)}
               openAssignments={openAssignments}
               assignedHomes={assignedHomes}
+              matched={matched}
               onOpenHousehold={openHousehold}
               cellLabel={labeler.cell}
               onSelectCell={selectFromHex}
@@ -482,16 +507,27 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-type AssignedHome = { householdId: string; hex: string; status: string; adjuster: string; at: number };
+type AssignedHome = { householdId: string; hex: string; status: string; adjuster: string; at: number; km?: number | null };
+type MatchedPick = { householdId: string; hex: string; adjuster: string; km: number };
+
+// Straight-line km from a position to an H3 cell's centre; shown in miles like the phone.
+function kmToCell(from: { lat: number; lng: number }, hex: string): number {
+  const [lat, lng] = cellToLatLng(hex);
+  const rad = Math.PI / 180;
+  const s = Math.sin(((lat - from.lat) * rad) / 2) ** 2 + Math.cos(from.lat * rad) * Math.cos(lat * rad) * Math.sin(((lng - from.lng) * rad) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+const miles = (km: number) => `${(km * 0.621371).toFixed(1)} mi`;
 const ASSIGNED_SHOWN = 8;
 
-export function CellDetail({ unit, label, openAssignments, assignedHomes = [], onOpenHousehold, cellLabel, onSelectCell, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false }: {
+export function CellDetail({ unit, label, openAssignments, assignedHomes = [], matched = [], onOpenHousehold, cellLabel, onSelectCell, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false }: {
   unit: MapUnit;
   label: string;
   households?: Map<string, HouseholdRow>;
   candidates?: readonly { householdId: string; hex: string; rank: number; inspectScore: number; pSevere: number; pNeedsHelp: number }[];
   openAssignments: Map<string, number>;
   assignedHomes?: readonly AssignedHome[];
+  matched?: readonly MatchedPick[];
   onOpenHousehold?: (householdId: string, hex: string) => void;
   cellLabel?: (hex: string) => string;   // "District 14 · 3"
   onSelectCell?: (hex: string) => void;  // open that neighborhood's panel
@@ -513,6 +549,10 @@ export function CellDetail({ unit, label, openAssignments, assignedHomes = [], o
   const homes = assignedHomes.filter((a) => kidHexes.has(a.hex))
     .sort((a, b) => Number(a.status !== 'assigned') - Number(b.status !== 'assigned') || b.at - a.at);
   const doneCount = homes.filter((a) => a.status !== 'assigned').length;
+  const picks = matched.filter((m) => kidHexes.has(m.hex));
+  const homeLink = (householdId: string, hex: string) => (onOpenHousehold
+    ? <button type="button" className="link" onClick={() => onOpenHousehold(householdId, hex)}><b>{homeLabel(householdId, fictional)}</b></button>
+    : <b>{homeLabel(householdId, fictional)}</b>);
   // The neighborhood that sets a district's priority (same rule as unitsFor).
   const topKid = unit.kids.reduce((a, b) =>
     RANK[prio(b.priority)] < RANK[prio(a.priority)] || (b.priority === a.priority && b.severity > a.severity) ? b : a);
@@ -548,21 +588,35 @@ export function CellDetail({ unit, label, openAssignments, assignedHomes = [], o
           <span><b>{unit.cl}</b>claims</span>
         </div>
         {!readOnly && <>
+        {/* Who is heading here (open tasks, distance from their last position) and who the backend's
+            Next best has matched here but who hasn't accepted yet. Distances only, never arrival times. */}
         {homes.length > 0 && <>
-          <h3 className="eyebrow divider">Assigned · {homes.length - doneCount} open{doneCount ? ` · ${doneCount} done` : ''}</h3>
-          <ul className="hh-list">
+          <h3 className="eyebrow divider">On the way · {homes.length - doneCount}{doneCount ? ` · ${doneCount} done` : ''}</h3>
+          <ul className="hh-list otw-list">
             {homes.slice(0, ASSIGNED_SHOWN).map((a) => (
               <li key={`${a.householdId}-${a.at}`}>
                 <span className="hh-main">
-                  {onOpenHousehold
-                    ? <button type="button" className="link" onClick={() => onOpenHousehold(a.householdId, a.hex)}><b>{homeLabel(a.householdId, fictional)}</b></button>
-                    : <b>{homeLabel(a.householdId, fictional)}</b>}
-                  <span className="muted small">{a.adjuster}</span>
+                  <b className="otw-who">{a.adjuster}</b>
+                  <span className="muted small">{homeLink(a.householdId, a.hex)}{a.km != null ? ` · ${miles(a.km)}` : ''}</span>
                 </span>
-                <span className="small num">{a.status === 'assigned' ? 'Assigned' : 'Done ✓'}</span>
+                <span className={`small num otw-state${a.status === 'assigned' ? ' going' : ''}`}>{a.status === 'assigned' ? 'On the way' : 'Done ✓'}</span>
               </li>
             ))}
             {homes.length > ASSIGNED_SHOWN && <li className="muted small">+{homes.length - ASSIGNED_SHOWN} more</li>}
+          </ul>
+        </>}
+        {picks.length > 0 && <>
+          <h3 className="eyebrow divider">Matched · not accepted yet</h3>
+          <ul className="hh-list otw-list">
+            {picks.map((m) => (
+              <li key={`${m.adjuster}-${m.householdId}`}>
+                <span className="hh-main">
+                  <b className="otw-who">{m.adjuster}</b>
+                  <span className="muted small">{homeLink(m.householdId, m.hex)} · {miles(m.km)}</span>
+                </span>
+                <span className="small num muted">Next best #1</span>
+              </li>
+            ))}
           </ul>
         </>}
         </>}
