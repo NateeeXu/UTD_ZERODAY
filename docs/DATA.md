@@ -1,4 +1,4 @@
-# Data card: Triage Loop
+# Data card: Saviu
 
 What is real, what is simulated, every assumption the simulator makes, and what we can honestly claim.
 Data files: `data/live.json` + `data/backtest/` (Harbor Bend, fictional), `data/real/tx-corpus-christi/`, `data/real/ca-bay-area/` (real geography).
@@ -151,11 +151,11 @@ The Bay Area is a weekday-daytime earthquake: most people are away when it hits,
 
 **Region total (`metrics.severeTotalLo/Hi`)** = the sum of the cell bounds. Within one event every cell can be off in the same direction (the Bay Area live event is under-predicted by about 12 % before any field report), so adding cell variances as if independent was overconfident (it excluded the true total); summed bounds include it at every time we checked.
 
-**Live honesty check (`metrics.intervalCoverageLive`)**: share of cells whose interval contains the simulated true count. Measured with simulated staff on: Harbor Bend 96 % → 98 % (t = 0 → 72 h), Bay Area 73 % → 82 % → 91 % (0 / 24 / 72 h). Early in a harder-than-history event the model is biased; coverage recovers as field reports correct it. Summed cell width falls 69 % (HB) and 56 % (Bay Area) over 72 h, from new information (calls, visits, property inspections), not from narrower assumptions.
+**Live honesty check (`metrics.intervalCoverageLive`)**: share of cells whose interval contains the simulated true count. Measured with simulated staff on: Harbor Bend 96 % → 98 % (t = 0 → 72 h), Bay Area 73 % → 79 % → 85 % (0 / 24 / 72 h). Early in a harder-than-history event the model is biased; coverage recovers as field reports correct it. Summed cell width falls 69 % (HB) and 53 % (Bay Area) over 72 h, from new information (calls, visits, property inspections), not from narrower assumptions.
 
 **Model metrics** (leave-one-event-out, 95 % cell-cluster bootstrap CI; the range across events is the real event-to-event spread):
 
-| | Severe Brier [CI] (range) | AUC [CI] | ECE | Brier skill vs hazard-only (range) |
+| | Severe Brier [CI] (range) | AUC [CI] | ECE | Brier skill vs baseline without live signals (hazard + static attributes) (range) |
 |---|---|---|---|---|
 | Harbor Bend (10 events) | 0.058 [0.055, 0.062] (0.013–0.084) | 0.954 [0.949, 0.957] | 0.017 | 0.25 (0.20–0.30) |
 | Corpus Christi (8) | 0.042 [0.040, 0.043] (0.005–0.123) | 0.931 [0.925, 0.935] | 0.004 | 0.21 (0.15–0.27) |

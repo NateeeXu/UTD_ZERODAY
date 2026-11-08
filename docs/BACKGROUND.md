@@ -1,12 +1,12 @@
-# Triage Loop：项目背景
+# Saviu：项目背景
 
 > HackUTD 2026 Zero Day · 赛道：State Farm "The Worst Day, at Scale" + Spacetime "Build with Spacetime"
-> 本项目的全部数据都是合成的。地点是虚构的 Harbor Bend, TX，飓风也是虚构的。
+> 本项目没有使用真实客户数据。地理、人口普查、学校和设施、地震情景是真实的公开数据；所有住户、投保人、灾害事件和结果都是合成的，飓风是假想的，Harbor Bend, TX 是虚构的。
 
 ## 一句话
-灾害发生时，Triage Loop 把三种不完美的数据按可信度融合，生成一张实时的 P0 / P1 / P2 地图，告诉 State Farm 的理赔团队先去哪里、还有谁没联系上；理赔员每回传一次现场结果，判断就更准一点。
+灾害发生时，Saviu 把三种不完美的数据按可信度融合，生成一张实时的 P0 / P1 / P2 地图，告诉 State Farm 的理赔团队先去哪里、还有谁没联系上；理赔员每回传一次现场结果，判断就更准一点。
 
-**English:** When a disaster hits, Triage Loop fuses three imperfect signals into a live P0–P2 map of which State Farm customers need help first and who we haven't heard from yet, and every field report makes the next decision more accurate.
+**English:** When a disaster hits, Saviu fuses three imperfect signals into a live P0–P2 map of which State Farm customers need help first and who we haven't heard from yet, and every field report makes the next decision more accurate.
 
 ## 问题
 - 大灾之后，报案在短时间内暴增，理赔团队的人手有限，必须决定先去哪里。
@@ -44,7 +44,7 @@
 **保障范围感知**：每户都带有风灾保障、洪水险、地震附加险的标记。损失不在承保范围内的家庭，同样会被联系，并转介 FEMA 等外部援助资源。
 
 ## 模型
-- **离线校准**：先用 6 场合成的历史风暴做回测。每场 3,000 户，共约 18,000 户带真实结果的样本，训练两个逻辑回归：P(严重受损) 和 P(需要帮助)，并检查校准程度（Brier 分数、ECE）。
+- **离线校准**：先用合成的历史事件做回测：Harbor Bend 10 场（每场 3,000 户），Corpus Christi 8 场、Bay Area 5 场（每场 15,000 户），全部带真实结果，按地区分别训练两个逻辑回归：P(严重受损) 和 P(需要帮助)，并检查校准程度（Brier 分数、ECE）。
 - **实时推理**：新的风暴来了，模拟器持续产生短信回复、报案和现场报告，引擎实时更新每户和每个格子的估计。
 - **学习循环**：
   - 一次现场报告，只立刻更新这一户和所在格子的不确定性。

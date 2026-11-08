@@ -1,4 +1,4 @@
-# Triage Loop: Product Requirements Document
+# Saviu: Product Requirements Document
 
 HackUTD 2026 Zero Day. Tracks: State Farm "The Worst Day, at Scale" and Spacetime "Build with Spacetime".
 Audience: hackathon judges and the team. Repository state described here: backend and docs on `setup/project-docs` at `0b85f54`, frontend on `origin/frontend/app` at `eeede95` (last client commit Nov 7 23:44).
@@ -16,7 +16,7 @@ Audience: hackathon judges and the team. Repository state described here: backen
 
 ## 0. Executive summary
 
-**What it is.** Triage Loop is a post-disaster command center for an insurer's catastrophe (CAT) team. It answers two questions in real time: which policyholders need attention first, and who have we not heard from yet. It is not a rescue service. State Farm refers life-safety cases to 911 and local agencies; it never dispatches rescue.
+**What it is.** Saviu is a post-disaster command center for an insurer's catastrophe (CAT) team. It answers two questions in real time: which policyholders need attention first, and who have we not heard from yet. It is not a rescue service. State Farm refers life-safety cases to 911 and local agencies; it never dispatches rescue.
 
 **The problem.** After a disaster, claims surge and staff is limited, so the team must decide where to go first. The loudest place is often not the worst one. Where towers and roads fail, the hardest-hit households can go quiet. A team that sorts by incoming claims or SMS replies ranks those households last.
 
@@ -35,8 +35,8 @@ Audience: hackathon judges and the team. Repository state described here: backen
 |---|---|
 | Severe-damage model, leave-one-event-out Brier / AUC | 0.058 / 0.954 Harbor Bend; 0.042 / 0.931 Corpus Christi; 0.102 / 0.882 Bay Area |
 | 90% cell interval, held-out coverage | 96.8% / 97.6% / 95.4% |
-| Live interval coverage with staff on (Bay Area) | 73% at t = 0, 82% at 24 h, 91% at 72 h |
-| Households accounted, no staff vs simulated staff | Harbor Bend at 48 h: 1,693 vs 3,000 of 3,000. Bay Area at 72 h: 8,981 vs 29,362 of 30,000 |
+| Live interval coverage with staff on (Bay Area) | 73% at t = 0, 79% at 24 h, 85% at 72 h |
+| Households accounted, no staff vs simulated staff | Harbor Bend at 48 h: 1,693 vs 3,000 of 3,000. Bay Area at 72 h: 8,981 vs 27,598 of 30,000 |
 | Overdue referrals, no staff vs simulated staff | Harbor Bend 7 vs 0; Bay Area 65 vs 0 |
 | Reply parser, 800 cases in 6 languages (prompt v1) | Life-safety recall 222/224 (99.1%); false-safe 2/386 (0.5%); valid JSON 800/800 |
 | `submit_field_report` round trip (local server) | 4–5 ms |
@@ -53,7 +53,7 @@ Audience: hackathon judges and the team. Repository state described here: backen
 | **Solution** | A live, per-cell fusion of hazard, SMS and claims signals into P0 / P1 / P2 and verified / needs verification, plus household-level accounting that never lets silence pass as safety |
 | **Who it is for** | State Farm CAT command-center managers, field adjusters, customer-care agents and the referral desk, and policyholders |
 | **Why now** | US insured catastrophe losses ran about $89–113B a year in 2024–2025 (Swiss Re and Gallagher Re figures in `docs/research/sponsor-research.md`). A real-time database can now host the fusion logic itself. Multilingual free-text replies can be structured in about 1.4 s per message (parser eval) |
-| **One-line pitch** | When a disaster hits, Triage Loop fuses three imperfect signals into a live P0–P2 map of which State Farm customers need help first and who we haven't heard from yet, and every field report makes the next decision more accurate |
+| **One-line pitch** | When a disaster hits, Saviu fuses three imperfect signals into a live P0–P2 map of which State Farm customers need help first and who we haven't heard from yet, and every field report makes the next decision more accurate |
 
 ## 2. Problem and context
 
@@ -79,7 +79,7 @@ Fusing the signals matters because each one fails in a different place. All rate
 
 ### 2.3 Silence
 
-| From the outside, silence can mean | How Triage Loop separates it | Field |
+| From the outside, silence can mean | How Saviu separates it | Field |
 |---|---|---|
 | Towers are down | Tower outage ≥ 50% explains the silence | `silenceCause = outage` |
 | People are at work or school (daytime event) | Away residents dominate the silent households | `silenceCause = away` |
@@ -261,7 +261,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 | RF-2 | Referrals cannot stall | Must | Built | Not referred in 30 min (`REFER_MIN`), or not acknowledged in 60 min (`REFERRAL_ACK_MIN`) → `referral_overdue`; `metrics.overdueReferrals` |
 | RF-3 | Manager moves the state | Must | Branch | `update_referral(householdId, status)` with `referred`, `acknowledged`, `resolved`; one next-step button per row |
 | RF-4 | Missing members | Must | Built | `report_member_missing`, or `memberMissing = true` on a field report; a repeat report keeps the original clock |
-| RF-5 | Reopening | Should | Built | A needs-help reply after `resolved` opens a new referral; a referred or acknowledged referral stays open even if a later report says safe |
+| RF-5 | Reopening | Should | Built | A life-safety reply after `resolved` opens a new referral; a referred or acknowledged referral stays open even if a later report says safe |
 | RF-6 | Copy discipline | Must | Spec | Adjuster pills use exactly four states; never "help is on the way" or anything implying rescue has left |
 | RF-7 | Referrals panel | Must | Branch | Requests tab, life-safety list sorted with overdue first, overdue in red; `metrics.openReferrals`, `overdueReferrals` |
 
@@ -572,7 +572,7 @@ The calibrated tail reached 90% on history but was overconfident on the harder l
 | Live check, staff on (`intervalCoverageLive`) | t = 0 | 24 h | 72 h | Summed width change over 72 h |
 |---|---|---|---|---|
 | Harbor Bend | 96% | | 98% | −69% |
-| Bay Area | 73% | 82% | 91% | −56% |
+| Bay Area | 73% | 79% | 85% | −53% |
 
 Early in a harder-than-history event the model is biased (Bay Area under-predicted by about 12% before any field report). Coverage recovers as reports correct it.
 
@@ -580,13 +580,13 @@ Early in a harder-than-history event the model is biased (Bay Area under-predict
 
 | Measure | No staff | Staff on |
 |---|---|---|
-| Harbor Bend accounted at 24 h / 48 h (of 3,000) | 1,590 / 1,693 | 2,364 / 3,000 |
-| Harbor Bend high-risk unaccounted at 24 h | 760 | 64 |
+| Harbor Bend accounted at 24 h / 48 h (of 3,000) | 1,590 / 1,693 | 2,264 / 3,000 |
+| Harbor Bend high-risk unaccounted at 24 h | 760 | 107 |
 | Harbor Bend overdue 911 referrals | 7 | 0 |
-| Bay Area accounted at 24 h / 72 h (of 30,000) | 8,138 / 8,981 | 16,174 / 29,362 |
+| Bay Area accounted at 24 h / 72 h (of 30,000) | 8,138 / 8,981 | 15,326 / 27,598 |
 | Bay Area overdue 911 referrals | 65 | 0 |
 
-In the Bay Area weekday quake, 61% of staff visits find nobody home: the visited homes are the badly damaged ones and their people have left, so the next step is `locate`. Staff rates are assumptions, so this is a simulation result, not a forecast. These runs predate the delivery-receipt change and were not re-measured in the docs.
+In the Bay Area weekday quake, 65% of staff visits find nobody home (4,021 of 6,210 over 72 h): the visited homes are the badly damaged ones and their people have left, so the next step is `locate`. Staff rates are assumptions, so this is a simulation result, not a forecast. Measured on the local server after SMS delivery receipts and the coverage-aware inspection queue (default capacity, `jump_to` in 24 h steps).
 
 ### 9.4 Random disasters (out-of-sample, staff on)
 
@@ -707,7 +707,7 @@ The repository has no verbatim rubric. The criteria below are the team's reading
 
 ### State Farm: "The Worst Day, at Scale"
 
-| What the track asks (per our research) | Triage Loop's answer | Evidence |
+| What the track asks (per our research) | Saviu's answer | Evidence |
 |---|---|---|
 | Identify those with the most urgent need | P0 / P1 / P2 per cell; P(needs help) per household; CMIST-based features | FE-2, PV-1, section 9.1 |
 | Coordinate aid | Referrals with timers, assistance to customer care, inspection queue, adjuster assignment, FEMA pointers for uncovered losses | RF-1–7, AQ-1–6 |
@@ -717,7 +717,7 @@ The repository has no verbatim rubric. The criteria below are the team's reading
 
 ### Spacetime: "Build with Spacetime"
 
-| Requirement or interest | Triage Loop's answer | Evidence |
+| Requirement or interest | Saviu's answer | Evidence |
 |---|---|---|
 | Public GitHub repository | `NateeeXu/UTD_ZERODAY`, no secrets committed | `.gitignore`, section 10 |
 | Most of the backend on Spacetime | Event ingest, permissions, fusion, accounting, simulated staff, replay clock and metrics all run in reducers. Only the LLM call sits outside | Section 8 |
@@ -727,7 +727,7 @@ The repository has no verbatim rubric. The criteria below are the team's reading
 
 ### What separates this from common hackathon entries (sponsor research)
 
-| Common pattern | Triage Loop |
+| Common pattern | Saviu |
 |---|---|
 | Disaster map plus LLM summary | LLM only extracts; a deterministic, calibrated engine decides |
 | Numbers without provenance or evaluation | Each cell states its reason; thresholds in one config object; labeled sets, confidence intervals, published misses |
@@ -742,7 +742,7 @@ Items marked (repo) are named in the docs as future work. The others are proposa
 |---|---|---|
 | Immediately | Merge the client, regenerate bindings, pass `memberMissing` and `note`, show the delivery split (R1) | Proposal |
 | Immediately | Five-screen adjuster app and send state machine; free-text reply page wired to `submit_raw_reply` | (repo) `docs/ADJUSTER_APP.md`, `docs/SPACETIME_API.md` |
-| Immediately | Re-run parser eval on prompt v2; re-measure the staff curves | (repo) `docs/CLAUDE_PARSER.md`; Proposal |
+| Immediately | Re-run parser eval on prompt v2 | (repo) `docs/CLAUDE_PARSER.md` |
 | Immediately | Backend for the adjuster app: `household.address`, `accessNote`, contact attempts, server-side `opId` dedupe, note on `update_assignment`, structured renter fields | (repo) `docs/ADJUSTER_APP.md` |
 | Production integrations | Real SMS provider with carrier receipts and consent; policy and claims systems; referral handoff with consent or legal basis | (repo) `docs/BACKGROUND.md`, sponsor research |
 | Production integrations | OIDC (SpacetimeAuth, Auth0, Clerk), owner-managed members, per-role views over `household` | (repo) `docs/SPACETIME_API.md` |

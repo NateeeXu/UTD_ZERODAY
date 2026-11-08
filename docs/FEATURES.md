@@ -1,6 +1,6 @@
 # 优先级特征设计 + Claude API 用法
 
-> 结论：模型用约 **16 个核心特征**，分 5 组。每个特征都要满足三条：① 有真实依据；② 模拟器里会真的影响结果（否则只是噪声）；③ 能对应到一个具体动作（先联系谁、用什么语言、转介到哪里）。
+> 结论：设计上归纳成 **16 个核心因素**，分 4 组；实现的模型有 **45 个特征**（`engine/src/features.ts` 的 `FEATURE_NAMES`：灾害 9、静态属性 19、短信 12、理赔 5）。每个因素都要满足三条：① 有真实依据；② 模拟器里会真的影响结果（否则只是噪声）；③ 能对应到一个具体动作（先联系谁、用什么语言、转介到哪里）。
 > 原则：按"需要什么帮助"排序，而不是按"是谁"排序。**种族、族裔、收入不作为优先级特征**，只用于事后的公平性审计。
 
 ## 一、依据（为什么是这些因素）
@@ -14,7 +14,7 @@
 | 白天和夜间人口分布差别很大，暴露评估要分时段 | [ORNL](https://ornl.gov/news/ornl-program-could-help-city-dwellers-survive-disaster)、[Freire 等 2015](https://www.idl.iscram.org/files/sergiofreire/2015/1217_SergioFreire_etal2015.pdf) |
 | 宠物主人常因宠物拒绝撤离（但统计上不是撤离失败的显著因素） | [PMC：Irene 研究](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4494278/) |
 
-## 二、16 个核心特征
+## 二、16 个核心因素（模型里展开成 45 个特征）
 | 组 | 特征 | 数据来源 | 影响 | 对应动作 |
 |---|---|---|---|---|
 | **A 灾害与房屋**（4） | 灾害强度指数（风速 / 洪水 / 地震烈度） | 模拟 + USGS 情景 | 严重受损 | — |
@@ -26,7 +26,7 @@
 | | 依赖电力的医疗设备 | 客户自愿提供（参考 HHS emPOWER） | 停电即危险 | 转交应急机构 |
 | | 残障或行动不便 | ACS / SVI | 需要帮助 | 优先联系 |
 | | 无车 | ACS / SVI | 无法撤离 | 优先联系 |
-| | 英语能力有限 | ACS / SVI | 看不懂短信，沉默 | **用其母语发短信** |
+| | 英语能力有限 | ACS / SVI | 看不懂短信，沉默 | 模拟的问候短信只用英语（回复率 × 0.55）；按母语外联在路线图上 |
 | **C 家庭情境**（2） | 有 18 岁以下孩子 | ACS | 住房需求更急 | 优先审核临时住宿；转介最近的学校避难所 |
 | | 白天通常不在家（通勤） | LEHD LODES | **沉默不等于危险** | 区分"人不在家"和"人被困" |
 | **D 实时信号**（4） | 短信回复（安全 + 损坏程度 + 自由文本里的需求） | 投保人 | 直接证据 | — |
@@ -49,21 +49,20 @@
 | 用途 | 输入 → 输出 | 为什么需要 LLM |
 |---|---|---|
 | ① 理解自由文本短信 | "屋顶没了，妈妈用制氧机，停电了" → `{safety: needs_help, damage: 3, needs: [power_medical], language: zh}` | 真实回复不会只有 1–3 这种数字 |
-| ② 多语言外联 | 按户的语言生成问候短信，并理解任何语言的回复 | 科珀斯克里斯蒂西语人口多；湾区有中文、西语、越南语 |
+| ② 多语言外联（路线图，未实现；模拟器假设问候短信只用英语） | 按户的语言生成问候短信 | 科珀斯克里斯蒂西语人口多；湾区有中文、西语、越南语 |
 | ③ 给主管的解释 | 引擎数字 → "为什么这个格子是 P0" 的一句话说明 | 评委和主管一眼看懂 |
 | ④ 理赔员现场备注 | 口述或打字备注 → 结构化的现场报告 | 现场填表太慢 |
 
 **在哪里调用**
-- **首选：Spacetime 的 procedure**。procedure 能用 `ctx.http.fetch` 调外部 API，reducer 不能（[Spacetime 文档](https://spacetimedb.com/docs/procedures)）。这样调用 Claude 也算"后端在 Spacetime 上"。注意 procedure 还是 beta 版，要先把请求发出去拿到结果，再开事务写入数据库。
-- **备选**：一个小的 Node 服务，用官方 SDK `@anthropic-ai/sdk`，订阅 `sms_reply` 表，处理完再调用服务端函数写回。
+- **实际实现：一个 Node worker**（`spacetimedb/scripts/claude-worker.ts`，官方 SDK `@anthropic-ai/sdk`），订阅 `reply_inbox` 里 `pending` 的行，处理完再调用服务端函数 `submit_parsed_reply` 写回（见 `docs/CLAUDE_PARSER.md`）。
+- **没有实现、留在路线图上**：Spacetime 的 procedure。procedure 能用 `ctx.http.fetch` 调外部 API，reducer 不能（[Spacetime 文档](https://spacetimedb.com/docs/procedures)）。
 
 **API key**
 - 公开仓库里**绝不能**出现 key。
-- Node 服务的 key 放 `.env`（已被 `.gitignore` 忽略）。
-- Spacetime 的 key 由所有者通过服务端函数写进一张**私有表**，不写在代码里。
+- Node worker 的 key 放 `spacetimedb/.env`（已被 `.gitignore` 忽略），只从 `ANTHROPIC_API_KEY` 环境变量读取，不进前端、Spacetime 表或 bindings。
 
 **模型**
 - 产品里调用的 API 用 **Claude Sonnet 5.5**（`claude-sonnet-5-5`，团队决定）。短信理解这种简单任务，把推理强度（effort）设为 `low`，速度更快、更省钱。
-- 粗算：一次完整回放约 1,400 条回复，每条约 300 个输入 token、100 个输出 token，Opus 5.5 大约 $4–5。如果你们想更省，可以自己决定换成 Claude Haiku 5.5。
+- 粗算（token 数是假设，没有实测）：Sonnet 5.5 输入 $2、输出 $10（每百万 token），每条回复按 300 个输入、100 个输出 token 算约 $0.0016，1,400 条约 $2.2。v2 的 system prompt 比 300 个 token 长，实际输入会更多。回放里 bundle 自带的回复不调用 Claude，只有回复页现场输入的自由文本（`submit_raw_reply`）才会走 worker。如果你们想更省，可以自己决定换成 Claude Haiku 5.5。
 
 **需要的数据改动**：模拟器要生成一部分**自由文本、多语言**的短信回复，契约里的 `sms_reply` 要加可选字段 `text` 和 `language`。
