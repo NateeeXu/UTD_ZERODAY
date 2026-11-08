@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en" class="boot">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saviu concept preview</title>
+<style>
+:root{
+  --red:#D8232A;
+  --call:#C62828;
+  --ink:#191B20;
+  --muted:#656A74;
+  --line:#DFE1E6;
+  --app:#F3F4F6;
+  --sand:#F6EFE3;
+  --storm:#12263F;
+  --amber:#FFB81C;
+  --ok-bg:#E3F2E8;
+  --ok-ink:#14532D;
+  --slate:#3C4654;
+  --dur:240ms;
+  --ease:cubic-bezier(.22,.7,.2,1);
+  --font:-apple-system,"SF Pro Text",Inter,BlinkMacSystemFont,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.35 var(--font);color:var(--ink);background:#E6E8EC;-webkit-font-smoothing:antialiased;overflow:hidden}
+h1,h2,p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer;padding:0}
+button:disabled{cursor:default}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid #2563EB;outline-offset:2px}
+.boot *{transition:none!important;animation:none!important}
+.ic{width:24px;height:24px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ic-s{width:18px;height:18px}
+
+.page{height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr) 280px}
+.rail{display:flex;flex-direction:column;min-height:0;background:#fff;border-right:1px solid #D6D9DF}
+.rail-body{flex:1;min-height:0;overflow:auto;padding:20px 16px 16px;display:flex;flex-direction:column;gap:14px}
+.rail h2{font:700 20px/1.2 var(--font)}
+.seg{display:grid;grid-template-columns:1fr 1fr;padding:3px;background:#ECEEF1;border-radius:12px}
+.seg button{min-height:44px;border:0;border-radius:9px;background:transparent;font-weight:600;font-size:13px;color:var(--muted);transition:background var(--dur),color var(--dur)}
+.seg button[aria-pressed=true]{background:var(--storm);color:#fff}
+.links{display:grid;gap:2px}
+.links button{min-height:44px;text-align:left;padding:0 12px;border:0;background:none;border-radius:10px;font-weight:500;transition:background var(--dur)}
+.links button:hover{background:#F2F3F5}
+.links button[aria-current=page]{background:#ECEEF1;font-weight:600}
+.sim{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.sim button{min-height:44px;border:1px solid #C9CDD4;border-radius:10px;background:#fff;font-weight:500;font-size:14px;transition:background var(--dur),color var(--dur)}
+.sim button:hover:not(:disabled){background:#F2F3F5}
+.sim button:disabled{color:#8A909B;background:#F6F7F8;border-color:var(--line)}
+.strip{flex:none;padding:14px 16px;background:#FFD23F;font-weight:600;font-size:14px;line-height:1.35}
+
+.stage{display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden}
+.phone{width:414px;height:868px;padding:12px;border-radius:60px;background:#0F1115;zoom:var(--fit,1);box-shadow:0 24px 60px -18px rgba(18,38,63,.45)}
+.screen{position:relative;width:390px;height:844px;border-radius:48px;overflow:hidden;background:var(--app);isolation:isolate}
+.statusbar{position:absolute;inset:0 0 auto;height:54px;z-index:40;display:flex;align-items:flex-end;justify-content:space-between;padding:0 30px 10px 46px;font-weight:600;font-size:16px;pointer-events:none}
+.notch{position:absolute;top:12px;left:50%;width:118px;height:34px;margin-left:-59px;border-radius:17px;background:#0F1115}
+.sb-icons{display:flex;gap:6px;align-items:center}
+.homebar{position:absolute;left:50%;bottom:8px;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:var(--ink);z-index:40;pointer-events:none}
+
+.shell{position:absolute;inset:0;display:flex;flex-direction:column;padding-top:54px;background:var(--app)}
+.banner-wrap{flex:none;display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur) var(--ease)}
+.disaster .banner-wrap{grid-template-rows:1fr}
+.banner-clip{min-height:0;overflow:hidden;visibility:hidden;transition:visibility 0s linear var(--dur)}
+.disaster .banner-clip{visibility:visible;transition:visibility 0s}
+.banner{width:100%;min-height:56px;display:flex;align-items:center;gap:10px;padding:10px 12px 10px 16px;border:0;background:var(--storm);color:#fff;font-weight:600;line-height:1.25;text-align:left;transition:background var(--dur),color var(--dur)}
+.banner .lead{color:var(--amber)}
+.banner .t{flex:1}
+.answered .banner{background:var(--ok-bg);color:var(--ok-ink)}
+.answered .banner .lead{color:var(--ok-ink)}
+
+.tabviews{position:relative;flex:1;min-height:0}
+.tabview{position:absolute;inset:0;overflow-y:auto;padding-bottom:20px;opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease),visibility 0s linear var(--dur)}
+.tabview.on{opacity:1;visibility:visible;transform:none;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease),visibility 0s}
+.tabview,.msgs,.thread{scrollbar-width:none}
+.tabview::-webkit-scrollbar,.msgs::-webkit-scrollbar,.thread::-webkit-scrollbar{display:none}
+html:not(.disaster) .d-only{display:none}
+.disaster .d-only{animation:rise var(--dur) var(--ease)}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.top{height:48px;padding:0 8px 0 16px;display:flex;align-items:center;justify-content:space-between}
+.mark{display:block;width:30px;height:30px;border-radius:50%;background:#C4C8D0;box-shadow:inset 0 0 0 8px #E2E4E9}
+.logo{display:block;height:30px;max-width:120px;object-fit:contain}
+.topicons{display:flex;margin-left:auto}
+.iconbtn{width:44px;height:44px;border:0;background:none;display:grid;place-items:center;border-radius:50%;flex:none}
+.top .iconbtn{color:var(--red)}
+.h1{font-weight:700;font-size:30px;line-height:1.15;letter-spacing:-.01em;margin:0 16px 4px}
+.sec{font-weight:600;font-size:15px;line-height:1.2;color:var(--muted);margin:18px 16px 8px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;margin:0 16px}
+.ptag{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 9px;border-radius:15px;background:var(--sand);font-weight:500;font-size:14px}
+.chev{color:var(--ink)}
+
+.hur{display:flex;align-items:center;gap:10px;padding:12px;margin-bottom:10px}
+.round{width:38px;height:38px;border-radius:50%;background:#FDECEC;color:var(--red);display:grid;place-items:center;flex:none}
+.hur b{flex:1;font-weight:600;line-height:1.25}
+.btn-red{min-height:44px;padding:0 14px;border:0;border-radius:10px;background:var(--red);color:#fff;font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+.count{min-width:22px;height:22px;border-radius:11px;background:#fff;color:var(--red);font-weight:700;font-size:13px;line-height:22px;text-align:center;padding:0 6px}
+.alert{display:flex;align-items:center;gap:8px;width:calc(100% - 32px);min-height:44px;margin:0 16px;padding:12px 10px 12px 14px;background:var(--sand);border:0;border-radius:14px;text-align:left}
+.alert .t{flex:1}
+.alert b{display:block;font-weight:600}
+.alert span span{font-size:14px}
+
+.claim{display:flex;justify-content:space-between;align-items:center;padding:14px}
+.claim .line{margin-top:10px}
+.claim b{display:block;font-weight:600}
+.small{color:var(--muted);font-size:14px;margin-top:6px}
+.disc{width:64px;height:64px;border-radius:50%;background:var(--sand);display:grid;place-items:center;color:var(--slate);flex:none}
+.disc .ic{width:30px;height:30px}
+.bill{padding:14px}
+.bill-top{display:flex;justify-content:space-between;align-items:center}
+.amt{font-weight:700;font-size:24px}
+.view{min-height:44px;min-width:44px;background:none;border:0;color:var(--red);font-weight:500;text-align:right}
+.lastpaid{display:flex;justify-content:space-between;background:#EEF0F3;border-radius:8px;padding:8px 12px;font-size:14px;margin-top:10px}
+.policy{padding:14px}
+.policy+.policy{border-top:1px solid var(--line)}
+.policy div{margin-top:8px}
+.linkrow{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;color:var(--red);font-weight:600;border:0;border-top:1px solid var(--line);background:none}
+.two{display:flex;border-top:1px solid var(--line)}
+.two button{flex:1;min-height:48px;background:none;border:0;color:var(--red);font-weight:500}
+
+.d-row{display:flex;align-items:center;gap:10px;width:calc(100% - 32px);min-height:48px;margin:10px 16px 0;padding:6px 10px 6px 12px;background:#fff;border:1px solid var(--line);border-radius:12px;text-align:left;font-weight:600;font-size:14px}
+.d-row .t{flex:1}
+.d-row .lead{color:var(--red)}
+.d-row.tall{min-height:56px;font-size:15px}
+.hi{margin:12px 16px 8px}
+.hi b{font-weight:600;font-size:17px;display:block}
+.hi span{color:var(--muted)}
+.stats{display:flex;justify-content:space-around;padding:12px 8px 6px}
+.stats div{display:flex;align-items:center;gap:8px;line-height:1.15}
+.stats b{display:block;font-weight:600;font-size:17px}
+.stats span span{color:var(--muted);font-size:14px}
+.score{display:grid;grid-template-columns:26px 1fr 32px 16px;align-items:center;gap:4px 10px;width:100%;min-height:56px;padding:6px 12px;border:0;background:none;text-align:left}
+.score>.ic{grid-row:1 / 3}
+.score .lbl{grid-column:2;font-weight:500}
+.score .bar{grid-column:2;height:7px;border-radius:4px;background:#E6E8EB;position:relative;overflow:hidden}
+.score .bar i{position:absolute;inset:0 auto 0 0;background:#9AA0AA;border-radius:4px}
+.score .num{grid-column:3;grid-row:1 / 3;text-align:right;font-weight:600}
+.score .chev{grid-column:4;grid-row:1 / 3;width:16px;height:16px}
+
+.art{display:block;width:100%;height:72px;background:var(--sand);border-radius:13px 13px 0 0}
+.claim.flush{padding-top:12px}
+.know{display:block;width:calc(100% - 32px);margin:0 16px;padding:12px 10px 12px 14px;background:var(--sand);border:0;border-radius:14px;text-align:left}
+.know .row{display:flex;justify-content:space-between;align-items:center}
+.know b{font-weight:600}
+.dots{display:flex;gap:6px;justify-content:center;margin:10px 0 0}
+.dots i{width:7px;height:7px;border-radius:50%;background:#D3D6DC}
+.dots i:first-child{background:#8A909B}
+.btn-block{display:block;width:calc(100% - 32px);height:52px;margin:12px 16px 0;border:0;border-radius:12px;background:var(--red);color:#fff;font-weight:600;font-size:16px}
+
+.tabbar{flex:none;height:83px;padding-bottom:34px;display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border-top:1px solid var(--line)}
+.tab{border:0;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-weight:500;font-size:13px;line-height:1.1;white-space:nowrap;letter-spacing:-.1px;transition:color var(--dur)}
+.tab.on{color:var(--red);font-weight:600}
+.tab .ic{width:26px;height:26px;stroke-width:1.5}
+
+.overlay{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;padding-top:54px;background:#fff;transform:translateX(100%);visibility:hidden;transition:transform var(--dur) var(--ease),visibility 0s linear var(--dur)}
+.overlay.on{transform:none;visibility:visible;transition:transform var(--dur) var(--ease),visibility 0s}
+.back{color:var(--ink)}
+
+.chead{flex:none;padding:0 12px 12px;background:#fff}
+.ctop{display:flex;align-items:center;gap:2px;min-height:52px;margin:0 0 8px -6px}
+.ctitle strong{display:block;font-weight:600;font-size:17px;line-height:1.2}
+.tag{display:inline-block;margin-top:3px;padding:1px 8px;border-radius:6px;background:#ECEEF1;color:var(--slate);font-weight:500;font-size:13px;line-height:18px;transition:background var(--dur),color var(--dur)}
+.tag.person{background:var(--ok-bg);color:var(--ok-ink)}
+.call911{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:56px;border:0;border-radius:12px;background:var(--call);color:#fff;font-weight:600;font-size:17px;line-height:1;box-shadow:0 2px 0 #8F1C1C}
+.call911 .ic{fill:#fff;stroke:#fff;stroke-width:1}
+.call911.alarm{outline:3px solid var(--call);outline-offset:3px;animation:ring 560ms var(--ease) 3}
+@keyframes ring{50%{outline-offset:7px}}
+
+.msgs{flex:1;min-height:0;overflow-y:auto;background:var(--app);padding:14px 12px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.m{padding:9px 12px;border-radius:16px;overflow-wrap:anywhere}
+.m.bot{align-self:flex-start;max-width:82%;background:#fff;border:1px solid var(--line);border-bottom-left-radius:5px}
+.wrap-me{align-self:flex-end;max-width:82%;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.m.me{background:var(--storm);color:#fff;border-bottom-right-radius:5px}
+.wrap-bot{align-self:flex-start;max-width:82%;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.wrap-bot .m.bot{max-width:none}
+.who{font-weight:600;font-size:13px}
+.ftag{display:inline-flex;align-items:center;gap:4px;font-weight:500;font-size:13px;color:var(--muted)}
+.in{animation:rise var(--dur) var(--ease)}
+.sys{align-self:stretch;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 12px;background:#fff;border:1px solid var(--line);border-radius:12px;font-weight:600;font-size:14px}
+.sys .ic{color:var(--slate)}
+.sys .grow{flex:1}
+.pill{padding:4px 10px;border-radius:999px;font-weight:600;font-size:13px;white-space:nowrap;transition:background var(--dur),color var(--dur)}
+.s0{background:#ECEEF1;color:#2F3640}
+.s1{background:#FFF1CC;color:#6B4700}
+.s2{background:#DFECFB;color:#134A82}
+.s3{background:var(--ok-bg);color:var(--ok-ink)}
+.outline{min-height:44px;padding:0 12px;border:1px solid #BFC4CC;border-radius:10px;background:#fff;font-weight:600;font-size:14px;white-space:nowrap}
+.divider{align-self:stretch;display:flex;align-items:center;gap:8px;margin:8px 0;font-weight:600;font-size:13px;white-space:nowrap}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:#B4BAC4}
+.agent{align-self:flex-start;max-width:88%;display:grid;grid-template-columns:32px 1fr;gap:3px 8px}
+.avatar{grid-row:1 / 3;width:32px;height:32px;border-radius:50%;background:#2F6B5E;color:#fff;font-weight:600;font-size:13px;line-height:32px;text-align:center}
+.agent .m{justify-self:start;background:var(--sand);border-bottom-left-radius:5px}
+.tile{display:block;width:184px;height:116px;border-radius:12px;overflow:hidden}
+.typing{display:flex;gap:5px;align-items:center;height:38px;padding:0 14px}
+.typing[hidden]{display:none!important}
+.typing i{width:7px;height:7px;border-radius:50%;background:#9AA0AA;animation:blink 900ms infinite}
+.typing i:nth-child(2){animation-delay:150ms}
+.typing i:nth-child(3){animation-delay:300ms}
+@keyframes blink{0%,60%,100%{opacity:.35}30%{opacity:1}}
+.chips{flex:none;display:flex;gap:8px;padding:8px 12px 0;background:#fff}
+.chips:empty{display:none}
+.chip{min-height:44px;padding:0 14px;border:1px solid #BFC4CC;border-radius:22px;background:#fff;font-weight:600;font-size:14px;white-space:nowrap}
+.comp{flex:none;display:flex;align-items:center;gap:2px;padding:8px 8px 40px;background:#fff}
+.comp input{flex:1;min-width:0;height:44px;margin:0 4px;border:1px solid var(--line);border-radius:22px;padding:0 14px;background:var(--app);font:400 15px var(--font);color:var(--ink)}
+.comp .iconbtn{color:var(--slate)}
+.comp .send{background:var(--storm);color:#fff}
+
+.shead{flex:none;display:flex;align-items:center;gap:8px;min-height:60px;padding:0 12px 0 6px;border-bottom:1px solid var(--line)}
+.shead strong{display:block;font-weight:600;font-size:17px;line-height:1.2}
+.shead span span{color:var(--muted);font-size:13px}
+.savatar{width:36px;height:36px;border-radius:50%;background:#DDE1E7;display:grid;place-items:center;color:#4A5362;flex:none}
+.thread{flex:1;min-height:0;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:8px}
+.slabel{font-weight:500;font-size:13px;color:var(--muted);text-align:center;margin-bottom:4px}
+.sb{max-width:78%;padding:9px 13px;border-radius:18px}
+.sb.recv{align-self:flex-start;background:#E9ECF0;border-bottom-left-radius:6px}
+.sb.sent{align-self:flex-end;background:#2F6B5E;color:#fff;border-bottom-right-radius:6px}
+.openapp{flex:none;display:flex;align-items:center;gap:10px;min-height:56px;margin:0 12px 8px;padding:0 10px 0 12px;border:1px solid var(--line);border-radius:12px;background:#fff;font-weight:600;text-align:left}
+.openapp .t{flex:1}
+.sms-comp{flex:none;display:flex;align-items:center;gap:8px;padding:0 12px 40px}
+.fake{flex:1;height:44px;border-radius:22px;background:#EFF1F4;display:flex;align-items:center;padding:0 16px;color:var(--muted)}
+
+.toast{position:absolute;left:50%;bottom:98px;transform:translate(-50%,8px);background:rgba(18,38,63,.95);color:#fff;font-weight:500;font-size:14px;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;white-space:nowrap;z-index:60;transition:opacity var(--dur),transform var(--dur)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.in-chat .toast{bottom:auto;top:188px}
+
+@media (max-width:1120px){.page{grid-template-columns:280px minmax(0,1fr)}}
+@media (max-width:760px){
+  .page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .rail{max-height:46vh;border-right:0;border-bottom:1px solid #D6D9DF}
+  .links{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms!important;transition-delay:0s!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="9.6" r="3"/><path d="M6.6 18.4a6.4 6.4 0 0 1 10.8 0"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path fill="currentColor" stroke="currentColor" d="M12 3.5 2.6 20h18.8L12 3.5z"/><path stroke="#12263F" stroke-width="2.2" d="M12 10v4.6M12 17.6h.01"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16 9.5"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h3.5l1.7 4.5-2.2 1.6a12.5 12.5 0 0 0 5.9 5.9l1.6-2.2L20 15.5V19a1.5 1.5 0 0 1-1.6 1.5C10.6 20 4 13.4 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3.4L9 5.5h6L16.6 8H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-overview" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9.5h8M8 13h8M8 16.5h5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 5 6v6c0 4.3 3 7.2 7 8.5 4-1.3 7-4.2 7-8.5V6l-7-2.5z"/><path d="M12 8v8"/></symbol>
+  <symbol id="i-road" viewBox="0 0 24 24"><path d="M8.5 4 4.5 20M15.5 4l4 16M12 5v3M12 11v3M12 17v3"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="16" rx="2"/><rect x="9" y="3" width="6" height="3.5" rx="1"/><path d="M8.5 11h7M8.5 14.5h7"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3.5 9.5 12 4l8.5 5.5h-17zM6 9.5v8M10 9.5v8M14 9.5v8M18 9.5v8M4 20.5h16"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 15.5h14M6.5 11l1.4-4h8.2l1.4 4M4 15.5v-2A2.5 2.5 0 0 1 6.5 11h11a2.5 2.5 0 0 1 2.5 2.5v2M6 15.5v3M18 15.5v3"/></symbol>
+  <symbol id="i-house" viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5M6.5 10v9.5h11V10M10 19.5v-5h4v5"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
+  <symbol id="i-storm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" stroke-width="2.2"/><path stroke-width="2.2" d="M8.4 12C8.4 7.4 12 4.4 18.2 3.8M15.6 12c0 4.6-3.6 7.6-9.8 8.2"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A1.5 1.5 0 0 1 4 14.5v-8z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0-5.2 5.2L4 17l3 3 5.3-5.3a4 4 0 0 0 5.2-5.2l-2.7 2.7-2.3-.6-.6-2.3 2.6-2.8z"/></symbol>
+  <symbol id="i-brake" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 8.5v7M14.5 8.5v7"/></symbol>
+  <symbol id="i-accel" viewBox="0 0 24 24"><path d="M5 19 19 5M10 5h9v9"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8.5 8.5 0 1 1 16 0"/><path d="M12 14l4-5"/></symbol>
+  <symbol id="i-turn" viewBox="0 0 24 24"><path d="M6 20v-8a4 4 0 0 1 4-4h9M15 4l4 4-4 4"/></symbol>
+  <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M4 6.5 9 4.5l6 2 5-2V18l-5 2-6-2-5 2V6.5zM9 4.5V18M15 6.5V20"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2"/><circle cx="18" cy="17.5" r="2"/><path d="M8 6.5h8a3 3 0 0 1 0 6H8a3 3 0 0 0 0 6h8"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4h11l-2 4 2 4H6"/></symbol>
+</svg>
+
+<div class="page">
+  <aside class="rail">
+    <div class="rail-body">
+      <h2>Saviu</h2>
+      <div class="seg" role="group" aria-label="Scenario">
+        <button data-mode="normal">Normal day</button>
+        <button data-mode="disaster">After a disaster</button>
+      </div>
+      <nav class="links" aria-label="Screens">
+        <button data-go="overview">Overview</button>
+        <button data-go="insurance">Insurance</button>
+        <button data-go="safe">Safe &amp; Save</button>
+        <button data-go="claims">Claims</button>
+        <button data-go="finances">Finances</button>
+        <button data-go="chat">Chat</button>
+        <button data-go="sms">Text message</button>
+      </nav>
+      <div class="sim">
+        <button id="railReferral" disabled>Referral status</button>
+        <button id="railAdjuster">Adjuster assigned</button>
+        <button id="railReset">Start over</button>
+      </div>
+    </div>
+    <p class="strip">Concept prototype for the State Farm challenge. Not the State Farm app.</p>
+  </aside>
+
+  <main class="stage">
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar" aria-hidden="true">
+          <span>2:41</span>
+          <span class="notch"></span>
+          <span class="sb-icons">
+            <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx=".8"/><rect x="5" y="5.5" width="3" height="6.5" rx=".8"/><rect x="10" y="3" width="3" height="9" rx=".8"/><rect x="15" y="0" width="3" height="12" rx=".8"/></svg>
+            <svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M1.5 4.2a10 10 0 0 1 14 0M4.2 7a6.2 6.2 0 0 1 8.6 0"/><circle cx="8.5" cy="10" r=".7" fill="currentColor"/></svg>
+            <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x=".6" y=".6" width="22" height="10.8" rx="3" stroke="currentColor" stroke-width="1.2" opacity=".55"/><rect x="2.2" y="2.2" width="17" height="7.6" rx="1.6" fill="currentColor"/><rect x="24" y="4" width="1.8" height="4" rx=".9" fill="currentColor" opacity=".55"/></svg>
+          </span>
+        </div>
+
+        <section class="shell">
+          <div class="banner-wrap"><div class="banner-clip">
+            <button class="banner" data-chat id="banner">
+              <svg class="ic lead"><use href="#i-warn" id="bannerIcon"></use></svg>
+              <span class="t" id="bannerText">Are you OK? Tell us how you're doing</span>
+              <svg class="ic"><use href="#i-chev"></use></svg>
+            </button>
+          </div></div>
+
+          <div class="tabviews">
+            <div class="tabview" data-tab="overview">
+              <div class="top">
+                <span data-logo><span class="mark" role="img" aria-label="Placeholder mark"></span></span>
+                <div class="topicons">
+                  <button class="iconbtn" data-noop aria-label="Voice"><svg class="ic"><use href="#i-mic"></use></svg></button>
+                  <button class="iconbtn" data-noop aria-label="Profile"><svg class="ic"><use href="#i-user"></use></svg></button>
+                </div>
+              </div>
+              <h1 class="h1">Good afternoon</h1>
+              <p class="sec">Alerts</p>
+              <div class="card hur d-only">
+                <span class="round"><svg class="ic"><use href="#i-storm"></use></svg></span>
+                <b>Hurricane in your area</b>
+                <button class="btn-red" data-chat><span id="hurLabel">Check in</span><span class="count" id="unread" hidden></span></button>
+              </div>
+              <button class="alert" data-noop>
+                <span class="t"><b>Signature required</b><span>Sign your claim document by Dec 7.</span></span>
+                <svg class="ic chev"><use href="#i-chev"></use></svg>
+              </button>
+              <p class="sec">Open claim</p>
+              <div class="card claim">
+                <div>
+                  <span class="ptag"><svg class="ic ic-s"><use href="#i-car"></use></svg>Auto claim</span>
+                  <div class="line">2019 Sample Sedan</div>
+                  <b>Repairs in progress</b>
+                  <div class="small">Claim #: 00-0000-000</div>
+                </div>
+                <span class="disc"><svg class="ic"><use href="#i-wrench"></use></svg></span>
+              </div>
+              <p class="sec">Upcoming bills</p>
+              <div class="card bill">
+                <div class="bill-top"><span class="amt">$48.20</span><button class="view" data-noop>View</button></div>
+                <div>Due Dec 22</div>
+                <div>Life</div>
+                <div class="small" style="margin-top:0">Doe, Jane</div>
+                <div class="lastpaid"><span>Last paid Nov 22</span><span>$48.20</span></div>
+              </div>
+            </div>
+
+            <div class="tabview" data-tab="insurance">
+              <div class="top">
+                <div class="topicons">
+                  <button class="iconbtn" data-noop aria-label="Voice"><svg class="ic"><use href="#i-mic"></use></svg></button>
+                  <button class="iconbtn" data-noop aria-label="Profile"><svg class="ic"><use href="#i-user"></use></svg></button>
+                </div>
+              </div>
+              <h1 class="h1">Insurance</h1>
+              <p class="sec">Policies</p>
+              <div class="card">
+                <div class="policy"><span class="ptag"><svg class="ic ic-s"><use href="#i-car"></use></svg>Auto</span><div>2019 Sample Sedan</div></div>
+                <div class="policy"><span class="ptag"><svg class="ic ic-s"><use href="#i-house"></use></svg>Homeowners</span><div>12 Example St</div></div>
+                <div class="policy"><span class="ptag"><svg class="ic ic-s"><use href="#i-heart"></use></svg>Life</span><div>Doe, Jane</div></div>
+                <button class="linkrow" data-noop><svg class="ic ic-s"><use href="#i-doc"></use></svg>Start a quote</button>
+              </div>
+              <p class="sec">Billing and payments</p>
+              <div class="card">
+                <div class="bill">
+                  <div class="bill-top"><span class="amt">$48.20</span><button class="view" data-noop>View</button></div>
+                  <div>Due Dec 22</div>
+                  <div>Life</div>
+                </div>
+                <div class="two"><button data-noop>Payment methods</button><button data-noop>History</button></div>
+              </div>
+            </div>
+
+            <div class="tabview" data-tab="safe">
+              <div class="top">
+                <div class="topicons">
+                  <button class="iconbtn" data-noop aria-label="Voice"><svg class="ic"><use href="#i-mic"></use></svg></button>
+                  <button class="iconbtn" data-noop aria-label="Profile"><svg class="ic"><use href="#i-user"></use></svg></button>
+                </div>
+              </div>
+              <h1 class="h1">Safe &amp; Save</h1>
+              <button class="d-row d-only" data-chat style="margin-top:8px">
+                <svg class="ic ic-s lead"><use href="#i-storm"></use></svg>
+                <span class="t">Hurricane check-in</span>
+                <svg class="ic ic-s"><use href="#i-chev"></use></svg>
+              </button>
+              <div class="hi"><b>Hi, Jane</b><span>Last 14 days</span></div>
+              <div class="card">
+                <div class="stats">
+                  <div><svg class="ic"><use href="#i-map"></use></svg><span><b>5</b><span>Trips</span></span></div>
+                  <div><svg class="ic"><use href="#i-route"></use></svg><span><b>41</b><span>Miles</span></span></div>
+                </div>
+                <button class="score" data-noop><svg class="ic"><use href="#i-brake"></use></svg><span class="lbl">Braking</span><span class="bar"><i style="width:72%"></i></span><span class="num">72</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+                <button class="score" data-noop><svg class="ic"><use href="#i-accel"></use></svg><span class="lbl">Acceleration</span><span class="bar"><i style="width:84%"></i></span><span class="num">84</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+                <button class="score" data-noop><svg class="ic"><use href="#i-gauge"></use></svg><span class="lbl">Speed limit</span><span class="bar"><i style="width:79%"></i></span><span class="num">79</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+                <button class="score" data-noop><svg class="ic"><use href="#i-turn"></use></svg><span class="lbl">Turning</span><span class="bar"><i style="width:96%"></i></span><span class="num">96</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+                <button class="score" data-noop><svg class="ic"><use href="#i-mobile"></use></svg><span class="lbl">Phone use</span><span class="bar"><i style="width:66%"></i></span><span class="num">66</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
+              </div>
+            </div>
+
+            <div class="tabview" data-tab="claims">
+              <div class="top">
+                <div class="topicons">
+                  <button class="iconbtn" data-noop aria-label="Voice"><svg class="ic"><use href="#i-mic"></use></svg></button>
+                  <button class="iconbtn" data-noop aria-label="Profile"><svg class="ic"><use href="#i-user"></use></svg></button>
+                </div>
+              </div>
+              <h1 class="h1">Claims</h1>
+              <p class="sec">Current claim</p>
+              <div class="card">
+                <svg class="art" viewBox="0 0 358 72" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+                  <rect x="0" y="60" width="358" height="12" fill="#E7DBC4"/>
+                  <rect x="40" y="26" width="44" height="34" fill="#EADFCB"/>
+                  <path d="M34 28 62 8l28 20z" fill="#DCCDB1"/>
+                  <rect x="112" y="34" width="34" height="26" fill="#EFE6D6"/>
+                  <path d="M108 36 129 20l21 16z" fill="#E2D5BD"/>
+                  <circle cx="290" cy="30" r="22" fill="#fff"/>
+                  <path d="M297 20a8 8 0 0 0-10.4 10.4L276 41l6 6 10.6-10.6A8 8 0 0 0 303 26l-5.4 5.4-4.6-1.2-1.2-4.6z" fill="#3C4654"/>
+                </svg>
+                <div class="claim flush">
+                  <div>
+                    <span class="ptag"><svg class="ic ic-s"><use href="#i-car"></use></svg>Auto claim</span>
+                    <div class="line">2019 Sample Sedan</div>
+                    <b>Repairs in progress</b>
+                    <div class="small">Claim #: 00-0000-000</div>
+                  </div>
+                </div>
+              </div>
+              <p class="sec">What to know</p>
+              <button class="know" data-noop>
+                <span class="row"><b>What happens next?</b><svg class="ic ic-s"><use href="#i-chev"></use></svg></span>
+                <span>Your repair shop posts updates here.</span>
+              </button>
+              <div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+              <button class="btn-block" data-noop>File a new claim</button>
+              <button class="d-row tall d-only" data-chat>
+                <svg class="ic ic-s lead"><use href="#i-house"></use></svg>
+                <span class="t">Damage from the storm? Tell us here</span>
+                <svg class="ic ic-s"><use href="#i-chev"></use></svg>
+              </button>
+            </div>
+
+            <div class="tabview" data-tab="finances">
+              <div class="top">
+                <div class="topicons">
+                  <button class="iconbtn" data-noop aria-label="Voice"><svg class="ic"><use href="#i-mic"></use></svg></button>
+                  <button class="iconbtn" data-noop aria-label="Profile"><svg class="ic"><use href="#i-user"></use></svg></button>
+                </div>
+              </div>
+              <h1 class="h1">Finances</h1>
+              <p class="sec">Bills</p>
+              <div class="card bill" style="margin-bottom:10px">
+                <div class="bill-top"><span class="amt">$48.20</span><button class="view" data-noop>View</button></div>
+                <div>Due Dec 22</div>
+                <div>Life</div>
+                <div class="small" style="margin-top:0">Doe, Jane</div>
+                <div class="lastpaid"><span>Last paid Nov 22</span><span>$48.20</span></div>
+              </div>
+              <div class="card bill">
+                <div class="bill-top"><span class="amt">$131.75</span><button class="view" data-noop>View</button></div>
+                <div>Due Jan 6</div>
+                <div>Homeowners</div>
+                <div class="small" style="margin-top:0">12 Example St</div>
+                <div class="lastpaid"><span>Last paid Oct 6</span><span>$131.75</span></div>
+              </div>
+            </div>
+          </div>
+
+          <nav class="tabbar" aria-label="Sections">
+            <button class="tab" data-go="overview"><svg class="ic"><use href="#i-overview"></use></svg>Overview</button>
+            <button class="tab" data-go="insurance"><svg class="ic"><use href="#i-shield"></use></svg>Insurance</button>
+            <button class="tab" data-go="safe"><svg class="ic"><use href="#i-road"></use></svg>Safe &amp; Save</button>
+            <button class="tab" data-go="claims"><svg class="ic"><use href="#i-clip"></use></svg>Claims</button>
+            <button class="tab" data-go="finances"><svg class="ic"><use href="#i-bank"></use></svg>Finances</button>
+          </nav>
+        </section>
+
+        <section class="overlay" id="chat" aria-label="Disaster check-in">
+          <header class="chead">
+            <div class="ctop">
+              <button class="iconbtn back" data-back aria-label="Back"><svg class="ic"><use href="#i-back"></use></svg></button>
+              <div class="ctitle">
+                <strong>Disaster check-in</strong>
+                <span class="tag" id="chatTag">Automated assistant</span>
+              </div>
+            </div>
+            <button class="call911" id="call911"><svg class="ic"><use href="#i-phone"></use></svg>Call 911</button>
+          </header>
+          <div class="msgs" id="log" role="log" aria-live="polite">
+            <div class="m bot typing" id="typing" aria-hidden="true" hidden><i></i><i></i><i></i></div>
+          </div>
+          <div class="chips" id="chips"></div>
+          <div class="comp">
+            <button class="iconbtn" id="addPhoto" aria-label="Add a photo"><svg class="ic"><use href="#i-camera"></use></svg></button>
+            <button class="iconbtn" id="addLocation" aria-label="Share location"><svg class="ic"><use href="#i-pin"></use></svg></button>
+            <input id="text" type="text" placeholder="Message" autocomplete="off" aria-label="Message">
+            <button class="iconbtn send" id="send" aria-label="Send"><svg class="ic"><use href="#i-send"></use></svg></button>
+          </div>
+        </section>
+
+        <section class="overlay" id="sms" aria-label="Text message">
+          <header class="shead">
+            <button class="iconbtn back" data-back aria-label="Back"><svg class="ic"><use href="#i-back"></use></svg></button>
+            <span class="savatar"><svg class="ic ic-s"><use href="#i-msg"></use></svg></span>
+            <span><strong>Insurer alerts</strong><span>Text message</span></span>
+          </header>
+          <div class="thread">
+            <p class="slabel">Today 2:12 PM, automated</p>
+            <div class="sb recv">Are you OK? Reply with how you and your home are doing, or open the app to send photos.</div>
+            <div class="sb sent" id="smsReply">We're OK. Power is out.</div>
+          </div>
+          <button class="openapp" data-go="chat">
+            <svg class="ic"><use href="#i-mobile"></use></svg>
+            <span class="t">Open the app</span>
+            <svg class="ic ic-s"><use href="#i-chev"></use></svg>
+          </button>
+          <div class="sms-comp">
+            <div class="fake">Text message</div>
+            <span class="iconbtn"><svg class="ic" style="color:#8A909B"><use href="#i-send"></use></svg></span>
+          </div>
+        </section>
+
+        <div class="homebar" aria-hidden="true"></div>
+        <div class="toast" id="toast" role="status"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const LOGO_URL = '';
+
+(function () {
+  'use strict';
+
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const root = document.documentElement;
+
+  const TABS = ['overview', 'insurance', 'safe', 'claims', 'finances'];
+  const VIEWS = TABS.concat(['chat', 'sms']);
+  const STEPS = ['Referral created', 'Sent to 911', 'Acknowledged', 'Resolved'];
+  const NEXT = ['Mark sent to 911', 'Mark acknowledged', 'Mark resolved'];
+  const CHIPS = {
+    start: ["We're OK", 'Need help', 'Not home'],
+    damage: ['None', 'Minor', 'Severe', "Can't tell"],
+    human: ['When can you come?']
+  };
+  const SMS_REPLY = $('#smsReply').textContent;
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const WAIT = calm ? 120 : 620;
+
+  const fresh = () => ({
+    answered: false, unread: 0, referral: -1, human: false,
+    awaitingDamage: false, checkedIn: false, smsMerged: false
+  });
+  const state = Object.assign({ view: 'overview', lastTab: 'overview', disaster: false }, fresh());
+
+  const log = $('#log');
+  const typing = $('#typing');
+  const chipsBox = $('#chips');
+  const call = $('#call911');
+  let instant = true;
+  let run = 0;
+  let chain = Promise.resolve();
+  let toastTimer = 0;
+
+  /* mock */
+  const RX = {
+    danger: /\b(trapped|hurt|gas|oxygen|help|ayuda)\b|救命/i,
+    coverage: /\b(cover|covered|coverage|pay|pays|payment|deductible)\b|claim amount/i,
+    notHome: /\b(not home|not at home|away|evacuated)\b/i,
+    ok: /\b(ok|okay|fine|safe|alright)\b/i,
+    damage: /\b(damage|damaged|roof|window|windows|flood|flooded|water|leak|leaking|tree|broken|wall|fence|mold)\b/i
+  };
+
+  function damageLevel(t) {
+    if (/\b(none|nothing|no damage|no)\b/.test(t)) return 'none';
+    if (/can'?t tell|not sure|unsure|don'?t know/.test(t)) return 'unknown';
+    if (/\b(severe|bad|destroyed|gone)\b/.test(t)) return 'severe';
+    if (/\b(minor|small|little)\b/.test(t)) return 'minor';
+    if (RX.damage.test(t)) return 'minor';
+    return null;
+  }
+
+  function route(t) {
+    if (RX.danger.test(t)) return onDanger();
+    if (state.human) return onHuman(t);
+    if (state.awaitingDamage) {
+      const level = damageLevel(t);
+      if (level) return onDamage(level);
+    }
+    if (RX.coverage.test(t)) return onCoverage();
+    if (RX.notHome.test(t)) return onNotHome();
+    if (RX.ok.test(t) || RX.damage.test(t)) return onOk(t);
+    return onUnknown();
+  }
+
+  function say(text) { return () => add({ kind: 'bot', text }); }
+  function sam(text) { return () => add({ kind: 'agent', text }); }
+  function now(fn) { fn.quiet = true; return fn; }
+
+  function steps(list) {
+    if (instant) { list.forEach(f => f()); return; }
+    const mine = run;
+    list.forEach(f => {
+      chain = chain.then(() => new Promise(done => {
+        if (mine !== run) return done();
+        if (!f.quiet) setTyping(true);
+        setTimeout(() => {
+          if (mine === run) { setTyping(false); f(); }
+          done();
+        }, f.quiet ? 200 : WAIT);
+      }));
+    });
+  }
+
+  function onDanger() {
+    steps([
+      say('If anyone is in danger, call 911 now.'),
+      now(() => {
+        alarm(true);
+        if (state.referral < 0) { state.referral = 0; add({ kind: 'referral' }); paint(); }
+      })
+    ]);
+  }
+
+  function onHuman(t) {
+    const asked = /\b(when|how long|come|arrive)\b/.test(t);
+    steps([sam(asked ? "I don't have a date yet. I'll update you here." : "Thanks. I've added that to your file.")]);
+  }
+
+  function onOk(t) {
+    if (state.checkedIn) { steps([say("You're checked in. We have your update.")]); return; }
+    state.awaitingDamage = true;
+    steps([
+      say(RX.ok.test(t) ? "Glad you're OK." : 'Thanks for telling us.'),
+      say('Any damage to your home?'),
+      now(() => setChips('damage'))
+    ]);
+  }
+
+  function onDamage(level) {
+    state.awaitingDamage = false;
+    state.checkedIn = true;
+    const list = [say("Thanks. You're checked in.")];
+    if (level !== 'none') list.push(now(() => add({ kind: 'inspect' })));
+    steps(list);
+  }
+
+  function onNotHome() {
+    state.checkedIn = true;
+    steps([say("Thanks. We'll mark your home as not inspected yet.")]);
+  }
+
+  function onCoverage() {
+    steps([
+      say('A person will answer coverage questions.'),
+      now(() => add({ kind: 'care' }))
+    ]);
+  }
+
+  function onUnknown() {
+    steps([say('Sorry, I missed that. Are you OK?'), now(() => setChips('start'))]);
+  }
+
+  function ack(text) {
+    steps([state.human ? sam('Got it. Thanks.') : say(text)]);
+  }
+
+  function userSays(raw, opts) {
+    const text = raw.trim();
+    if (!text) return;
+    setChips(null);
+    add({ kind: 'me', text, fromText: !!(opts && opts.fromText) });
+    state.answered = true;
+    paint();
+    route(text.toLowerCase().replace(/[‘’]/g, "'"));
+  }
+
+  function attach(type) {
+    add({ kind: 'me', attach: type });
+    ack(type === 'photo' ? 'Photo received.' : 'Location received.');
+  }
+
+  function adjusterAssigned() {
+    if (state.human || !state.disaster) return;
+    state.human = true;
+    state.awaitingDamage = false;
+    setChips(null);
+    add({ kind: 'divider', text: "You're now chatting with a person" });
+    add({ kind: 'agent', text: 'Hi Jane, this is Sam. I have your check-in.' });
+    setChips('human');
+    paint();
+  }
+
+  function setReferral(i) {
+    if (state.referral < 0) return;
+    state.referral = Math.max(0, Math.min(3, i));
+    const pill = $('#refPill');
+    if (pill) { pill.textContent = STEPS[state.referral]; pill.className = 'pill s' + state.referral; }
+    if (state.referral >= 3) alarm(false);
+    bump();
+    paint();
+  }
+
+  function smsMerge() {
+    if (state.smsMerged) return;
+    state.smsMerged = true;
+    userSays(SMS_REPLY, { fromText: true });
+  }
+
+  function alarm(on) { call.classList.toggle('alarm', on); }
+
+  function svgIcon(name, extra) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('class', 'ic' + (extra ? ' ' + extra : ''));
+    const u = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    u.setAttribute('href', '#i-' + name);
+    s.appendChild(u);
+    return s;
+  }
+
+  function node(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function tile(type) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const s = document.createElementNS(ns, 'svg');
+    s.setAttribute('class', 'tile');
+    s.setAttribute('viewBox', '0 0 184 116');
+    s.setAttribute('role', 'img');
+    s.setAttribute('aria-label', type === 'photo' ? 'Mock photo' : 'Mock location');
+    s.innerHTML = type === 'photo'
+      ? '<rect width="184" height="116" fill="#BFCBD9"/><rect y="84" width="184" height="32" fill="#8FA08B"/><rect x="52" y="52" width="80" height="48" fill="#E9E4DA"/><path d="M42 54 92 20l50 34z" fill="#76808F"/><path d="M104 34l10 8-6 6 8 8" fill="none" stroke="#12263F" stroke-width="2.5"/>'
+      : '<rect width="184" height="116" fill="#E8EDE5"/><path d="M0 40h184M0 84h184M56 0v116M128 0v116" stroke="#fff" stroke-width="7"/><path d="M0 104C50 90 90 112 184 70" stroke="#BFD8EA" stroke-width="12" fill="none"/><path d="M92 74s18-16 18-30a18 18 0 0 0-36 0c0 14 18 30 18 30z" fill="#12263F"/><circle cx="92" cy="44" r="6.5" fill="#fff"/>';
+    return s;
+  }
+
+  function render(m) {
+    switch (m.kind) {
+      case 'bot': {
+        const b = node('div', 'm bot', m.text);
+        if (!state.human) return b;
+        const w = node('div', 'wrap-bot');
+        w.append(node('span', 'who', 'Automated assistant'), b);
+        return w;
+      }
+      case 'me': {
+        const w = node('div', 'wrap-me');
+        if (m.attach) w.append(tile(m.attach));
+        else w.append(node('div', 'm me', m.text));
+        if (m.fromText) {
+          const f = node('span', 'ftag');
+          f.append(svgIcon('msg', 'ic-s'), 'From text');
+          w.append(f);
+        }
+        return w;
+      }
+      case 'agent': {
+        const w = node('div', 'agent');
+        w.append(node('span', 'avatar', 'SR'), node('span', 'who', 'Sam R., your adjuster'), node('div', 'm', m.text));
+        return w;
+      }
+      case 'divider':
+        return node('div', 'divider', m.text);
+      case 'referral': {
+        const r = node('div', 'sys');
+        const p = node('span', 'pill s' + state.referral, STEPS[state.referral]);
+        p.id = 'refPill';
+        r.append(svgIcon('flag'), node('span', 'grow', 'Referral'), p);
+        return r;
+      }
+      case 'care': {
+        const r = node('div', 'sys');
+        r.append(svgIcon('person'), node('span', 'grow', 'Connected to customer care'));
+        return r;
+      }
+      case 'inspect': {
+        const r = node('div', 'sys');
+        const b = node('button', 'outline', 'Add photos');
+        b.addEventListener('click', () => attach('photo'));
+        r.append(svgIcon('clip'), node('span', 'grow', 'Inspection requested'), b);
+        return r;
+      }
+    }
+  }
+
+  const COUNTED = { bot: 1, agent: 1, referral: 1, care: 1, inspect: 1 };
+
+  function add(m) {
+    const n = render(m);
+    if (!instant) n.classList.add('in');
+    log.insertBefore(n, typing);
+    pinLog();
+    if (COUNTED[m.kind]) bump();
+  }
+
+  function bump() {
+    if (state.view !== 'chat') { state.unread++; paint(); }
+  }
+
+  function pinLog() {
+    if (instant || calm) log.scrollTop = log.scrollHeight;
+    else log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' });
+  }
+
+  function setTyping(on) {
+    typing.hidden = !on;
+    if (on) pinLog();
+  }
+
+  function setChips(name) {
+    chipsBox.replaceChildren();
+    if (!name) return;
+    CHIPS[name].forEach(label => {
+      const c = node('button', 'chip', label);
+      c.addEventListener('click', () => userSays(label));
+      chipsBox.appendChild(c);
+    });
+  }
+
+  function seed() {
+    add({ kind: 'bot', text: 'Are you OK? Tell us how you and your home are doing.' });
+    setChips('start');
+  }
+
+  function startOver() {
+    run++;
+    chain = Promise.resolve();
+    setTyping(false);
+    alarm(false);
+    Array.from(log.children).forEach(c => { if (c !== typing) c.remove(); });
+    Object.assign(state, fresh());
+    const was = instant;
+    instant = true;
+    seed();
+    state.unread = 0;
+    instant = was;
+    if (state.view === 'sms') state.view = state.lastTab;
+    setView(state.view);
+  }
+
+  function setDisaster(on) {
+    state.disaster = on;
+    if (!on && (state.view === 'chat' || state.view === 'sms')) setView(state.lastTab);
+    else { paint(); syncHash(); }
+  }
+
+  function setView(v) {
+    if (!VIEWS.includes(v)) v = 'overview';
+    if (v === 'chat' || v === 'sms') state.disaster = true;
+    if (TABS.includes(v)) state.lastTab = v;
+    state.view = v;
+    $$('.tabview').forEach(t => t.classList.toggle('on', t.dataset.tab === state.lastTab));
+    $$('.tab').forEach(t => {
+      const on = t.dataset.go === state.lastTab;
+      t.classList.toggle('on', on);
+      if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    });
+    $('#chat').classList.toggle('on', v === 'chat');
+    $('#sms').classList.toggle('on', v === 'sms');
+    root.classList.toggle('in-chat', v === 'chat');
+    if (v === 'chat') { state.unread = 0; log.scrollTop = log.scrollHeight; }
+    if (v === 'sms') smsMerge();
+    paint();
+    syncHash();
+  }
+
+  function paint() {
+    root.classList.toggle('disaster', state.disaster);
+    root.classList.toggle('answered', state.answered);
+    $('#bannerText').textContent = state.answered ? 'Checked in · Open chat' : "Are you OK? Tell us how you're doing";
+    $('#bannerIcon').setAttribute('href', state.answered ? '#i-ok' : '#i-warn');
+    $('#hurLabel').textContent = state.answered ? 'Open chat' : 'Check in';
+    const badge = $('#unread');
+    badge.hidden = state.unread < 1;
+    badge.textContent = state.unread;
+    $('#chatTag').textContent = state.human ? 'Sam R., your adjuster' : 'Automated assistant';
+    $('#chatTag').classList.toggle('person', state.human);
+    $$('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.mode === 'disaster') === state.disaster)));
+    $$('.links [data-go]').forEach(b => {
+      if (b.dataset.go === state.view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    const rr = $('#railReferral');
+    const live = state.disaster && state.referral >= 0 && state.referral < 3;
+    rr.disabled = !live;
+    rr.textContent = state.referral >= 3 ? 'Referral resolved' : (state.referral >= 0 ? NEXT[state.referral] : 'Referral status');
+    const ra = $('#railAdjuster');
+    ra.disabled = !state.disaster || state.human;
+  }
+
+  function syncHash() {
+    try { history.replaceState(null, '', '#' + state.view + (state.disaster ? '&disaster' : '')); } catch (e) {}
+  }
+
+  function toast(text) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('on'), 1500);
+  }
+
+  function parseHash() {
+    const parts = location.hash.replace(/^#/, '').split(/[&?]/).filter(Boolean);
+    const known = VIEWS.includes(parts[0]);
+    const flags = {};
+    parts.slice(known ? 1 : 0).forEach(p => {
+      const [k, v] = p.split('=');
+      flags[k] = v === undefined ? '1' : v;
+    });
+    return { view: known ? parts[0] : 'overview', flags };
+  }
+
+  const DEMOS = {
+    ok: ["We're OK"],
+    none: ["We're OK", 'None'],
+    damaged: ["We're OK", 'Severe'],
+    danger: ['Need help'],
+    nothome: ['Not home'],
+    coverage: ['Is my roof covered?'],
+    adjuster: ["We're OK", 'Severe', '@adjuster', 'When can you come?'],
+    sms: ['@sms']
+  };
+
+  function replay(name) {
+    (DEMOS[name] || []).forEach(step => {
+      if (step === '@adjuster') adjusterAssigned();
+      else if (step === '@sms') smsMerge();
+      else userSays(step);
+    });
+  }
+
+  function applyHash() {
+    const { view, flags } = parseHash();
+    state.disaster = !!(flags.disaster && flags.disaster !== '0');
+    setView(view);
+  }
+
+  function applyLogo() {
+    if (!LOGO_URL) return;
+    $$('[data-logo]').forEach(slot => {
+      const img = new Image();
+      img.className = 'logo';
+      img.alt = 'Logo';
+      img.onload = () => slot.replaceChildren(img);
+      img.src = LOGO_URL;
+    });
+  }
+
+  function fit() {
+    const s = $('.stage');
+    const k = Math.min(1, (s.clientHeight - 24) / 868, (s.clientWidth - 16) / 414);
+    root.style.setProperty('--fit', k.toFixed(3));
+  }
+
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.mode) return setDisaster(b.dataset.mode === 'disaster');
+    if (b.dataset.go) return setView(b.dataset.go);
+    if (b.hasAttribute('data-chat')) return setView('chat');
+    if (b.hasAttribute('data-back')) return setView(state.lastTab);
+    if (b.hasAttribute('data-noop')) return toast('Not in this preview');
+  });
+
+  call.addEventListener('click', () => toast('Demo only. No call placed.'));
+  $('#addPhoto').addEventListener('click', () => attach('photo'));
+  $('#addLocation').addEventListener('click', () => attach('location'));
+  $('#railAdjuster').addEventListener('click', adjusterAssigned);
+  $('#railReset').addEventListener('click', startOver);
+  $('#railReferral').addEventListener('click', () => setReferral(state.referral + 1));
+
+  const input = $('#text');
+  function sendTyped() {
+    const v = input.value;
+    input.value = '';
+    userSays(v);
+  }
+  $('#send').addEventListener('click', sendTyped);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendTyped(); } });
+
+  window.addEventListener('resize', fit);
+  window.addEventListener('hashchange', applyHash);
+
+  (function boot() {
+    const { view, flags } = parseHash();
+    applyLogo();
+    fit();
+    seed();
+    state.unread = 0;
+    state.disaster = !!(flags.disaster && flags.disaster !== '0') || !!flags.demo;
+    state.view = view;
+    replay(flags.demo);
+    if (flags.referral) setReferral(parseInt(flags.referral, 10) || 0);
+    setView(view);
+    instant = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('boot')));
+  })();
+})();
+</script>
+</body>
+</html>
