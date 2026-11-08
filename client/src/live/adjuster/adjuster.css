@@ -318,7 +318,9 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-notified { display: flex; align-items: center; gap: 8px; padding: 7px 4px 7px 6px; flex-shrink: 0; }
 .adj-notified-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .adj-notified-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 600; line-height: 18px; }
-.adj-notified .adj-chips { gap: 4px; margin-top: 3px; flex-wrap: nowrap; overflow: hidden; }
+.adj-notified .adj-chips { gap: 3px; margin-top: 3px; flex-wrap: nowrap; overflow: hidden; }
+.adj-notified .adj-tag { padding: 1px 5px; }
+.adj-sheet .adj-notified .adj-btn.small { padding: 0 10px; }
 /* Phones under 390 px: keep the whole iMessage state and the row's last fact on one line. */
 @media (max-width: 389px) {
   .adj-notified .adj-tag-more { display: none; }
