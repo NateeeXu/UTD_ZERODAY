@@ -70,4 +70,13 @@ export const CA_SCENARIOS: QuakeScenario[] = [
     kind: 'earthquake', eventId: 'backtest-3', name: 'Hayward (South segment) M7.0 scenario (USGS ShakeMap)', seed: 6001303,
     landfallIso: '2023-10-21T03:30:00.000Z', usgsEventId: 'bssc2014haywardso2011cfmellb_m7p_se', extraOutageClusters: 2,
   },
+  // Added so the training range covers the severity of the live HayWired world (strong MMI 8.5-10 on the corridor).
+  {
+    kind: 'earthquake', eventId: 'backtest-4', name: 'Hayward + Rodgers Creek (RC+HN+HS+HE) M7.58 scenario (USGS ShakeMap)', seed: 6001404,
+    landfallIso: '2022-01-15T09:20:00.000Z', usgsEventId: 'bssc2014haywardrchnhsheshaw0_m7p58_se', extraOutageClusters: 3,
+  },
+  {
+    kind: 'earthquake', eventId: 'backtest-5', name: 'Hayward North+South+Extension (HN+HS+HE) M7.36 scenario (USGS ShakeMap)', seed: 6001505,
+    landfallIso: '2024-04-16T21:10:00.000Z', usgsEventId: 'bssc2014haywardhnhsheshaw09m_m7p36_se', extraOutageClusters: 2,
+  },
 ];

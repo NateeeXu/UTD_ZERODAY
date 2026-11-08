@@ -2,9 +2,9 @@
 // Usage (from sim/):
 //   node real/main.ts tx [--households 20000] [--backtest-households 15000]
 //   node real/main.ts ca [--households 30000] [--backtest-households 15000]
-// Writes data/real/<region>/{live,backtest-1,backtest-2,backtest-3}.json and sim-meta.json.
+// Writes data/real/<region>/{live,backtest-1..N}.json (Texas: 3 backtests, Bay Area: 5) and sim-meta.json.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EventBundle } from '../../shared/types.ts';
 import { REGIONS } from './regions.ts';
@@ -76,7 +76,7 @@ const outDir = join(OUT_DIR, region.id);
 mkdirSync(outDir, { recursive: true });
 const scenarios: Scenario[] = region.hazardType === 'hurricane' ? TX_SCENARIOS : CA_SCENARIOS;
 const sources = dataSources(data);
-const metas = [];
+const metas: ReturnType<typeof simulate>['meta'][] = [];
 for (const sc of scenarios) {
   if (args.only && args.only !== sc.eventId) continue;
   const t1 = Date.now();
@@ -90,8 +90,17 @@ for (const sc of scenarios) {
   metas.push(meta);
   console.log(`  ${sc.eventId.padEnd(11)} ${n} households, ${bundle.events.length} events, ${(text.length / 1e6).toFixed(2)} MB (${Date.now() - t1} ms)`);
 }
-if (!args.only) writeFileSync(join(outDir, 'sim-meta.json'), JSON.stringify({
+// With --only, merge the regenerated world(s) into the existing sim-meta.json instead of replacing it.
+const metaPath = join(outDir, 'sim-meta.json');
+let worlds: unknown[] = metas;
+if (args.only && existsSync(metaPath)) {
+  const prev = JSON.parse(readFileSync(metaPath, 'utf8')) as { worlds: Array<{ eventId: string }> };
+  const order = scenarios.map((s) => s.eventId);
+  worlds = [...prev.worlds.filter((w) => !metas.some((m) => m.eventId === w.eventId)), ...metas]
+    .sort((a, b) => order.indexOf((a as { eventId: string }).eventId) - order.indexOf((b as { eventId: string }).eventId));
+}
+writeFileSync(metaPath, JSON.stringify({
   note: 'Simulator diagnostics for demo scripting. Not part of the contract; the engine must not train on this.',
-  region: region.id, studyArea: base.notes, fallbacks: data.fallbacks, worlds: metas,
+  region: region.id, studyArea: base.notes, fallbacks: data.fallbacks, worlds,
 }, null, 2) + '\n');
 console.log(`[${region.id}] done in ${((Date.now() - t0) / 1000).toFixed(1)} s`);

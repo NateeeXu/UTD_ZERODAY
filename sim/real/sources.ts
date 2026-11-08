@@ -37,13 +37,15 @@ export const TERRAIN_ZOOM = 12;
 export interface ShakeScenario {
   eventId: string;          // USGS scenario catalog id
   label: string;
-  role: 'live' | 'backtest-1' | 'backtest-2' | 'backtest-3';
+  role: 'live' | 'backtest-1' | 'backtest-2' | 'backtest-3' | 'backtest-4' | 'backtest-5';
 }
 export const SHAKEMAP_SCENARIOS: ShakeScenario[] = [
   { eventId: 'gllegacyhaywiredm7p05_se', label: 'HayWired M7.05 Hayward Fault scenario (USGS)', role: 'live' },
   { eventId: 'bssc2014sanandreaspeninsula2_m7p38_se', label: 'San Andreas (Peninsula) M7.38 scenario (USGS BSSC2014)', role: 'backtest-1' },
   { eventId: 'nclegacycalaverascnccm7p0_se', label: 'Calaveras North+Central M7.0 scenario (USGS legacy)', role: 'backtest-2' },
   { eventId: 'bssc2014haywardso2011cfmellb_m7p_se', label: 'Hayward (South) M7.0 scenario (USGS BSSC2014)', role: 'backtest-3' },
+  { eventId: 'bssc2014haywardrchnhsheshaw0_m7p58_se', label: 'Hayward + Rodgers Creek (RC+HN+HS+HE) M7.58 scenario (USGS BSSC2014)', role: 'backtest-4' },
+  { eventId: 'bssc2014haywardhnhsheshaw09m_m7p36_se', label: 'Hayward North+South+Extension (HN+HS+HE) M7.36 scenario (USGS BSSC2014)', role: 'backtest-5' },
 ];
 
 // ---- Web-mercator tile math (for terrain tiles) ----
