@@ -9,6 +9,7 @@ import { isOwner, memberOf, requireAdjuster, requireManager, ROLES, SINGLETON, s
 import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
+import { addChat, notifyTaskAccepted } from '../chat';
 import { afterFieldReport, dropFromAllLists, forgetAdjuster, recomputeRecommendations, setAdjusterLocation, stillNeeded } from '../recommend';
 
 function checkDamage(damage: number) {
@@ -215,6 +216,7 @@ export const submitRawReply = spacetimedb.reducer(
       parsedAt: undefined,
       error: '',
     });
+    addChat(ctx, householdId, 'policyholder', '', body);
   }
 );
 
@@ -315,12 +317,44 @@ export const acceptRecommendation = spacetimedb.reducer(
   { name: 'accept_recommendation' },
   { householdId: t.string() },
   (ctx, { householdId }) => {
-    requireAdjuster(ctx);
-    if (![...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)].some(r => r.householdId === householdId))
-      throw new SenderError('not in your Next best list');
-    if (stillNeeded(ctx, householdId)) assignOne(ctx, householdId, ctx.sender);
-    else dropFromAllLists(ctx, householdId);
+    const me = requireAdjuster(ctx);
+    const row = [...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)].find(r => r.householdId === householdId);
+    if (!row) throw new SenderError('not in your Next best list');
+    if (stillNeeded(ctx, householdId)) {
+      assignOne(ctx, householdId, ctx.sender);
+      notifyTaskAccepted(ctx, householdId, row.kind, me.name);
+    } else dropFromAllLists(ctx, householdId);
     recomputeRecommendations(ctx, ctx.sender);
+  }
+);
+
+// ----- chat ---------------------------------------------------------------------------
+
+/** An adjuster messages a household they accepted or were assigned (also after the visit). */
+export const sendChatMessage = spacetimedb.reducer(
+  { name: 'send_chat_message' },
+  { householdId: t.string(), text: t.string() },
+  (ctx, { householdId, text }) => {
+    const me = requireAdjuster(ctx);
+    if (![...ctx.db.assignment.householdId.filter(householdId)].some(a => a.status !== 'cancelled' && a.adjuster.equals(ctx.sender)))
+      throw new SenderError('only the assigned adjuster can message this household');
+    const body = text.trim();
+    const len = [...body].length;
+    if (len < 1 || len > 500) throw new SenderError('text must be 1..500 characters');
+    addChat(ctx, householdId, 'adjuster', me.name, body);
+  }
+);
+
+/** Delivery result from scripts/imessage-bridge.ts. */
+export const markImessage = spacetimedb.reducer(
+  { name: 'mark_imessage' },
+  { id: t.u64(), status: t.string(), error: t.string() },
+  (ctx, { id, status, error }) => {
+    requireManager(ctx);
+    if (status !== 'sent' && status !== 'failed') throw new SenderError("status must be 'sent' or 'failed'");
+    const row = ctx.db.imessageOutbox.id.find(id);
+    if (!row) throw new SenderError('unknown message');
+    ctx.db.imessageOutbox.id.update({ ...row, status, error: error.slice(0, 200), updatedAt: ctx.timestamp });
   }
 );
 

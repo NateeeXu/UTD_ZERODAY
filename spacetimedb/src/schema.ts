@@ -601,6 +601,36 @@ export const adjusterRecommendation = table(
 );
 
 /**
+ * Conversation per household: automatic notices, the assigned adjuster and the policyholder's typed replies.
+ * Public in this demo (no policyholder login, households are synthetic); restrict to the two parties in production.
+ */
+export const chatMessage = table(
+  { name: 'chat_message', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    householdId: t.string().index('btree'),
+    sender: t.string(), // 'adjuster' | 'policyholder' | 'system'
+    senderName: t.string(),
+    text: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+/** iMessage notices. Stays 'queued' (simulated) unless scripts/imessage-bridge.ts is running. Holds no phone number. */
+export const imessageOutbox = table(
+  { name: 'imessage_outbox', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    householdId: t.string().index('btree'),
+    text: t.string(),
+    status: t.string(), // 'queued' | 'sent' | 'failed'
+    error: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+/**
  * Raw free-text replies waiting for the Claude parser worker (scripts/claude-worker.ts), so the reply
  * page never needs the Anthropic key. Written by submit_raw_reply; the worker parses each pending row,
  * calls submit_parsed_reply and then mark_reply_parsed. Cleared with the demo state.
@@ -755,6 +785,8 @@ const spacetimedb = schema({
   assignment,
   adjusterLocation,
   adjusterRecommendation,
+  chatMessage,
+  imessageOutbox,
   replyInbox,
 });
 export default spacetimedb;

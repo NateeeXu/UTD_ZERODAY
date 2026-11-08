@@ -68,6 +68,16 @@ export const CellAgg = __t.object("CellAgg", {
 });
 export type CellAgg = __Infer<typeof CellAgg>;
 
+export const ChatMessage = __t.object("ChatMessage", {
+  id: __t.u64(),
+  householdId: __t.string(),
+  sender: __t.string(),
+  senderName: __t.string(),
+  text: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type ChatMessage = __Infer<typeof ChatMessage>;
+
 export const Claim = __t.object("Claim", {
   id: __t.u64(),
   householdId: __t.string(),
@@ -305,6 +315,17 @@ export const HouseholdInput = __t.object("HouseholdInput", {
   nearestSchoolId: __t.option(__t.string()),
 });
 export type HouseholdInput = __Infer<typeof HouseholdInput>;
+
+export const ImessageOutbox = __t.object("ImessageOutbox", {
+  id: __t.u64(),
+  householdId: __t.string(),
+  text: __t.string(),
+  status: __t.string(),
+  error: __t.string(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type ImessageOutbox = __Infer<typeof ImessageOutbox>;
 
 export const InspectionCandidate = __t.object("InspectionCandidate", {
   householdId: __t.string(),
