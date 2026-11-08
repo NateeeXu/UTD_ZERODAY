@@ -7,6 +7,7 @@
 //   node real/random.ts ca [--seed 42] [--fault Hayward] [--magnitude 7.0] [--hour 17] [--weekday true]
 //                          [--preset <id>] [--households 30000] [--out <file>]
 //   node real/random.ts list            # presets and faults
+// A fully random draw is redrawn until at least 3 % of households are severely damaged (--any to keep any draw).
 // Writes data/real/<region>/scenarios/<eventId>.json (gitignored) and prints the path on the last line.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -40,8 +41,8 @@ const alias: Record<string, RegionDef['id']> = { tx: 'tx-corpus-christi', ca: 'c
 const regionId = alias[argv[0] ?? ''];
 if (!regionId) throw new Error('usage: node real/random.ts <tx|ca|list> [options] (see the header of real/random.ts)');
 const region = REGIONS[regionId];
-const seed = num('--seed') ?? (Date.now() % 1_000_000);
-const rng = new Rng(seed * 7919 + 17);
+let seed = num('--seed') ?? (Date.now() % 1_000_000);
+let rng = new Rng(seed * 7919 + 17);
 
 const tri = (t: Tri): number => {
   const u = rng.float();
@@ -93,7 +94,7 @@ function randomHurricane(): HurricaneScenario {
   const rf = HURRICANE_SPEC.rainFt;
   const rain = preset?.rainFt ?? Math.min(4, rng.range(rf.min, rf.max) * (forward < rf.slowBoostBelowKmh ? rf.slowBoost : 1));
   const name = preset
-    ? `Hypothetical hurricane inspired by ${preset.analog.split(/[,(]/)[0]!.trim()} (${preset.name})`
+    ? `${preset.name}: hypothetical, inspired by ${preset.analog.split(' (')[0]}`
     : `Random hypothetical Cat-${cat} hurricane #${seed}`;
   return {
     kind: 'hurricane',
@@ -128,9 +129,9 @@ function randomQuake(): QuakeScenario {
   const epicenter = preset?.epicenter ?? { lat: fault.a.lat + t * (fault.b.lat - fault.a.lat), lng: fault.a.lng + t * (fault.b.lng - fault.a.lng) };
   const kmLng = Math.cos((epicenter.lat * Math.PI) / 180);
   const strike = (Math.atan2((fault.b.lng - fault.a.lng) * kmLng, fault.b.lat - fault.a.lat) * 180) / Math.PI;
-  const magnitude = r1(num('--magnitude') ?? preset?.magnitude ?? rng.range(fault.magnitude[0], fault.magnitude[1]));
+  const magnitude = num('--magnitude') ?? preset?.magnitude ?? r1(rng.range(fault.magnitude[0], fault.magnitude[1]));
   const name = preset
-    ? `Hypothetical earthquake inspired by ${preset.analog.split(/[,(]/)[0]!.trim()} (${preset.name})`
+    ? `${preset.name}: hypothetical, inspired by ${preset.analog.split(' (')[0]}`
     : `Random hypothetical M${magnitude} ${fault.name} earthquake #${seed}`;
   return {
     kind: 'earthquake',
@@ -150,14 +151,30 @@ function randomQuake(): QuakeScenario {
 }
 
 const t0 = Date.now();
-const sc: Scenario = region.hazardType === 'hurricane' ? randomHurricane() : randomQuake();
 const data = loadRegion(region);
 const base = buildBaseWorld(data);
 const households = num('--households') ?? (region.hazardType === 'hurricane' ? 20000 : 30000);
 const sources = dataSources(data);
-if (sc.kind === 'earthquake')
+if (region.hazardType === 'earthquake')
   sources.push('Parametric shaking for this random event: finite rupture (Wells & Coppersmith 1994 length scaling) and an intensity prediction equation (Atkinson & Wald 2007, California). Hypothetical event, not a USGS scenario.');
-const { bundle, meta } = simulate(base, data, sc, { regionPrefix: region.id.slice(0, 2), households, fieldReports: false, dataSources: sources });
+// A fully random draw (no preset, no --seed, no scenario options) is redrawn until at least MIN_SEVERE of the
+// households are severely damaged, so a demo never lands on a quake that misses the county; --any disables it.
+const MIN_SEVERE = 0.03;
+const SCENARIO_FLAGS = ['--preset', '--seed', '--category', '--landfall-lat', '--heading', '--forward', '--fault', '--magnitude'];
+const fullyRandom = !argv.includes('--any') && !SCENARIO_FLAGS.some((f) => argv.includes(f));
+let sc: Scenario;
+let result: ReturnType<typeof simulate>;
+let redraws = 0;
+for (;;) {
+  sc = region.hazardType === 'hurricane' ? randomHurricane() : randomQuake();
+  result = simulate(base, data, sc, { regionPrefix: region.id.slice(0, 2), households, fieldReports: false, dataSources: sources });
+  const share = result.bundle.truth.filter((r) => r.damage >= 2).length / households;
+  if (!fullyRandom || share >= MIN_SEVERE || redraws >= 15) break;
+  redraws++;
+  seed = (seed + 7919) % 1_000_000;
+  rng = new Rng(seed * 7919 + 17);
+}
+const { bundle, meta } = result;
 const text = serialize(bundle);
 JSON.parse(text);
 const out = flag('--out') ?? join(OUT_DIR, region.id, 'scenarios', `${sc.eventId}.json`);
@@ -168,5 +185,6 @@ const severe = bundle.truth.filter((r) => r.damage >= 2).length;
 console.log(`[${region.id}] ${sc.name}`);
 console.log(`  ${lt.weekday ? 'weekday' : 'weekend'} ${String(lt.hour).padStart(2, '0')}:00 local; ${households} households, ${bundle.events.length} events, true severe ${severe} (${((100 * severe) / households).toFixed(1)}%)`);
 for (const n of meta.notes ?? []) console.log(`  ${n}`);
+if (redraws > 0) console.log(`  redrew ${redraws} time(s): skipped random events with under ${MIN_SEVERE * 100}% severe households (--any keeps them)`);
 console.log(`  ${(text.length / 1e6).toFixed(1)} MB in ${Date.now() - t0} ms`);
 console.log(out);

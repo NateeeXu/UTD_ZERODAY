@@ -182,5 +182,11 @@ Two random runs, simulated staff on (true severe count vs the live range):
 | Random Cat-1 hurricane, weekend 15:00 (TX seed 42) | 322 [37, 872] | 236 [193, 418] | 247 [241, 266] | 245 | 99–100 % | 20,000 / 20,000 |
 | Hayward M7.0, weekday 03:00 (CA seed 8) | 12,138 [8,916, 15,417] | 12,790 [10,883, 14,791] | 12,598 [11,171, 14,139] | 12,296 | 88–92 % | 30,000 / 30,000 |
 
+**Verified parameters** (Opus research agents, sources fetched): hurricane category mix from 55 Texas landfalls in HURDAT2 (42/25/19/13 % for Cat 1–4; no Texas Cat 5 on record, kept as a 1 % tail), radius of maximum wind and forward speed from HURDAT2 landfall fixes, surge by category from NHC / NWS reports (Celia, Allen, Carla, Harvey, Hanna; Cat 2 and Cat 5 surge interpolated). Earthquakes: Atkinson & Wald (2007) California coefficients and Wells & Coppersmith (1994) strike-slip length verified against the papers; fault traces from the USGS Quaternary fault database; weights from the USGS 2014–2043 Bay Area forecast (Hayward 33 %, Calaveras 26 %, San Andreas 22 %, Concord–Green Valley 16 %, San Gregorio 6 %; Greenville and Mount Diablo 3 %). Known weakness: AW07 likely overpredicts close to the fault above M6.
+
+**Presets** (`--preset <id>`, all labeled "hypothetical, inspired by"): `celia-type-direct-hit` (Celia 1970, compact Cat 4, weekday 16:00), `harvey-type-stall` (Harvey 2017, stalling Cat 4 north of the county, weekday 22:00), `hanna-type-cat1` (Hanna 2020, Cat 1, weekend 17:00; landfall moved north into the region), `haywired-m705` (USGS HayWired M7.05 under Oakland, weekday 16:00), `hayward-1868-night` (1868 Hayward M6.8 replayed at 03:00; real time 7:53 am), `calaveras-north-m686` (USGS northern Calaveras M6.86, weekend 14:00).
+
+**Fully random draws** are redrawn until at least 3 % of households are severely damaged (many real Bay Area quakes barely affect Alameda County; a demo should not land on one). Any explicit option, preset or `--seed` is honoured exactly; `--any` keeps every draw.
+
 Caveat: the random parameter ranges are research-based but simplified (a straight rupture, one IPE, no site amplification beyond liquefaction; a parametric hurricane wind and surge model). They make realistic-looking, varied events for testing the pipeline, not hazard forecasts.
 
