@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useReducer } from 'spacetimedb/react';
 import { reducers } from '../module_bindings/index.ts';
 import type { ReplayStateRow } from './rows';
-import { JUMPS, REPLAY_SPEED } from './config';
+import { JUMPS, REPLAY_SPEED, SPEED_MULTIPLIERS } from './config';
 import { fmtT } from '../format';
 
 // Bottom bar: replay clock from `replay_state`, manager-only controls.
@@ -11,9 +11,19 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   const pause = useReducer(reducers.pauseReplay);
   const jump = useReducer(reducers.jumpTo);
   const reset = useReducer(reducers.resetDemo);
+  const setSpeed = useReducer(reducers.setSpeed);
+  const [mult, setMult] = useState<number | null>(null); // null = follow the database
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Current multiplier: the database's speed while running, else the local pick.
+  const dbMult = replay ? Math.round((replay.speed / REPLAY_SPEED) * 10) / 10 : 1;
+  const shownMult = replay?.running ? dbMult : (mult ?? dbMult);
+  const pickSpeed = (m: number) => {
+    if (!canControl) return onNeedJoin();
+    setMult(m);
+    if (replay?.running) void run(() => setSpeed({ speed: REPLAY_SPEED * m }))();
+  };
   const max = replay?.maxMinutes || 4320;
   const t = replay?.simMinutes ?? 0;
   const run = (fn: () => Promise<void>) => async () => {
@@ -35,7 +45,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       {replay?.running ? (
         <button className="btn primary" onClick={run(() => pause())} disabled={busy}>Pause</button>
       ) : (
-        <button className="btn primary" onClick={run(() => start({ speed: REPLAY_SPEED }))} disabled={busy}>
+        <button className="btn primary" onClick={run(() => start({ speed: REPLAY_SPEED * shownMult }))} disabled={busy}>
           {t > 0 && t < max ? 'Resume' : 'Start'}
         </button>
       )}
@@ -53,6 +63,13 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       <span className="clock" title={replay ? `${replay.nextSeq.toLocaleString()} of ${replay.totalStaged.toLocaleString()} events released` : ''}>
         {fmtT(t)}
       </span>
+      <div className="segmented speed" role="group" aria-label="Replay speed" title={`1× = ${REPLAY_SPEED} sim-minutes per second`}>
+        {SPEED_MULTIPLIERS.map((m) => (
+          <button key={m} className={Math.abs(shownMult - m) < 0.05 ? 'on' : ''} aria-pressed={Math.abs(shownMult - m) < 0.05} onClick={() => pickSpeed(m)} disabled={busy}>
+            {m}×
+          </button>
+        ))}
+      </div>
       <div className="jumps" role="group" aria-label="Jump to">
         {JUMPS.map((j) => (
           <button key={j.minutes} className="btn" onClick={run(() => jump({ minutes: j.minutes }))} disabled={busy}>{j.label}</button>

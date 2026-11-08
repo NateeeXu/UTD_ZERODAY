@@ -52,6 +52,7 @@ export type Screen = 'manager' | 'adjuster' | 'reply';
 export const tokenKey = (screen: Screen, db: string) => `triage-token-${screen}-${db}`;
 
 export const REPLAY_SPEED = 30; // sim minutes per real second (72 h in 2.4 min)
+export const SPEED_MULTIPLIERS = [1, 1.2, 1.5, 2, 3]; // × REPLAY_SPEED (3× = 72 h in 48 s)
 export const JUMPS = [
   { label: '2 h', minutes: 120 },
   { label: '6 h', minutes: 360 },
