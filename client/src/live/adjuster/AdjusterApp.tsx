@@ -581,7 +581,7 @@ function MessagesView({ threads, meName, badge, onOpen }: { threads: Thread[]; m
     <div className="adj-tabpage">
       <header className="adj-tabhead"><h1>Messages</h1>{badge}</header>
       {threads.length === 0 ? (
-        <div className="adj-group adj-empty">No tasks yet. Each task gets a thread with its policyholder.</div>
+        <div className="adj-group adj-empty">No threads yet</div>
       ) : (
         <div className="adj-group">
           {threads.map(({ t, last, unread }) => {
@@ -589,21 +589,22 @@ function MessagesView({ threads, meName, badge, onOpen }: { threads: Thread[]; m
               : last.senderName === meName ? 'You: ' : `${last.senderName || 'Adjuster'}: `;
             return (
               <button key={t.id} type="button" className={`adj-row adj-throw${unread ? ' unread' : ''}`} onClick={() => onOpen(t.id)}>
-                <span className="adj-avatar"><Icon name="house" size={19} stroke={1.9} /></span>
+                <span className="adj-avatar"><Icon name="house" size={16} stroke={1.9} /></span>
                 <span className="adj-throw-main">
                   <span className="adj-throw-top">
                     <b>{t.label}</b>
                     <span className="time">{last ? fmtChatTime(last) : t.open ? `Task ${t.number}` : 'Done'}</span>
                   </span>
-                  <span className="adj-throw-prev">{last ? `${who}${last.text}` : 'No messages yet'}</span>
+                  <span className="adj-throw-sub">
+                    <span className="adj-throw-prev">{last ? `${who}${last.text}` : 'No messages yet'}</span>
+                    {unread && <i className="adj-dot" aria-label="Unread" />}
+                  </span>
                 </span>
-                {unread ? <i className="adj-dot" aria-label="Unread" /> : <Icon name="chevron" size={16} stroke={2} />}
               </button>
             );
           })}
         </div>
       )}
-      <p className="adj-muted adj-tabnote">Messages go to the policyholder's check-in page. No arrival times or payment promises.</p>
     </div>
   );
 }
@@ -620,8 +621,6 @@ function ProfileView({ meName, region, sim, badge, open, done, unsent }: {
           <span className="adj-initials" aria-hidden="true">{initials}</span>
           <span className="adj-me-main"><b>{meName}</b><span className="adj-muted">Field adjuster · {region}</span></span>
         </div>
-      </div>
-      <div className="adj-group">
         <div className="adj-row"><span className="grow">Open tasks</span><span className="tail">{open}</span></div>
         <div className="adj-row"><span className="grow">Done</span><span className="tail">{done}</span></div>
         <div className="adj-row">
@@ -630,7 +629,7 @@ function ProfileView({ meName, region, sim, badge, open, done, unsent }: {
         </div>
         <div className="adj-row"><span className="grow">Exercise time</span><span className="tail">{fmtT(sim)}</span></div>
       </div>
-      <p className="adj-muted adj-tabnote">Demo data: synthetic households, areas not addresses. No real calls, texts or GPS.</p>
+      <p className="adj-muted adj-tabnote">Demo data: areas, not addresses</p>
     </div>
   );
 }

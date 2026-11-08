@@ -53,6 +53,25 @@ export function NotifiedCard({ label, imessage, onMessage, onOpen, onDismiss }: 
 const fmtClock = (r: ChatRow) => r.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const codePoints = (s: string) => [...s].length;
 
+/** The automated notice, laid out line by line so the numbered damage levels hang cleanly when they wrap. */
+function NoticeText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/\n{2,}/).map((block, b) => (
+        <div className="adj-notice-block" key={b}>
+          {block.split('\n').map((line, l) => {
+            const level = /^(\d) - (.*)$/.exec(line);
+            const bullet = /^- (.*)$/.exec(line);
+            if (level) return <p className="adj-notice-line list" key={l}><span className="n">{level[1]}</span><span>{level[2]}</span></p>;
+            if (bullet) return <p className="adj-notice-line list" key={l}><span className="bullet" aria-hidden="true">•</span><span>{bullet[1]}</span></p>;
+            return <p className={`adj-notice-line${/\b911\b/.test(line) ? ' safety' : ''}`} key={l}>{line}</p>;
+          })}
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function ChatScreen({ householdId, label, meName, live, canSend, onBack }: {
   householdId: string; label: string; meName: string; live: React.ReactNode; canSend: boolean; onBack: () => void;
 }) {
@@ -125,7 +144,7 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
     <div className="adj-page adj-chat" ref={pageRef} aria-label={`Messages with ${label}`}>
       <header className="adj-topbar">
         <button type="button" className="adj-circle t44" aria-label="Back" onClick={onBack}><Icon name="back" size={18} stroke={2.2} /></button>
-        <div className="center"><strong>Messages</strong><span>{label} · Policyholder</span></div>
+        <div className="center"><strong>{label}</strong><span>Policyholder</span></div>
         {live}
       </header>
 
@@ -139,6 +158,16 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
             : mine ? 'You' : m.senderName || 'Adjuster';
           const prev = rows[i - 1];
           const sameAsPrev = !!prev && prev.sender === m.sender && prev.senderName === m.senderName;
+          if (m.sender === 'system') {
+            return (
+              <div key={String(m.id)} className="adj-msg system">
+                <div className="adj-notice">
+                  <span className="adj-notice-head"><Icon name="bell" size={12} stroke={2.2} /><b>{who}</b>{fmtClock(m)}</span>
+                  <NoticeText text={m.text} />
+                </div>
+              </div>
+            );
+          }
           return (
             <div key={String(m.id)} className={`adj-msg ${mine ? 'mine' : m.sender}`}>
               {!sameAsPrev && <span className="adj-msg-who">{who} · {fmtClock(m)}</span>}
@@ -159,8 +188,10 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
             onChange={(e) => { setText(e.target.value); if (error) setError(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); } }}
           />
-          <button type="button" className="adj-btn dark adj-send" disabled={!ok} onClick={() => void submit()}>
-            {sending ? <span className="adj-spin" aria-label="Sending" /> : 'Send'}
+          <button type="button" className="adj-btn dark adj-send" aria-label={sending ? 'Sending' : 'Send'} disabled={!ok} onClick={() => void submit()}>
+            {sending ? <span className="adj-spin" /> : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            )}
           </button>
         </div>
         {n > MAX - 100 && <span className="adj-muted adj-count">{n}/{MAX}</span>}
