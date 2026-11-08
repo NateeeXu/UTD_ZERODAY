@@ -1,12 +1,17 @@
 /* Adjuster phone: Airbnb-style content (white cards, bold headings, icon rows, bottom action bar)
    with Apple-style glass over the map. Scoped to .adj so the dashboard is untouched. */
 .adj {
-  --t: #222; --t2: #6a6a6a; --line: #ebebeb; --bd: #dddddd; --soft: #f7f7f7; --chip: #f2f2f2;
-  --p0: #d93a35; --p1: #ee7d2b; --p2: #e8b931; --ok: #0f7a55;
+  --t: #1c1c1e; --t2: #6c6c70; --line: #ececee; --bd: #d9d9de; --soft: #f6f6f7; --chip: #f0f0f2;
+  --brand: #d8232a; /* the one brand accent: active tab, unread mark. Solid red fills stay for P0 and 911. */
+  --p0: #d8232a; --p1: #e0761f; --p2: #e3b22b; --ok: #0f7a55;
+  /* Density. Controls look small; the ::after rule under .adj-btn extends every small control to a 44 px hit area. */
+  --ctl: 36px; --ctl-lg: 42px; --ctl-sm: 30px;
+  --r-sheet: 20px; --r-card: 14px; --r-ctl: 10px;
+  --fs-title: 17px; --fs-name: 15px; --fs-body: 14px; --fs-meta: 12.5px; --fs-tiny: 11px;
   --top: env(safe-area-inset-top, 0px); --bot: env(safe-area-inset-bottom, 0px);
   position: relative; width: 100%; max-width: 480px; height: 100dvh; margin: 0 auto; overflow: hidden;
-  background: #ececec; color: var(--t); font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 15px; -webkit-font-smoothing: antialiased;
+  background: #ececec; color: var(--t); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--fs-body); -webkit-font-smoothing: antialiased;
 }
 /* Edge to edge on phones (index.html has viewport-fit=cover): the root is the large viewport, so the map runs
    under the status bar and under Safari's floating toolbar (iOS doesn't draw position: fixed content there).
@@ -24,7 +29,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj button, .adj a { -webkit-tap-highlight-color: transparent; }
 .adj h1, .adj h2, .adj p { margin: 0; }
 .adj b { font-weight: 600; }
-.adj-muted { color: var(--t2); font-size: 13px; }
+.adj-muted { color: var(--t2); font-size: var(--fs-meta); }
 .adj-map { position: absolute; inset: 0; background: #ececec; }
 /* PhoneMap reads scroll-padding to keep the fitted view inside the safe areas; credits stay above the toolbar */
 .adj-map { scroll-padding: var(--top) 0 var(--bot); }
@@ -91,9 +96,9 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-next { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .adj-next .adj-title { font-size: 21px; }
 .adj-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.adj-p { display: inline-block; flex-shrink: 0; width: 30px; height: 22px; line-height: 22px; border-radius: 6px; font-size: 11.5px; font-weight: 700; text-align: center; color: #fff; }
+.adj-p { display: inline-block; flex-shrink: 0; width: 24px; height: 18px; line-height: 18px; border-radius: 5px; font-size: 10.5px; font-weight: 700; text-align: center; color: #fff; }
 .adj-p.P0 { background: var(--p0); } .adj-p.P1 { background: var(--p1); } .adj-p.P2 { background: var(--p2); color: #222; }
-.adj-pill { font-size: 13px; font-weight: 500; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--bd); white-space: nowrap; }
+.adj-pill { font-size: var(--fs-tiny); font-weight: 500; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--bd); white-space: nowrap; }
 .adj-pill.fill { background: var(--chip); border-color: var(--chip); }
 .adj-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
 .adj-needs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -102,16 +107,18 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-empty { padding: 18px 8px; text-align: center; color: var(--t2); }
 
 .adj-btn {
-  height: 48px; padding: 0 16px; border: none; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; color: #222; background: #fff; white-space: nowrap;
+  position: relative; height: var(--ctl); padding: 0 12px; border: none; border-radius: var(--r-ctl); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; text-decoration: none; color: var(--t); background: #fff; white-space: nowrap;
 }
-.adj-btn.dark { background: #222; color: #fff; }
-.adj-btn.dark:disabled { background: #dddddd; color: #fff; cursor: default; }
-.adj-btn.outline { border: 1px solid #222; }
+/* Small controls keep a 44 px hit area without looking big. */
+.adj-btn::after, .adj-iconbtn::after, .adj-circle::after, .adj-chipbtn::after { content: ''; position: absolute; inset: -5px -2px; }
+.adj-btn.dark { background: var(--t); color: #fff; }
+.adj-btn.dark:disabled { background: var(--bd); color: #fff; cursor: default; }
+.adj-btn.outline { border: 1px solid var(--bd); }
 .adj-btn.grow { flex: 1; }
-.adj-btn.block { width: 100%; height: 52px; font-size: 16px; }
-.adj-btn.red { width: 100%; height: 52px; background: var(--p0); color: #fff; font-size: 17px; font-weight: 700; }
-.adj-btn.small { height: 38px; padding: 0 14px; border-radius: 10px; font-size: 14px; }
+.adj-btn.block { width: 100%; height: var(--ctl-lg); font-size: var(--fs-name); }
+.adj-btn.red { width: 100%; height: var(--ctl-lg); background: var(--p0); color: #fff; font-size: var(--fs-name); font-weight: 700; }
+.adj-btn.small { height: var(--ctl-sm); padding: 0 10px; border-radius: 8px; font-size: 13px; }
 .adj-link { background: none; border: none; padding: 0; font: inherit; font-size: 15px; font-weight: 600; color: #222; text-decoration: underline; cursor: pointer; }
 .adj-link.small { font-size: 14px; }
 
@@ -146,11 +153,11 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-best-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .adj-best-main b { font-weight: 700; font-variant-numeric: tabular-nums; }
 .adj-best-main span { font-size: 13px; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.adj-iconbtn { width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--chip); color: #222; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.adj-iconbtn { position: relative; width: var(--ctl-sm); height: var(--ctl-sm); flex-shrink: 0; border: none; border-radius: 50%; background: var(--chip); color: var(--t); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .adj-notice { font-size: 13px; font-weight: 600; text-align: center; color: #7a271a; }
 .adj-watchdog .adj-notice { color: #fff; }
 .adj-task-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
-.adj-tag { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--chip); color: #333; white-space: nowrap; }
+.adj-tag { font-size: var(--fs-tiny); font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--chip); color: #333; white-space: nowrap; }
 .adj-tag.red { background: #fff1f0; color: #b42318; }
 .adj-tag.amber { background: #fff4e5; color: #8a4b0f; }
 .adj-banner { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; background: var(--soft); border-top: 1px solid var(--line); }
@@ -199,7 +206,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-topbar .center { position: absolute; left: 60px; right: 60px; top: var(--top); bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
 .adj-topbar .center strong { font-size: 16px; font-weight: 700; }
 .adj-topbar .center span { font-size: 12.5px; color: var(--t2); }
-.adj-circle { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--bd); background: #fff; display: flex; align-items: center; justify-content: center; color: #222; cursor: pointer; padding: 0; }
+.adj-circle { position: relative; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--bd); background: #fff; display: flex; align-items: center; justify-content: center; color: var(--t); cursor: pointer; padding: 0; }
 .adj-live.soft { background: var(--chip); height: 30px; font-size: 12.5px; }
 .adj-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 22px; }
 .adj-sec { display: flex; flex-direction: column; gap: 12px; }
@@ -213,7 +220,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-tile.weak { grid-column: 1 / 3; min-height: 46px; border-style: dashed; border-color: #c4c4c4; color: var(--t2); font-size: 14px; }
 .adj-tile.weak[aria-pressed='true'] { border-style: solid; border-color: #222; color: #222; }
 .adj-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.adj-chipbtn { height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--bd); background: #fff; font: inherit; font-size: 13.5px; font-weight: 600; color: #222; cursor: pointer; }
+.adj-chipbtn { position: relative; height: var(--ctl-sm); padding: 0 11px; border-radius: 999px; border: 1px solid var(--bd); background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--t); cursor: pointer; }
 .adj-chipbtn[aria-pressed='true'] { background: var(--soft); border-color: #222; box-shadow: inset 0 0 0 1px #222; }
 .adj-danger { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: #fff1f0; }
 .adj-danger p { font-size: 14px; line-height: 1.4; color: #7a271a; }
@@ -269,8 +276,9 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-join .modal { text-align: left; } /* the join dialog's labels stay left-aligned with their inputs */
 
 /* 44 px tap targets for the Next best card, notices and the thread */
-.adj-iconbtn.t44, .adj-circle.t44 { width: 44px; height: 44px; }
-.adj-btn.t44 { height: 44px; }
+/* t44 used to force 44 px visually; the hit area comes from ::after now, so it only keeps the shared control size. */
+.adj-iconbtn.t44, .adj-circle.t44 { width: 32px; height: 32px; }
+.adj-btn.t44 { height: var(--ctl); }
 .adj-tag.ok { background: #e7f4ee; color: var(--ok); }
 
 /* Next best: "Why this task" expander */
