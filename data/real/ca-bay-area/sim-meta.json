@@ -94,10 +94,12 @@
         "8828346ebbfffff",
         "8828346ebdfffff"
       ],
+      "reunificationHouseholds": 5414,
       "notes": [
         "USGS ShakeMap gllegacyhaywiredm7p05_se: \"Haywired M7.05 Scenario\", M7.05, epicentre 37.8046,-122.1786.",
         "Analyst zones use the ShakeMap smoothed over a radius-2 neighbourhood and ignore liquefaction.",
-        "1677 sms_reply events carry free text."
+        "1812 sms_reply events carry free text.",
+        "Local time 10:00 weekday (America/Los_Angeles); work hours apply; school in session: true. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 5414."
       ]
     },
     {
@@ -184,10 +186,12 @@
         "88283460e9fffff",
         "88283460ebfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "USGS ShakeMap bssc2014sanandreaspeninsula2_m7p38_se: \"San Andreas (Peninsula)\", M7.38, epicentre 37.51639,-122.35704.",
         "Analyst zones use the ShakeMap smoothed over a radius-2 neighbourhood and ignore liquefaction.",
-        "1999 sms_reply events carry free text."
+        "2123 sms_reply events carry free text.",
+        "Local time 3:00 weekday (America/Los_Angeles); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     },
     {
@@ -273,10 +277,12 @@
         "8828346ecbfffff",
         "8828346ee9fffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "USGS ShakeMap nclegacycalaverascnccm7p0_se: \"Calaveras North + Central\", M7, epicentre 37.7559,-121.966.",
         "Analyst zones use the ShakeMap smoothed over a radius-2 neighbourhood and ignore liquefaction.",
-        "1571 sms_reply events carry free text."
+        "1584 sms_reply events carry free text.",
+        "Local time 12:00 weekday (America/Los_Angeles); work hours apply; school in session: true. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     },
     {
@@ -365,10 +371,12 @@
         "88283461dbfffff",
         "88283461ddfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "USGS ShakeMap bssc2014haywardso2011cfmellb_m7p_se: \"Hayward (So)\", M7, epicentre 37.60166,-121.97887.",
         "Analyst zones use the ShakeMap smoothed over a radius-2 neighbourhood and ignore liquefaction.",
-        "1790 sms_reply events carry free text."
+        "1803 sms_reply events carry free text.",
+        "Local time 20:00 weekday (America/Los_Angeles); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     }
   ]

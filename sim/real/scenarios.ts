@@ -23,8 +23,7 @@ export interface QuakeScenario {
   eventId: string;
   name: string;
   seed: number;
-  landfallIso: string;     // event origin time (synthetic)
-  daytime: boolean;        // true if local time is a weekday working hour -> awayDaytime households are not home
+  landfallIso: string;     // event origin time (synthetic); local hour / weekday are derived from it
   usgsEventId: string;
   extraOutageClusters: number;
 }
@@ -57,18 +56,18 @@ export const TX_SCENARIOS: HurricaneScenario[] = [
 export const CA_SCENARIOS: QuakeScenario[] = [
   {
     kind: 'earthquake', eventId: 'live', name: 'HayWired M7.05 Hayward Fault scenario (USGS ShakeMap), Alameda County, CA', seed: 6001001,
-    landfallIso: '2026-11-07T00:18:00.000Z', daytime: true, usgsEventId: 'gllegacyhaywiredm7p05_se', extraOutageClusters: 2,
+    landfallIso: '2026-11-06T18:40:00.000Z', usgsEventId: 'gllegacyhaywiredm7p05_se', extraOutageClusters: 2,
   },
   {
     kind: 'earthquake', eventId: 'backtest-1', name: 'San Andreas (Peninsula) M7.38 scenario (USGS ShakeMap)', seed: 6001101,
-    landfallIso: '2019-03-12T10:42:00.000Z', daytime: false, usgsEventId: 'bssc2014sanandreaspeninsula2_m7p38_se', extraOutageClusters: 2,
+    landfallIso: '2019-03-12T10:42:00.000Z', usgsEventId: 'bssc2014sanandreaspeninsula2_m7p38_se', extraOutageClusters: 2,
   },
   {
     kind: 'earthquake', eventId: 'backtest-2', name: 'Calaveras North+Central M7.0 scenario (USGS ShakeMap)', seed: 6001202,
-    landfallIso: '2021-06-03T19:05:00.000Z', daytime: true, usgsEventId: 'nclegacycalaverascnccm7p0_se', extraOutageClusters: 2,
+    landfallIso: '2021-06-03T19:05:00.000Z', usgsEventId: 'nclegacycalaverascnccm7p0_se', extraOutageClusters: 2,
   },
   {
     kind: 'earthquake', eventId: 'backtest-3', name: 'Hayward (South segment) M7.0 scenario (USGS ShakeMap)', seed: 6001303,
-    landfallIso: '2023-10-21T03:30:00.000Z', daytime: false, usgsEventId: 'bssc2014haywardso2011cfmellb_m7p_se', extraOutageClusters: 2,
+    landfallIso: '2023-10-21T03:30:00.000Z', usgsEventId: 'bssc2014haywardso2011cfmellb_m7p_se', extraOutageClusters: 2,
   },
 ];

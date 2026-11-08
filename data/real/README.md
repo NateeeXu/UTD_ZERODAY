@@ -16,29 +16,40 @@ Household ids are prefixed by region and event (`tx-live-h000001`, `ca-backtest-
 
 ## Summary (seeded; `npm run real:check` prints this)
 
-**Texas: Corpus Christi (hurricane).** 449 H3 res-8 cells. Facilities: 90 public schools, 13 hospitals, 22 fire stations.
+**Texas: Corpus Christi (hurricane).** 449 H3 res-8 cells. Facilities: 90 public schools, 3 colleges (Texas A&M University–Corpus Christi 10,855 students; Del Mar College 9,720; Southern Careers Institute 505), 13 hospitals, 22 fire stations, 42 masts. Live landfall is **02:00 local on a Saturday** (`eventLocalHour` 2, `eventWeekday` false).
 
 | event | MB | households | hh/cell | damage 0/1/2/3 % | needs_help | hazardIndex mean/max | reply % | free-text replies | claims | field reports | silent-severe cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| live | 13.3 | 20000 | 45 | 24/46/25/5 | 815 | 0.40/1.00 | 56.6 | 2510 | 7368 | 0 | 6 |
-| backtest-1 (Cat 2) | 10.2 | 15000 | 33 | 78/19/3/0 | 388 | 0.10/0.60 | 64.8 | 2095 | 1408 | 1530 | 1 |
-| backtest-2 (Cat 4) | 10.4 | 15000 | 33 | 18/35/34/13 | 757 | 0.42/1.00 | 42.8 | 1384 | 6352 | 1530 | 15 |
-| backtest-3 (Cat 1) | 10.1 | 15000 | 33 | 78/20/3/0 | 426 | 0.10/0.56 | 58.3 | 1947 | 1148 | 1530 | 0 |
+| live (Sat 02:00) | 15.5 | 20000 | 45 | 24/46/25/5 | 826 | 0.40/1.00 | 56.7 | 2517 | 5756 | 0 | 6 |
+| backtest-1 (Cat 2, Sat 02:00) | 12.0 | 15000 | 33 | 78/19/2/0 | 385 | 0.10/0.60 | 64.4 | 2115 | 1105 | 1530 | 2 |
+| backtest-2 (Cat 4, Wed 22:00) | 12.1 | 15000 | 33 | 18/36/34/13 | 754 | 0.42/1.00 | 43.0 | 1416 | 5143 | 1530 | 14 |
+| backtest-3 (Cat 1, Thu 17:00) | 11.9 | 15000 | 33 | 78/20/3/0 | 416 | 0.10/0.56 | 59.3 | 1937 | 929 | 1530 | 0 |
 
-Household mix in live (from real tract shares): age65 30.7%, age75 12.4%, lives alone 24.7%, children 33.4%, disability 29.8%, no vehicle 8.4%, limited English 4.5%, mobile home 3.9%, away in the daytime 49.2%. Languages: English 54.4%, **Spanish 42.0%**, Tagalog 0.8%, others under 1% each.
+Household mix in live (from real tract shares): age65 30.2%, age75 12.1%, lives alone 25.2%, children 31.7%, school-age children in 27.4% of households (9,293 children), disability 30.0%, no vehicle 9.3%, limited English 4.3%, mobile home 3.8%, away in the daytime 49.2%, college-student households 2.8%. **Policy types: homeowners 61.7%, renters 36.7%, condo 1.6%.** Languages: English 54.5%, **Spanish 41.9%**, Tagalog 0.8%, others under 1% each.
 
-**California: Alameda County / Hayward Fault (earthquake).** 611 cells. Facilities: 318 public schools, 18 hospitals, 74 fire stations, 10 shelters.
+**California: Alameda County / Hayward Fault (earthquake).** 611 cells. Facilities: 318 public schools, 17 colleges (UC Berkeley 45,699 students, Cal State East Bay 13,333, Chabot 12,218, Laney 10,211, Ohlone 8,375, Merritt 6,716, Berkeley City College 6,547, College of Alameda 5,833, Northeastern University Oakland 658, and others), 18 hospitals, 74 fire stations, 10 shelters, 168 masts. The live quake strikes at **10:40 local on a weekday (Friday)**: `eventLocalHour` 10, `eventWeekday` true, school in session.
 
 | event | MB | households | hh/cell | damage 0/1/2/3 % | needs_help | hazardIndex mean/max | reply % | free-text replies | claims | field reports | silent-severe cells |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| live (HayWired M7.05) | 18.6 | 30000 | 49 | 4/32/42/22 | 1114 | 0.56/0.86 | 26.5 | 1677 | 2768 | 0 | 41 |
-| backtest-1 (SAF Peninsula M7.38) | 10.2 | 15000 | 25 | 76/19/5/0 | 372 | 0.07/0.31 | 62.3 | 1999 | 377 | 1530 | 0 |
-| backtest-2 (Calaveras M7.0) | 10.0 | 15000 | 25 | 69/24/7/0 | 229 | 0.12/0.39 | 48.2 | 1571 | 426 | 1530 | 0 |
-| backtest-3 (Hayward South M7.0) | 10.3 | 15000 | 25 | 23/41/29/7 | 599 | 0.38/0.60 | 54.8 | 1790 | 1184 | 1530 | 7 |
+| live (HayWired M7.05, Fri 10:40) | 22.0 | 30000 | 49 | 4/32/42/22 | 1033 | 0.56/0.86 | 27.9 | 1812 | 2153 | 0 | 40 |
+| backtest-1 (SAF Peninsula M7.38, Tue 03:42) | 12.0 | 15000 | 25 | 76/19/5/0 | 357 | 0.07/0.31 | 62.6 | 2123 | 288 | 1530 | 0 |
+| backtest-2 (Calaveras M7.0, Thu 12:05) | 11.8 | 15000 | 25 | 69/24/7/0 | 238 | 0.12/0.39 | 48.3 | 1584 | 300 | 1530 | 0 |
+| backtest-3 (Hayward South M7.0, Fri 20:30) | 12.0 | 15000 | 25 | 23/42/29/7 | 548 | 0.38/0.60 | 55.2 | 1803 | 906 | 1530 | 6 |
 
-Household mix in live: age65 29.6%, age75 12.0%, lives alone 24.8%, children 31.8%, disability 22.0%, no vehicle 12.1%, **limited English 9.9%**, earthquake endorsement 12.0%, away in the daytime 56.8%. Languages: English 47.0%, Spanish 18.5%, **Chinese 10.8%**, other Indo-European 7.7%, other Asian/Pacific Island 4.7%, Tagalog 4.2%, Vietnamese 2.1%, Korean 1.0%, others.
+Household mix in live: age65 28.1%, age75 11.5%, lives alone 24.7%, children 30.8%, school-age children in 25.7% of households (11,846 children), disability 21.8%, no vehicle 13.1%, **limited English 9.6%**, earthquake endorsement 12.2%, away in the daytime 57.8%, college-student households 4.4%. **Policy types: homeowners 51.1%, renters 43.8%, condo 5.1%.** Languages: English 47.2%, Spanish 18.0%, **Chinese 10.9%**, other Indo-European 7.7%, other Asian/Pacific Island 4.6%, Tagalog 4.4%, Vietnamese 2.0%, Korean 1.0%, others.
 
-Total output is about 93 MB. The live HayWired world is deliberately severe because the corridor sits on the ruptured fault (MMI 7.9–10). The backtests are milder, except Hayward South. The engine will see a shift in severity between training and live.
+**Students and reunification in the live worlds**
+- **Bay Area (school in session):** **5,414 households** have a reunification need: school-age children whose nearest K-12 school sits in a cell with hazardIndex ≥ 0.5. Top cells by students exposed (`k12Enrollment × hazardIndex`):
+  - `88283460a3fffff`: about 2,133 students (American High 2,587 + Oliveira Elementary 573; hazardIndex 0.675, outage 89%)
+  - `8828346c99fffff`: about 1,842 (Castro Valley High 2,842; 0.648, outage 73%)
+  - `8828346e55fffff`: about 1,708 (James Logan High 3,151; 0.542, outage 90%)
+- **Corpus Christi:** 0 exposed, because it is 02:00 on a Saturday. The cells that *would* be most exposed in school hours are:
+  - `8848955503fffff`: the Flour Bluff ISD campus cluster, k12 5,196, hazardIndex 0.464
+  - `8848955493fffff`: Carroll H S, 1,870
+  - `884895461bfffff`: Ray H S, 1,588
+- In the backtests the count is 0 everywhere. The Calaveras quake (Thu 12:05) happens during school hours, but no school cell reaches hazardIndex 0.5.
+
+Total output is about 109 MB. The live HayWired world is deliberately severe because the corridor sits on the ruptured fault (MMI 7.9–10). The backtests are milder, except Hayward South. The engine will see a shift in severity between training and live.
 
 ## Data sources (all public, no API keys)
 
@@ -47,9 +58,11 @@ Total output is about 93 MB. The live HayWired world is deliberately severe beca
 | 2020 Census Redistricting Data (P.L. 94-171) geographic header | Block internal points, block POP100 / HU100, tract internal points; spreading population inside a cell | https://www2.census.gov/programs-surveys/decennial/2020/data/01-Redistricting_File--PL_94-171/ | 2020 | U.S. Census Bureau, public domain |
 | ACS 5-year estimates, table-based summary file | Tract shares for every household attribute (tables below) | https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/ | 2020–2024 | U.S. Census Bureau, public domain |
 | LEHD LODES8 WAC and RAC (S000, JT00) | `daytimeWorkers` (jobs located in the cell), `residentWorkers` (employed residents), probability of `awayDaytime` | https://lehd.ces.census.gov/data/lodes/LODES8/ | 2023 | U.S. Census Bureau, public domain |
+| 2020 Census P.L. 94-171 table P5 (group quarters), segment 3 | Block population in college/university student housing (P5_008N), used to boost `collegeStudent` near campuses | same PL 94-171 zip | 2020 | U.S. Census Bureau, public domain |
+| NCES IPEDS: HD2023 (directory) and EF2023A (fall enrollment, EFALEVEL=1 → EFTOTLT) | `Facility` kind `university` with real enrollment; `HexCell.collegeEnrollment`. Institutions in the county with ICLEVEL 1–2 and ≥ 300 students; small vocational/beauty schools are dropped | https://nces.ed.gov/ipeds/datacenter/data/HD2023.zip, https://nces.ed.gov/ipeds/datacenter/data/EF2023A.zip | Fall 2023 | NCES, public domain |
 | CDC/ATSDR SVI 2022 (tract CSV) | `EP_DISABL`, which scales the medical-device rate | https://svi.cdc.gov/ | 2022 | CDC/ATSDR/GRASP, CDC/ATSDR Social Vulnerability Index 2022 Database |
-| NCES EDGE Public School Administrative Data | School names, locations, enrollment (`Facility.enrollment`) | https://nces.ed.gov/opengis/rest/services/K12_School_Locations/EDGE_ADMINDATA_PUBLICSCH_2324/MapServer/1 | 2023–24 | NCES, public domain |
-| OpenStreetMap via Overpass API (one query per region, cached) | Hospitals, fire stations, shelters, communication masts/towers, `natural=coastline` (Gulf and bay shorelines) | https://overpass-api.de/ | Retrieved 2026-11-07 | **© OpenStreetMap contributors**, ODbL 1.0, https://www.openstreetmap.org/copyright |
+| NCES EDGE Public School Administrative Data | School names, locations, enrollment (`Facility.enrollment`), `HexCell.k12Enrollment` (sum over the cell), `Household.nearestSchoolId` | https://nces.ed.gov/opengis/rest/services/K12_School_Locations/EDGE_ADMINDATA_PUBLICSCH_2324/MapServer/1 | 2023–24 | NCES, public domain |
+| OpenStreetMap via Overpass API (one query per region, cached) | Hospitals, fire stations, shelters, communication masts/towers (also exported as `Facility` kind `mast`), `natural=coastline` (Gulf and bay shorelines) | https://overpass-api.de/ | Retrieved 2026-11-07 | **© OpenStreetMap contributors**, ODbL 1.0, https://www.openstreetmap.org/copyright |
 | Terrain Tiles on AWS (Terrarium, zoom 12) | Mean ground elevation per cell (flood depth, rain pockets) | https://registry.opendata.aws/terrain-tiles/ | Static | Sources include USGS 3DEP/NED, SRTM, GMTED2010, ETOPO1 (see registry page for attribution) |
 | USGS ShakeMap scenario catalog (`grid.xml`, MMI) | `shakingMmi` per cell (bilinear interpolation of the ~1.8 km grid) | https://earthquake.usgs.gov/scenarios/ (event ids `gllegacyhaywiredm7p05_se`, `bssc2014sanandreaspeninsula2_m7p38_se`, `nclegacycalaverascnccm7p0_se`, `bssc2014haywardso2011cfmellb_m7p_se`) | HayWired v33 (2017); BSSC2014; legacy | USGS, public domain |
 | California Geological Survey, Seismic Hazard Zones: Liquefaction Zones | `liquefaction`: the share of 7 sample points per cell inside a regulatory liquefaction zone | https://services2.arcgis.com/zr3KAIbsRSUyARHG/arcgis/rest/services/CGS_Liquefaction_Zones/FeatureServer/0 | Service edited 2025 | California Department of Conservation / CGS |
@@ -66,6 +79,9 @@ Total output is about 93 MB. The live HayWired world is deliberately severe beca
 | `noVehicle` | B08201_002 / B08201_001 | ×1.4 for 65+, ×0.9 for others, ×1.5 if alone (assumption) |
 | `mobileHome` | B25024_010 / B25024_001 | Bernoulli. Also raises wind damage. |
 | (hidden) older building | B25034_007..011 / B25034_001 (built before 1980) | Raises earthquake (+0.35) and wind (+0.15) damage |
+| `policyType` | B25003_003 / B25003_001 (renter share); condo proxy = owner-occupied units in 2+ unit structures, B25032_005..010 / B25032_002 | Renter with the tract share (×0.6 for 65+ households, 90% for college-student households, both assumptions). Otherwise condo with the condo-proxy probability (never for mobile homes), else homeowners. ACS has no condo field, so this is a proxy. |
+| `schoolAgeChildren` | B01001 5–17 (E004..006 + E028..030) / under 18; under 18 / B11005_002 (children per household with children) | Households with children have 1 + Poisson(children per household − 1) kids; each is school-age with the tract 5–17 share |
+| `collegeStudent` | B14007_017 + B14007_018 (enrolled in college, undergraduate + graduate) | P = 0.35 × college pop / 2 / households (assumption: 35% of students live in their own ~2-person student households), plus 0.5 × dorm pop / (dorm pop + 2.5 × cell households) from 2020 group quarters P5_008N. Student households have no 65+ members and no children; they are renters 90%, have no vehicle 35%, are away in the daytime 70%, live alone 30% (assumptions). |
 | `primaryLanguage`, `limitedEnglish` | C16002: household language group (English only 002, Spanish 003, other Indo-European 006, Asian & Pacific Island 009, other 012) and the limited-English share within each group (004, 007, 010, 013). C16001 person counts split the groups into concrete codes: `ko` 018, `zh` 021, `vi` 024, `tl` 027, `other-api` 030; `fr` 006, `de` 009, `ru` 012, `other-ie` 015; `ar` 033, `other` 036 | Language group first, then limited-English status, then the code. English-only households are `en`, limitedEnglish = false. |
 
 ## What is approximated
@@ -75,7 +91,12 @@ Total output is about 93 MB. The live HayWired world is deliberately severe beca
 - **Tract assignment.** `HexCell.tractGeoid` is the tract that contributes the most population to the cell, using real block-to-tract membership. It is not a nearest-point approximation. `Household.tractGeoid` is the tract of the block the household was placed at.
 - **Household placement.** Households are allocated to cells in proportion to ACS-scaled population (largest remainder, at least 1 per cell). Inside a cell, each household goes to a 2020 block internal point chosen in proportion to block population, plus up to 120 m of jitter (kept inside the cell).
 - **Coverage flags are assumptions.** `windCovered` 97%. Texas `floodPolicy` = 6% + 50%·exp(−coastKm/2.5) + 10% if ground < 3 m (about 18% overall). California `earthquakeEndorsement` **12%** (assumption, in line with the commonly cited ~10–15% California take-up; no policy data used). `phoneOnFile` 88%. `medicalDevice` = old-simulator rates (9% if 65+, 2.75% otherwise) × tract SVI disability rate / 13%.
-- **`awayDaytime`.** P = clamp(LODES resident workers per household / 1.8, 0.03, 0.85), ×0.3 for 65+ households, ×0.85 with children (assumption: about 1.8 adults per household). It only matters for daytime events. Of these, only the CA live and CA backtest-2 quakes happen in working hours (`QuakeScenario.daytime`). All hurricanes make landfall at night.
+- **`awayDaytime`.** P = clamp(LODES resident workers per household / 1.8, 0.03, 0.85), ×0.3 for 65+ households, ×0.85 with children (assumption: about 1.8 adults per household).
+- **Event clock.** `World.eventLocalHour` and `eventWeekday` are derived from `landfallIso` in the region's time zone (America/Chicago, America/Los_Angeles) with `Intl`. The simulation uses exactly these values:
+  - Work hours = weekday 08–18; school hours = weekday 08–15.
+  - Work/school effects apply **only to earthquakes**. Hurricanes are forecast days ahead, so offices and schools are closed and people shelter at home.
+  - Live CA (10:40 Friday) and CA backtest-2 (12:05 Thursday) are in work and school hours. CA backtest-1 (03:42) and backtest-3 (20:30) are not.
+  - Texas events: 02:00 Sat (live, backtest-1), 22:00 Wed (backtest-2), 17:00 Thu (backtest-3).
 - **Hurricane wind (hypothetical tracks).** Straight track through the landfall point. V = vmax(s)·g(d)·asym·exposure + N(0,3):
   - vmax decays over land with a Kaplan–DeMaria-style factor, exp(−0.095·hours over land). Over-land distance comes from the OSM coastline side test.
   - g = 1 inside Rmax, (Rmax/d)^0.6 outside.
@@ -119,11 +140,17 @@ For earthquakes `windMph = 0` and `floodDepthFt = 0`. `TruthRow.peril` is `'eart
   - Limited-English households always write in their language. Bilingual households do so 45% of the time (assumption). Languages without templates fall back to English.
   - The structured fields are the simulated ground truth of what the text means.
 - **Claims.** Same as the synthetic simulator, ×0.15 for flood without `floodPolicy`, and **×0.08 for earthquake without `earthquakeEndorsement`**. With ~12% take-up, claims are a weak signal for quakes. That is a deliberate bias.
+  - **Renters** insure only contents and additional living expenses; the structure is on the landlord's policy. They file ×0.3 / 0.5 / 0.7 as often for damage 1 / 2 / 3. **Condo** (HO-6, interior only) files ×0.8 / 0.8 / 0.9 (assumptions).
+  - High-renter areas (student neighbourhoods, apartments) are therefore quieter on the claims channel for the same structural damage. In this build the multipliers cut live claims by about 22% in both regions.
+- **Family reunification (school-hours quakes).** A household has a reunification need when school is in session, it has `schoolAgeChildren > 0`, and its `nearestSchoolId` is in a cell with hazardIndex ≥ 0.5.
+  - There is no truth field for this. Instead, these parents reply more often (×1.25, cap 0.95) and twice as fast when their phone works.
+  - The count is in `sim-meta.json` (`reunificationHouseholds`) and in the `real:check` output.
 - **Field reports.** Backtests only. 12% of non-holdout households, t = 1440–4320, from 20 adjusters. Damage equals truth; 6% of safety answers are `unsure`.
 
 ## Deliberate biases (what the engine has to cope with)
 1. **Silence is not safety.** The strongest outage cluster sits on a real mast in the hardest-hit area. Needs-help and damage-3 households reply less often.
 2. **Silence is also not danger.** Away-from-home households (LODES-based) reply less during a daytime quake, but they are rarely in danger.
+7. **Renters are quiet in claims.** For the same structural damage they file far fewer claims (contents/ALE only).
 3. **Limited-English households** reply less to the English-only SMS, and some of them reply in Spanish, Chinese, Vietnamese, Tagalog or Korean.
 4. **Analyst under-marked a hard-hit cluster** (radius 2) and **over-marked a low-hazard cluster** (radius 2). Hurricane zones come from a forecast track shifted 1–2 km sideways. Quake zones come from a ShakeMap smoothed over a radius-2 neighbourhood that ignores liquefaction (zone 2 ≈ smoothed MMI ≥ 8.8, zone 1 ≈ ≥ 7.9).
 5. **Over-reporting district** (radius 3): SMS damage gets +1 with 45% probability. **Seniors under-report** (−1 with 30% probability).
@@ -138,19 +165,20 @@ A cell is silent-severe if it has hazardIndex ≥ 0.5, outage ≥ 80%, reply rat
 
 | hex | wind | flood ft | outage | zone | hh | replies | claims | severe | nearby real facilities |
 |---|---|---|---|---|---|---|---|---|---|
-| 8848954681fffff | 112 | 0 | 100 | 2 | 96 | 0 | 3 | 71 | Coles H S and Educational Center (0.6 km), PAM Specialty Hospital of Corpus Christi Bayfront (0.8 km), CCFD Station 1 (1.0 km), Roy Miller H S (1,531 students, 2.1 km) |
+| 8848954681fffff | 112 | 0 | 100 | 2 | 96 | 0 | 1 | 74 | Coles H S and Educational Center (0.6 km), PAM Specialty Hospital of Corpus Christi Bayfront (0.8 km), CCFD Station 1 (1.0 km), Roy Miller H S (1,531 students, 2.1 km) |
 | 8848954685fffff | 117 | 7.2 | 100 | 2 | 22 | 0 | 0 | 22 | PAM Specialty Hospital Bayfront (0.8 km), CCFD Station 1 (1.0 km) |
-| 8848954687fffff | 114 | 0.9 | 100 | 2 | 15 | 0 | 1 | 15 | CCFD Station 1 (same cell), Coles H S (0.5 km) |
+| 8848954687fffff | 114 | 0.9 | 100 | 2 | 15 | 0 | 0 | 14 | CCFD Station 1 (same cell), Coles H S (0.5 km) |
 
 **Alameda County (Fremont/Newark/Union City, MMI 9–9.9 plus liquefaction):**
 
 | hex | MMI | liq | outage | zone | hh | replies | claims | severe | nearby real facilities |
 |---|---|---|---|---|---|---|---|---|---|
-| 88283460bbfffff | 9.39 | 1.0 | 100 | 2 | 111 | 0 | 0 | 106 | Forest Park Elementary (693 students, 0.4 km), Fremont Fire Station 10 (0.4 km), Ardenwood Elementary (1.1 km) |
-| 88283460b7fffff | 9.78 | 1.0 | 100 | 2 | 93 | 0 | 1 | 93 | Warwick Elementary (732 students, 0.3 km), Fremont Fire Station 8 (1.2 km) |
-| 88283460abfffff | 9.88 | 0.71 | 83 | **0** | 87 | 2 | 7 | 85 | Thornton Middle (1,854 students, 0.7 km), Cabrillo Elementary (0.3 km): the analyst left it unmarked |
+| 88283460bbfffff | 9.39 | 1.0 | 100 | 2 | 111 | 0 | 0 | 105 | Forest Park Elementary (693 students, 0.4 km), Fremont Fire Station 10 (0.4 km), Ardenwood Elementary (1.1 km) |
+| 88283460b7fffff | 9.78 | 1.0 | 100 | 2 | 93 | 0 | 0 | 92 | Warwick Elementary (732 students, 0.3 km), Fremont Fire Station 8 (1.2 km) |
+| 88283460abfffff | 9.88 | 0.71 | 83 | **0** | 87 | 0 | 1 | 85 | Thornton Middle (1,854 students, 0.7 km), Cabrillo Elementary (0.3 km): the analyst left it unmarked |
 
 ## Fallbacks used in this build
+- IPEDS, ACS tenure and enrollment, and 2020 group quarters all downloaded successfully, so the OSM university fallback was not needed.
 - The Census Data API now requires a key, so ACS comes from the **table-based summary file** instead. These are the same estimates, streamed and filtered to the two counties.
 - The USGS elevation point service (EPQS) took about 20 s per point and the 3DEP ImageServer timed out, so **AWS Terrain Tiles** are used for elevation.
 - There is no public Hayward Fault trace in the pipeline. A hand-digitized approximate trace is used **only to select the study corridor**.

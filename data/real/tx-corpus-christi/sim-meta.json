@@ -89,10 +89,12 @@
         "88489555dbfffff",
         "88489555ddfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "Track: landfall 27.615,-97.205, heading -45 deg, 132 mph, Rmax 14 km, surge 14 ft.",
         "Analyst zones use the forecast track shifted -1.87 km sideways, no rain pockets, smoothed over neighbours.",
-        "2510 sms_reply events carry free text."
+        "2517 sms_reply events carry free text.",
+        "Local time 2:00 weekend (America/Chicago); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     },
     {
@@ -178,10 +180,12 @@
         "88489546e9fffff",
         "88489546ebfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "Track: landfall 27.8,-97.07, heading -62 deg, 104 mph, Rmax 22 km, surge 7 ft.",
         "Analyst zones use the forecast track shifted 1.14 km sideways, no rain pockets, smoothed over neighbours.",
-        "2095 sms_reply events carry free text."
+        "2115 sms_reply events carry free text.",
+        "Local time 2:00 weekend (America/Chicago); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     },
     {
@@ -266,10 +270,12 @@
         "88489546cbfffff",
         "88489546cdfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "Track: landfall 27.45,-97.29, heading -18 deg, 145 mph, Rmax 12 km, surge 15 ft.",
         "Analyst zones use the forecast track shifted 1.76 km sideways, no rain pockets, smoothed over neighbours.",
-        "1384 sms_reply events carry free text."
+        "1416 sms_reply events carry free text.",
+        "Local time 22:00 weekday (America/Chicago); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     },
     {
@@ -354,10 +360,12 @@
         "88489546e9fffff",
         "88489546ebfffff"
       ],
+      "reunificationHouseholds": 0,
       "notes": [
         "Track: landfall 27.7,-97.16, heading -78 deg, 88 mph, Rmax 26 km, surge 5 ft.",
         "Analyst zones use the forecast track shifted -1.05 km sideways, no rain pockets, smoothed over neighbours.",
-        "1947 sms_reply events carry free text."
+        "1937 sms_reply events carry free text.",
+        "Local time 17:00 weekday (America/Chicago); work hours do not apply; school in session: false. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): 0."
       ]
     }
   ]

@@ -20,6 +20,14 @@ export const HOLDOUT_SHARE = 0.15;
 export const FIELD_REPORT_SHARE = 0.12;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+/** Local hour (0-23) and weekday flag of an ISO instant in an IANA time zone. */
+export function localTime(iso: string, tz: string): { hour: number; weekday: boolean } {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23', weekday: 'short' }).formatToParts(new Date(iso));
+  const hour = Number(parts.find((p) => p.type === 'hour')!.value) % 24;
+  const wd = parts.find((p) => p.type === 'weekday')!.value;
+  return { hour, weekday: wd !== 'Sat' && wd !== 'Sun' };
+}
 const clampDamage = (v: number): Damage => clamp(Math.round(v), 0, 3) as Damage;
 const sigmoid = (z: number): number => 1 / (1 + Math.exp(-z));
 
@@ -105,6 +113,7 @@ export interface SimMeta {
   underMarkedCenterHex: HexId; underMarkedHexes: HexId[];
   overMarkedCenterHex: HexId; overMarkedHexes: HexId[];
   overReportingDistrictCenterHex: HexId; overReportingDistrictHexes: HexId[];
+  reunificationHouseholds: number;
   notes: string[];
 }
 
@@ -210,6 +219,8 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     hc.tractGeoid = c.tract;
     hc.daytimeWorkers = c.jobs;
     hc.residentWorkers = c.workers;
+    hc.k12Enrollment = c.k12Enrollment;
+    hc.collegeEnrollment = c.collegeEnrollment;
     hexes.push(hc);
     cellOut.set(c.hex, hc);
   }
@@ -265,7 +276,20 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     eventId: `${opt.regionPrefix}-${sc.eventId}`, seed: sc.seed, households: opt.households,
     holdoutShare: HOLDOUT_SHARE, hazardType: sc.kind,
   });
-  const daytime = sc.kind === 'earthquake' && sc.daytime;
+  // Local clock: hurricanes are forecast days ahead (schools/offices closed, people sheltering), so
+  // work/school-hours effects apply only to earthquakes, which strike without warning.
+  const { hour: eventLocalHour, weekday: eventWeekday } = localTime(sc.landfallIso, data.region.tz);
+  const workHours = eventWeekday && eventLocalHour >= 8 && eventLocalHour < 18;
+  const schoolHours = eventWeekday && eventLocalHour >= 8 && eventLocalHour < 15;
+  const daytime = isQuake && workHours;
+  const schoolInSession = isQuake && schoolHours;
+  const schoolHex = new Map(base.schools.map((f) => [f.id, f.hex]));
+  /** Parents with school-age children whose nearest school is in a high-hazard cell (reunification need). */
+  const reunify = (hh: { schoolAgeChildren?: number; nearestSchoolId?: string }) => {
+    if (!schoolInSession || !hh.schoolAgeChildren || !hh.nearestSchoolId) return false;
+    const h = schoolHex.get(hh.nearestSchoolId);
+    return h !== undefined && (cellOut.get(h)?.hazardIndex ?? 0) >= 0.5;
+  };
 
   // ---- truth ----
   const truth: TruthRow[] = [];
@@ -329,8 +353,10 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       if (tr.safety === 'needs_help') p *= 0.5;
       if (hh.limitedEnglish) p *= 0.55; // check-in SMS is English-only
       if (awayNow) p *= 0.6;            // not home: silence without danger
+      const parentCheckIn = reunify(hh);
+      if (parentCheckIn) p = Math.min(0.95, p * 1.25); // parents check in quickly when they can
       if (smsRng.chance(p)) {
-        const delay = smsRng.lognormal(40 * (1 + 20 * o * o), 1.1);
+        const delay = smsRng.lognormal(40 * (1 + 20 * o * o), 1.1) * (parentCheckIn ? 0.5 : 1);
         const tReply = Math.round(tSent + delay);
         let dmg = tr.damage + (smsRng.chance(awayNow ? 0.5 : 0.3) ? (smsRng.chance(0.5) ? 1 : -1) : 0);
         if (districtSet.has(hh.hex) && smsRng.chance(0.45)) dmg += 1;
@@ -361,6 +387,10 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     if (peril === 'flood' && !hh.floodPolicy) pc *= 0.15;
     if (peril === 'wind' && !hh.windCovered) pc *= 0.2;
     if (peril === 'earthquake' && !hh.earthquakeEndorsement) pc *= 0.08;
+    // renters insure contents / additional living expense only (structure is the landlord's policy);
+    // condo (HO-6) policies cover the interior only (assumptions)
+    if (hh.policyType === 'renters') pc *= [1, 0.3, 0.5, 0.7][tr.damage]!;
+    else if (hh.policyType === 'condo') pc *= [1, 0.8, 0.8, 0.9][tr.damage]!;
     if (claimRng.chance(pc)) {
       const medianH = 8 * Math.exp(3 * o * o) * (1 + 0.3 * tr.damage) * (awayNow ? 1.3 : 1);
       const tClaim = Math.round(30 + claimRng.lognormal(medianH, 0.8) * 60);
@@ -384,6 +414,8 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
   const kindOrder: Record<SimEvent['kind'], number> = { sms_sent: 0, sms_reply: 1, claim: 2, field_report: 3 };
   events.sort((a, b) => a.t - b.t || kindOrder[a.kind] - kindOrder[b.kind] || (a.householdId < b.householdId ? -1 : a.householdId > b.householdId ? 1 : 0));
   notes.push(`${texts} sms_reply events carry free text.`);
+  const reunifyCountAll = households.filter(reunify).length;
+  notes.push(`Local time ${eventLocalHour}:00 ${eventWeekday ? 'weekday' : 'weekend'} (${data.region.tz}); work hours ${daytime ? 'apply' : 'do not apply'}; school in session: ${schoolInSession}. Households with a reunification need (school-age children, nearest school in a cell with hazardIndex >= 0.5, school in session): ${reunifyCountAll}.`);
 
   const r = data.region;
   const bundle: EventBundle = {
@@ -398,6 +430,8 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       hazardType: sc.kind,
       facilities: base.facilities,
       dataSources: opt.dataSources,
+      eventLocalHour,
+      eventWeekday,
     },
     events,
     truth,
@@ -407,7 +441,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     meta: {
       eventId: sc.eventId, hazardType: sc.kind, trackOutageCenterHex,
       underMarkedCenterHex, underMarkedHexes, overMarkedCenterHex, overMarkedHexes,
-      overReportingDistrictCenterHex, overReportingDistrictHexes, notes,
+      overReportingDistrictCenterHex, overReportingDistrictHexes, reunificationHouseholds: reunifyCountAll, notes,
     },
   };
 }

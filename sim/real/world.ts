@@ -23,6 +23,9 @@ export interface CellInfo {
   coastKm: number;                // distance to OSM coastline (km)
   elevM: number;                  // mean ground elevation (m), NaN if unknown
   liquefaction: number;           // 0-1 share of sample points inside CGS liquefaction zones (CA)
+  gqCollege: number;              // 2020 Census population in college/university student housing
+  k12Enrollment: number;          // NCES enrollment of K-12 schools located in the cell
+  collegeEnrollment: number;      // IPEDS fall enrollment of colleges located in the cell
   blocks: Block[];
 }
 
@@ -34,6 +37,7 @@ export interface BaseWorld {
   terrain: Terrain;
   facilities: Facility[];
   masts: Array<{ lat: number; lng: number; hex: HexId; x: number; y: number }>;
+  schools: Facility[];            // K-12 schools (NCES) for nearestSchoolId
   notes: string[];
 }
 
@@ -89,7 +93,7 @@ export function buildBaseWorld(data: RegionData): BaseWorld {
     }
     const [lat, lng] = cellToLatLng(hex);
     const tract = [...byTract.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]![0];
-    candidates.push({ hex, lat, lng, x: proj.x(lng), y: proj.y(lat), pop, households: hh, tract, jobs, workers, coastKm: 0, elevM: NaN, liquefaction: 0, blocks });
+    candidates.push({ hex, lat, lng, x: proj.x(lng), y: proj.y(lat), pop, households: hh, tract, jobs, workers, coastKm: 0, elevM: NaN, liquefaction: 0, gqCollege: blocks.reduce((a, b) => a + b.gqCollege, 0), k12Enrollment: 0, collegeEnrollment: 0, blocks });
   }
 
   // ---- region-specific study area ----
@@ -152,12 +156,24 @@ export function buildBaseWorld(data: RegionData): BaseWorld {
     };
     if (f.enrollment !== undefined) fac.enrollment = f.enrollment;
     facilities.push(fac);
+    const cell = cellByHex.get(hex)!;
+    if (f.kind === 'school') cell.k12Enrollment += f.enrollment ?? 0;
+    if (f.kind === 'university') cell.collegeEnrollment += f.enrollment ?? 0;
   }
+  // communication masts inside the study cells (OSM), exposed as Facility kind 'mast'
+  let mastN = 0;
+  for (const m of data.masts.slice().sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    const hex = latLngToCell(m.lat, m.lng, H3_RES);
+    if (!cellByHex.has(hex)) continue;
+    mastN++;
+    facilities.push({ id: `${r.id}-mast-${String(mastN).padStart(3, '0')}`, kind: 'mast', name: m.name, lat: round(m.lat, 6), lng: round(m.lng, 6), hex, source: 'OpenStreetMap' });
+  }
+  const schools = facilities.filter((f) => f.kind === 'school');
   const masts = data.masts
     .map((m) => ({ lat: m.lat, lng: m.lng, hex: latLngToCell(m.lat, m.lng, H3_RES), x: proj.x(m.lng), y: proj.y(m.lat) }))
     .filter((m) => cellByHex.has(m.hex) || pool.some((c) => Math.hypot(c.x - m.x, c.y - m.y) < 2));
 
-  return { cells: pool, cellByHex, proj, coast, terrain, facilities, masts, notes };
+  return { cells: pool, cellByHex, proj, coast, terrain, facilities, masts, schools, notes };
 }
 
 export const round = (v: number, digits: number): number => {
@@ -231,18 +247,32 @@ export function sampleHouseholds(base: BaseWorld, data: RegionData, opt: Househo
       const t = data.tracts.get(tractId)!;
       seq++;
       // ---- attributes from real tract shares ----
-      const age65 = attrRng.chance(t.shareHh65);
+      // college-student household: ~35% of enrolled college students (B14007) live in their own student
+      // households (~2 students each) rather than with parents (assumption); plus a boost in cells with
+      // 2020 college group quarters (dorms), whose surroundings are student rentals (assumption).
+      const pCollege = clamp((0.35 * t.collegePop) / 2 / Math.max(1, t.households) + 0.5 * c.gqCollege / (c.gqCollege + 2.5 * c.households + 1), 0, 0.7);
+      const collegeStudent = attrRng.chance(pCollege);
+      const age65 = !collegeStudent && attrRng.chance(t.shareHh65);
       const age75 = age65 && attrRng.chance(t.share75Of65);
       const aloneNon65 = clamp((t.shareAlone - t.shareHh65 * t.shareAlone65OfHh65) / Math.max(0.05, 1 - t.shareHh65), 0, 0.9);
-      const livesAlone = attrRng.chance(age65 ? t.shareAlone65OfHh65 : aloneNon65);
+      const livesAlone = attrRng.chance(collegeStudent ? 0.3 : age65 ? t.shareAlone65OfHh65 : aloneNon65);
       // children: none if alone; 65+ households 0.35x as likely (assumption); rescaled so the tract share holds.
       const a65 = t.shareHh65 * (1 - t.shareAlone65OfHh65), bNon = (1 - t.shareHh65) * (1 - aloneNon65);
       const pKids = clamp(t.shareHhKids / Math.max(0.05, 0.35 * a65 + bNon), 0, 0.95);
-      const childrenUnder18 = !livesAlone && attrRng.chance(age65 ? 0.35 * pKids : pKids);
+      const childrenUnder18 = !livesAlone && !collegeStudent && attrRng.chance(age65 ? 0.35 * pKids : pKids);
+      // number of 5-17 year olds: kids ~ 1 + Poisson(kidsPerKidHh - 1), each school-age with the tract 5-17 / under-18 share
+      let schoolAgeChildren = 0;
+      if (childrenUnder18) {
+        const nKids = 1 + poisson(attrRng, Math.max(0, t.kidsPerKidHh - 1));
+        for (let q = 0; q < nKids; q++) if (attrRng.chance(t.share5to17OfU18)) schoolAgeChildren++;
+      }
       // disability: 65+ households use the 65+ person rate; others 1-(1-p)^2 for ~2 adults (assumption)
       const disability = attrRng.chance(age65 ? (livesAlone ? t.disab65 : 1 - (1 - t.disab65) ** 1.5) : 1 - (1 - t.disabU65) ** 2);
-      const noVehicle = attrRng.chance(clamp(t.shareNoVehicle * (age65 ? 1.4 : 0.9) * (livesAlone ? 1.5 : 1), 0, 0.9));
-      const mobileHome = attrRng.chance(t.shareMobile);
+      const noVehicle = attrRng.chance(collegeStudent ? 0.35 : clamp(t.shareNoVehicle * (age65 ? 1.4 : 0.9) * (livesAlone ? 1.5 : 1), 0, 0.9));
+      const mobileHome = !collegeStudent && attrRng.chance(t.shareMobile);
+      // tenure (B25003) and condo proxy (B25032): students rent 90%, 65+ households rent 0.6x as often (assumptions)
+      const renter = attrRng.chance(collegeStudent ? 0.9 : clamp(t.shareRenter * (age65 ? 0.6 : 1), 0, 0.95));
+      const policyType: 'homeowners' | 'renters' | 'condo' = renter ? 'renters' : (!mobileHome && attrRng.chance(t.shareCondoOfOwner)) ? 'condo' : 'homeowners';
       // language group from C16002, concrete language from C16001 person splits
       const group = pickWeighted(attrRng, t.lang) as keyof Tract['lang'];
       let primaryLanguage = 'en';
@@ -255,7 +285,7 @@ export function sampleHouseholds(base: BaseWorld, data: RegionData, opt: Househo
       const disRatio = t.pctDisabled !== undefined ? clamp(t.pctDisabled / 13, 0.5, 2) : 1;
       const medicalDevice = attrRng.chance((age65 ? 0.09 : 0.0275) * disRatio);
       // away in the daytime: LODES resident workers per household (assumption: ~1.8 adults per non-senior household)
-      const awayDaytime = attrRng.chance(clamp((workersPerHh / 1.8) * (age65 ? 0.3 : 1) * (childrenUnder18 ? 0.85 : 1), 0.03, 0.85));
+      const awayDaytime = attrRng.chance(collegeStudent ? 0.7 : clamp((workersPerHh / 1.8) * (age65 ? 0.3 : 1) * (childrenUnder18 ? 0.85 : 1), 0.03, 0.85));
       const windCovered = attrRng.chance(0.97);
       const floodPolicy = opt.hazardType === 'hurricane'
         ? attrRng.chance(clamp(0.06 + 0.5 * Math.exp(-c.coastKm / 2.5) + (Number.isFinite(c.elevM) && c.elevM < 3 ? 0.1 : 0), 0, 0.8))
@@ -269,13 +299,33 @@ export function sampleHouseholds(base: BaseWorld, data: RegionData, opt: Househo
         holdout: false,
         tractGeoid: tractId, childrenUnder18, awayDaytime,
         age75, disability, noVehicle, limitedEnglish, primaryLanguage, mobileHome,
+        policyType, schoolAgeChildren, collegeStudent,
       });
+      const ns = nearestSchool(base.schools, lat, lng);
+      if (ns) households[households.length - 1]!.nearestSchoolId = ns.id;
       hidden.set(id, { olderBuilding: attrRng.chance(t.sharePre1980), vulnerable: attrRng.chance(0.06) });
     }
   });
   const holdoutCount = Math.round(opt.holdoutShare * households.length);
   for (const hh of attrRng.shuffle(households).slice(0, holdoutCount)) hh.holdout = true;
   return { households, hidden };
+}
+
+function poisson(rng: Rng, lambda: number): number {
+  const L = Math.exp(-lambda);
+  let k = 0, p = 1;
+  do { k++; p *= rng.float(); } while (p > L && k < 12);
+  return k - 1;
+}
+
+function nearestSchool(schools: Facility[], lat: number, lng: number): Facility | undefined {
+  const kx = Math.cos((lat * Math.PI) / 180);
+  let best: Facility | undefined, bd = Infinity;
+  for (const f of schools) {
+    const d = (f.lat - lat) ** 2 + ((f.lng - lng) * kx) ** 2;
+    if (d < bd) { bd = d; best = f; }
+  }
+  return best;
 }
 
 /** Neighbour lookup restricted to the study cells. */

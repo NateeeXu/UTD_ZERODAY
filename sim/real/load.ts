@@ -3,6 +3,7 @@
 // documented proxy so generation can continue.
 
 import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import type { RegionDef } from './regions.ts';
 import { ACS_TABLES, ACS_YEAR, LODES_YEAR, RAW_DIR } from './sources.ts';
@@ -18,6 +19,7 @@ export interface Block {
   hu2020: number;    // 2020 Census HU100
   jobs: number;      // LODES WAC C000 (jobs located in the block)
   workers: number;   // LODES RAC C000 (employed residents of the block)
+  gqCollege: number; // 2020 Census P5_008N: population in college/university student housing
 }
 
 export interface Tract {
@@ -40,6 +42,11 @@ export interface Tract {
   disab65: number;            // disability rate among persons 65+
   disabU65: number;           // disability rate among persons 18-64
   shareNoVehicle: number;     // households with no vehicle
+  shareRenter: number;        // B25003 renter-occupied / occupied
+  shareCondoOfOwner: number;  // B25032 owner-occupied units in 2+ unit structures / owner-occupied (condo proxy)
+  kidsPerKidHh: number;       // persons under 18 / households with children
+  share5to17OfU18: number;    // persons 5-17 / persons under 18
+  collegePop: number;         // B14007 enrolled in college (undergraduate + graduate)
   /** Household language groups (C16002): share of households and limited-English rate within the group. */
   lang: { en: number; es: number; ie: number; api: number; other: number };
   limited: { es: number; ie: number; api: number; other: number };
@@ -54,7 +61,7 @@ export interface Tract {
 }
 
 export interface RawFacility {
-  kind: 'school' | 'hospital' | 'shelter' | 'fire_station';
+  kind: 'school' | 'university' | 'hospital' | 'shelter' | 'fire_station' | 'mast';
   name: string;
   lat: number; lng: number;
   enrollment?: number;
@@ -68,7 +75,7 @@ export interface RegionData {
   tracts: Map<string, Tract>;
   coastWays: Array<Array<{ lat: number; lon: number }>>;
   facilities: RawFacility[];
-  masts: Array<{ lat: number; lng: number; id: string }>;
+  masts: Array<{ lat: number; lng: number; id: string; name: string }>;
   liquefaction: PolyIndex | null;
   fallbacks: string[];
   used: string[];
@@ -119,13 +126,14 @@ export function loadRegion(r: RegionDef): RegionData {
   for (const line of readLines(plPath).slice(1)) {
     const [sumlev, geoid, , , pop, hu, lat, lng] = line.split(',');
     if (sumlev === '750') {
-      blocks.push({ geoid: geoid!, tract: geoid!.slice(0, 11), lat: Number(lat), lng: Number(lng), pop2020: Number(pop), hu2020: Number(hu), jobs: 0, workers: 0 });
+      blocks.push({ geoid: geoid!, tract: geoid!.slice(0, 11), lat: Number(lat), lng: Number(lng), pop2020: Number(pop), hu2020: Number(hu), jobs: 0, workers: 0, gqCollege: 0 });
     } else {
       tracts.set(geoid!, {
         geoid: geoid!, lat: Number(lat), lng: Number(lng), pop2020: Number(pop),
         pop: Number(pop), shareU18: 0.22, share65: 0.17, households: 0, housingUnits: Number(hu),
         shareHhKids: 0.3, shareHh65: 0.3, shareAlone65OfHh65: 0.27, shareAlone: 0.28, shareMobile: 0.02, sharePre1980: 0.4,
         share75Of65: 0.45, disab65: 0.33, disabU65: 0.10, shareNoVehicle: 0.08,
+        shareRenter: 0.4, shareCondoOfOwner: 0.05, kidsPerKidHh: 1.8, share5to17OfU18: 0.72, collegePop: 0,
         lang: { en: 0.78, es: 0.13, ie: 0.04, api: 0.04, other: 0.01 }, limited: { es: 0.2, ie: 0.1, api: 0.25, other: 0.15 },
         apiSplit: { zh: 1 }, ieSplit: { 'other-ie': 1 }, otherSplit: { other: 1 },
       });
@@ -160,6 +168,9 @@ export function loadRegion(r: RegionDef): RegionData {
     const b08201 = readAcs(acsPath('b08201'));
     const c16001 = readAcs(acsPath('c16001'));
     const c16002 = readAcs(acsPath('c16002'));
+    const b25003 = readAcs(acsPath('b25003'));
+    const b25032 = readAcs(acsPath('b25032'));
+    const b14007 = readAcs(acsPath('b14007'));
     const sum = (rec: Record<string, number>, table: string, cols: number[]) =>
       cols.reduce((a, c) => a + (rec[`${table}_E${String(c).padStart(3, '0')}`] ?? 0), 0);
     const safe = (num: number, den: number, dflt: number) => (den > 0 ? num / den : dflt);
@@ -204,6 +215,14 @@ export function loadRegion(r: RegionDef): RegionData {
       t.apiSplit = split({ ko: 18, zh: 21, vi: 24, tl: 27, 'other-api': 30 }, 'zh');
       t.ieSplit = split({ fr: 6, de: 9, ru: 12, 'other-ie': 15 }, 'other-ie');
       t.otherSplit = split({ ar: 33, other: 36 }, 'other');
+      const ten = b25003.get(t.geoid), tu = b25032.get(t.geoid), en = b14007.get(t.geoid);
+      if (ten) t.shareRenter = safe(sum(ten, 'B25003', [3]), sum(ten, 'B25003', [1]), 0.4);
+      if (tu) t.shareCondoOfOwner = safe(sum(tu, 'B25032', [5, 6, 7, 8, 9, 10]), sum(tu, 'B25032', [2]), 0.05);
+      const u18 = sum(a, 'B01001', [3, 4, 5, 6, 27, 28, 29, 30]);
+      const hhKids = sum(k, 'B11005', [2]);
+      t.kidsPerKidHh = hhKids > 0 ? Math.max(1, u18 / hhKids) : 1.8;
+      t.share5to17OfU18 = safe(sum(a, 'B01001', [4, 5, 6, 28, 29, 30]), u18, 0.72);
+      if (en) t.collegePop = sum(en, 'B14007', [17, 18]);
     }
     used.push('acs5');
   } else {
@@ -250,7 +269,7 @@ export function loadRegion(r: RegionDef): RegionData {
       const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
       if (lat === undefined || lon === undefined) continue;
       const sourceId = `osm:${e.type}/${e.id}`;
-      if (tags.man_made === 'mast' || tags.man_made === 'tower') { masts.push({ lat, lng: lon, id: sourceId }); continue; }
+      if (tags.man_made === 'mast' || tags.man_made === 'tower') { masts.push({ lat, lng: lon, id: sourceId, name: tags.name ?? (tags.operator ? `${tags.operator} mast` : 'Communication mast') }); continue; }
       const kind = tags.amenity === 'hospital' ? 'hospital'
         : tags.amenity === 'fire_station' ? 'fire_station'
         : tags.amenity === 'school' ? 'school'
@@ -283,6 +302,51 @@ export function loadRegion(r: RegionDef): RegionData {
       used.push('nces');
     } else fallbacks.push('NCES query returned no schools: OSM amenity=school used instead');
   } else fallbacks.push('NCES school file missing: OSM amenity=school used instead');
+
+  // ---- 2020 Census group quarters: college/university student housing (P5_008N) ----
+  const gqPath = join(RAW_DIR, 'pl', `gq_${fips}.csv`);
+  if (existsSync(gqPath)) {
+    for (const line of readLines(gqPath).slice(1)) {
+      const [g, n] = line.split(',');
+      const b = byBlock.get(g!);
+      if (b) b.gqCollege = Number(n);
+    }
+    used.push('census-gq2020');
+  } else fallbacks.push('2020 group-quarters extract missing: no dormitory boost for collegeStudent');
+
+  // ---- IPEDS colleges / universities (HD2023 directory + EF2023A fall enrollment) ----
+  const hdPath = join(RAW_DIR, 'ipeds', 'HD2023.zip'), efPath = join(RAW_DIR, 'ipeds', 'EF2023A.zip');
+  if (existsSync(hdPath) && existsSync(efPath)) {
+    const unzipText = (zip: string) => execFileSync('unzip', ['-p', zip], { maxBuffer: 512 * 1024 * 1024 }).toString('utf8').split(/\r?\n/).filter((l) => l);
+    const hd = unzipText(hdPath);
+    const hh = parseCsvLine(hd[0]!.replace(/^\uFEFF/, ''));
+    const ix = (n: string) => hh.indexOf(n);
+    const ef = unzipText(efPath);
+    const eh = parseCsvLine(ef[0]!.replace(/^\uFEFF/, ''));
+    const eU = eh.indexOf('UNITID'), eL = eh.indexOf('EFALEVEL'), eT = eh.indexOf('EFTOTLT');
+    const enroll = new Map<string, number>();
+    for (const line of ef.slice(1)) {
+      const f = parseCsvLine(line);
+      if (f[eL]?.trim() === '1') enroll.set(f[eU]!.trim(), Number(f[eT]));
+    }
+    const countyCode = String(Number(r.stateFips + r.countyFips));
+    let n = 0;
+    for (const line of hd.slice(1)) {
+      const f = parseCsvLine(line);
+      if (String(Number(f[ix('COUNTYCD')])) !== countyCode) continue;
+      const e = enroll.get(f[ix('UNITID')]!.trim()) ?? 0;
+      const level = f[ix('ICLEVEL')]?.trim(); // 1 = 4-year+, 2 = 2-year
+      if (e < 300 || (level !== '1' && level !== '2')) continue; // drop small vocational / beauty schools
+      facilities.push({
+        kind: 'university', name: f[ix('INSTNM')]!, lat: Number(f[ix('LATITUDE')]), lng: Number(f[ix('LONGITUD')]),
+        enrollment: e, source: 'IPEDS 2023 (HD2023, EF2023A)', sourceId: `ipeds:${f[ix('UNITID')]}`,
+      });
+      n++;
+    }
+    if (n) used.push('ipeds'); else fallbacks.push('IPEDS returned no institutions in the county');
+  } else {
+    fallbacks.push('IPEDS files missing: no university facilities / collegeEnrollment');
+  }
 
   // ---- CGS liquefaction zones (CA only) ----
   let liquefaction: PolyIndex | null = null;

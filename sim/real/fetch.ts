@@ -86,6 +86,33 @@ export async function fetchPl(r: RegionDef): Promise<void> {
   writeFileSync(out, rows.join('\n') + '\n');
 }
 
+// ---- 2020 Census PL segment 3: group quarters, P5_008N college/university student housing (blocks) ----
+export async function fetchGq(r: RegionDef): Promise<void> {
+  const out = join(RAW_DIR, 'pl', `gq_${r.stateFips}${r.countyFips}.csv`);
+  if (existsSync(out)) return;
+  const zip = join(RAW_DIR, 'pl', `${r.stateAbbr}2020.pl.zip`);
+  await download(`https://www2.census.gov/programs-surveys/decennial/2020/data/01-Redistricting_File--PL_94-171/${r.plStateDir}/${r.stateAbbr}2020.pl.zip`, zip);
+  const logrec = new Map<string, string>();
+  const geo = createInterface({ input: spawn('unzip', ['-p', zip, `${r.stateAbbr}geo2020.pl`]).stdout, crlfDelay: Infinity });
+  for await (const line of geo) {
+    const f = line.split('|');
+    if (f[2] === '750' && f[14] === r.countyFips) logrec.set(f[7]!, f[8]!.split('US')[1]!);
+  }
+  const rows = ['geoid,college_gq'];
+  const seg = createInterface({ input: spawn('unzip', ['-p', zip, `${r.stateAbbr}000032020.pl`]).stdout, crlfDelay: Infinity });
+  for await (const line of seg) {
+    const f = line.split('|');
+    const g = logrec.get(f[4]!);
+    if (g && Number(f[12]) > 0) rows.push(`${g},${Number(f[12])}`); // P5_008N (fields: FILEID,STUSAB,CHARITER,CIFSN,LOGRECNO,P5_001N..P5_010N)
+  }
+  writeFileSync(out, rows.join('\n') + '\n');
+}
+
+// ---- IPEDS: institution directory (HD2023) and fall enrollment (EF2023A) ----
+export async function fetchIpeds(): Promise<void> {
+  for (const f of ['HD2023.zip', 'EF2023A.zip']) await download(`https://nces.ed.gov/ipeds/datacenter/data/${f}`, join(RAW_DIR, 'ipeds', f));
+}
+
 // ---- LEHD LODES8 WAC / RAC (all jobs, S000 / JT00), filtered to the county ----
 export async function fetchLodes(r: RegionDef): Promise<void> {
   for (const kind of ['wac', 'rac'] as const) {
@@ -191,6 +218,7 @@ async function main(): Promise<void> {
   for (const r of regions) {
     log(`== ${r.id}`);
     await step(`${r.id}/pl2020`, () => fetchPl(r));
+    await step(`${r.id}/pl2020-gq`, () => fetchGq(r));
     await step(`${r.id}/lodes`, () => fetchLodes(r));
     await step(`${r.id}/svi`, () => fetchSvi(r));
     await step(`${r.id}/nces`, () => fetchNces(r));
@@ -201,6 +229,7 @@ async function main(): Promise<void> {
       await step(`${r.id}/cgs-liquefaction`, () => fetchCgs(r));
     }
   }
+  await step('ipeds', () => fetchIpeds());
   await acs;
   writeFileSync(join(RAW_DIR, 'fetch-status.json'), JSON.stringify(status, null, 2) + '\n');
   log('done; status written to data/raw/fetch-status.json');

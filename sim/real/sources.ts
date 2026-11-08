@@ -30,7 +30,7 @@ export const ACS_YEAR = 2024;
  *   PI (E030), Arabic (E033), other (E036); and Indo-European into French/Haitian/Cajun (E006),
  *   German (E009), Russian/Polish/Slavic (E012), other Indo-European (E015).
  */
-export const ACS_TABLES = ['b01001', 'b11001', 'b11005', 'b11007', 'b25024', 'b25034', 'b18101', 'b08201', 'c16001', 'c16002'] as const;
+export const ACS_TABLES = ['b01001', 'b11001', 'b11005', 'b11007', 'b25024', 'b25034', 'b18101', 'b08201', 'c16001', 'c16002', 'b25003', 'b25032', 'b14007'] as const;
 export const LODES_YEAR = 2023;
 export const TERRAIN_ZOOM = 12;
 

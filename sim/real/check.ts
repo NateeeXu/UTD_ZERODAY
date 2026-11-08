@@ -15,9 +15,9 @@ const fail = (file: string, msg: string) => errors.push(`${file}: ${msg}`);
 type T = 'string' | 'number' | 'boolean' | 'object';
 type Shape = Record<string, T>;
 const HEX_REQ: Shape = { hex: 'string', lat: 'number', lng: 'number', windMph: 'number', floodDepthFt: 'number', towerOutagePct: 'number', analystZone: 'number' };
-const HEX_OPT: Shape = { hazardIndex: 'number', shakingMmi: 'number', liquefaction: 'number', tractGeoid: 'string', daytimeWorkers: 'number', residentWorkers: 'number' };
+const HEX_OPT: Shape = { hazardIndex: 'number', shakingMmi: 'number', liquefaction: 'number', tractGeoid: 'string', daytimeWorkers: 'number', residentWorkers: 'number', k12Enrollment: 'number', collegeEnrollment: 'number' };
 const HH_REQ: Shape = { id: 'string', hex: 'string', lat: 'number', lng: 'number', age65: 'boolean', livesAlone: 'boolean', medicalDevice: 'boolean', windCovered: 'boolean', floodPolicy: 'boolean', earthquakeEndorsement: 'boolean', phoneOnFile: 'boolean', holdout: 'boolean' };
-const HH_OPT: Shape = { tractGeoid: 'string', childrenUnder18: 'boolean', awayDaytime: 'boolean', age75: 'boolean', disability: 'boolean', noVehicle: 'boolean', limitedEnglish: 'boolean', primaryLanguage: 'string', mobileHome: 'boolean' };
+const HH_OPT: Shape = { tractGeoid: 'string', childrenUnder18: 'boolean', awayDaytime: 'boolean', age75: 'boolean', disability: 'boolean', noVehicle: 'boolean', limitedEnglish: 'boolean', primaryLanguage: 'string', mobileHome: 'boolean', policyType: 'string', schoolAgeChildren: 'number', collegeStudent: 'boolean', nearestSchoolId: 'string' };
 const FAC_REQ: Shape = { id: 'string', kind: 'string', name: 'string', lat: 'number', lng: 'number', hex: 'string', source: 'string' };
 const FAC_OPT: Shape = { enrollment: 'number', capacity: 'number' };
 const TRUTH: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string' };
@@ -45,7 +45,8 @@ function validate(file: string, b: EventBundle): void {
   const w = b.world;
   if (Object.keys(b).sort().join() !== 'events,truth,world') fail(file, 'bundle keys mismatch');
   const wk = Object.keys(w).sort().join();
-  if (wk !== 'center,dataSources,eventId,facilities,hazardType,hexes,households,landfallIso,name,region') fail(file, `world keys ${wk}`);
+  if (wk !== 'center,dataSources,eventId,eventLocalHour,eventWeekday,facilities,hazardType,hexes,households,landfallIso,name,region') fail(file, `world keys ${wk}`);
+  if (!Number.isInteger(w.eventLocalHour) || w.eventLocalHour! < 0 || w.eventLocalHour! > 23 || typeof w.eventWeekday !== 'boolean') fail(file, 'bad eventLocalHour/eventWeekday');
   if (Number.isNaN(Date.parse(w.landfallIso))) fail(file, 'bad landfallIso');
   if (!w.region || !w.hazardType || !w.dataSources?.length) fail(file, 'region/hazardType/dataSources missing');
   const isQuake = w.hazardType === 'earthquake';
@@ -59,20 +60,30 @@ function validate(file: string, b: EventBundle): void {
     if (c.towerOutagePct < 0 || c.towerOutagePct > 100) fail(file, `bad outage ${c.towerOutagePct}`);
     if (c.floodDepthFt < 0) fail(file, 'negative flood');
     if (typeof c.hazardIndex !== 'number' || c.hazardIndex < 0 || c.hazardIndex > 1) fail(file, `hazardIndex missing/out of range at ${c.hex}`);
+    if (typeof c.k12Enrollment !== 'number' || typeof c.collegeEnrollment !== 'number' || c.k12Enrollment < 0 || c.collegeEnrollment < 0) fail(file, `k12/college enrollment missing at ${c.hex}`);
     if (isQuake && (c.windMph !== 0 || c.floodDepthFt !== 0 || typeof c.shakingMmi !== 'number')) fail(file, `quake cell ${c.hex} wind/flood must be 0 and MMI set`);
   }
   if (w.hexes.some((c, i) => i > 0 && w.hexes[i - 1]!.hex >= c.hex)) fail(file, 'hexes not sorted by id');
   for (const [i, f] of (w.facilities ?? []).entries()) {
     if (!shape(file, `facilities[${i}]`, f, FAC_REQ, FAC_OPT)) break;
-    if (!['school', 'hospital', 'shelter', 'fire_station'].includes(f.kind)) fail(file, `bad facility kind ${f.kind}`);
+    if (!['school', 'university', 'hospital', 'shelter', 'fire_station', 'mast'].includes(f.kind)) fail(file, `bad facility kind ${f.kind}`);
     if (!hexSet.has(f.hex)) fail(file, `facility ${f.id} outside world`);
   }
+  const schoolIds = new Set((w.facilities ?? []).filter((f) => f.kind === 'school').map((f) => f.id));
+  // k12Enrollment must equal the sum of school enrollment in the cell
+  const k12 = new Map<string, number>();
+  for (const f of w.facilities ?? []) if (f.kind === 'school') k12.set(f.hex, (k12.get(f.hex) ?? 0) + (f.enrollment ?? 0));
+  for (const c of w.hexes) if ((k12.get(c.hex) ?? 0) !== c.k12Enrollment) fail(file, `k12Enrollment mismatch at ${c.hex}`);
   const ids = new Set<string>();
   for (const [i, h] of w.households.entries()) {
     if (!shape(file, `households[${i}]`, h, HH_REQ, HH_OPT)) break;
     if (ids.has(h.id)) fail(file, `duplicate household ${h.id}`);
     ids.add(h.id);
     if (!hexSet.has(h.hex)) fail(file, `household ${h.id} hex not in world`);
+    if (!['homeowners', 'renters', 'condo'].includes(h.policyType ?? '')) fail(file, `bad policyType ${h.policyType}`);
+    if (!Number.isInteger(h.schoolAgeChildren) || h.schoolAgeChildren! < 0) fail(file, `bad schoolAgeChildren ${h.schoolAgeChildren}`);
+    if (h.schoolAgeChildren! > 0 && !h.childrenUnder18) fail(file, `schoolAgeChildren without childrenUnder18 ${h.id}`);
+    if (!schoolIds.has(h.nearestSchoolId ?? '')) fail(file, `nearestSchoolId ${h.nearestSchoolId} is not a school facility`);
   }
   if (b.truth.length !== w.households.length) fail(file, 'truth rows != households');
   for (const [i, t] of b.truth.entries()) {
@@ -126,7 +137,7 @@ function silentSevere(b: EventBundle) {
 
 function nearby(fac: Facility[], c: HexCell, km = 2.5, n = 4): string {
   const ranked = fac.map((f) => ({ f, d: greatCircleDistance([c.lat, c.lng], [f.lat, f.lng], 'km') }))
-    .filter((x) => x.d <= km)
+    .filter((x) => x.d <= km && x.f.kind !== 'mast')
     .sort((a, b) => (a.f.kind === 'school' ? 0 : 1) - (b.f.kind === 'school' ? 0 : 1) || a.d - b.d);
   const pick = [...ranked.filter((x) => x.f.kind === 'school').slice(0, 2), ...ranked.filter((x) => x.f.kind !== 'school').slice(0, n - 2)];
   return pick.map((x) => `${x.f.name} (${x.f.kind}${x.f.enrollment ? `, ${x.f.enrollment} students` : ''}, ${x.d.toFixed(1)} km)`).join('; ');
@@ -173,6 +184,23 @@ for (const region of regions) {
     const langs: Record<string, number> = {};
     for (const h of hh) langs[h.primaryLanguage ?? '?'] = (langs[h.primaryLanguage ?? '?'] ?? 0) + 1;
     console.log(`live household attributes: age65 ${share((h) => h.age65)}, age75 ${share((h) => h.age75)}, alone ${share((h) => h.livesAlone)}, kids ${share((h) => h.childrenUnder18)}, disability ${share((h) => h.disability)}, noVehicle ${share((h) => h.noVehicle)}, limitedEnglish ${share((h) => h.limitedEnglish)}, mobileHome ${share((h) => h.mobileHome)}, awayDaytime ${share((h) => h.awayDaytime)}, floodPolicy ${share((h) => h.floodPolicy)}, quakeEndorsement ${share((h) => h.earthquakeEndorsement)}`);
+    const schoolHours = live.world.hazardType === 'earthquake' && live.world.eventWeekday === true && live.world.eventLocalHour! >= 8 && live.world.eventLocalHour! < 15;
+    const tenure: Record<string, number> = {};
+    for (const h of hh) tenure[h.policyType ?? '?'] = (tenure[h.policyType ?? '?'] ?? 0) + 1;
+    console.log(`event local time ${live.world.eventLocalHour}:00, ${live.world.eventWeekday ? 'weekday' : 'weekend'}; school in session: ${schoolHours}`);
+    console.log(`policy types: ${Object.entries(tenure).map(([k, v]) => `${k} ${((100 * v) / hh.length).toFixed(1)}%`).join(', ')}; collegeStudent ${share((h) => h.collegeStudent)}; households with school-age children ${share((h) => (h.schoolAgeChildren ?? 0) > 0)} (${hh.reduce((a, h) => a + (h.schoolAgeChildren ?? 0), 0)} children)`);
+    const hexById = new Map(live.world.hexes.map((c) => [c.hex, c]));
+    const facById = new Map((live.world.facilities ?? []).map((f) => [f.id, f]));
+    const reunify = schoolHours ? hh.filter((h) => (h.schoolAgeChildren ?? 0) > 0 && (hexById.get(facById.get(h.nearestSchoolId ?? '')?.hex ?? '')?.hazardIndex ?? 0) >= 0.5).length : 0;
+    console.log(`reunification-need households (school in session, school-age children, nearest school in a cell with hazardIndex >= 0.5): ${reunify}`);
+    const exposed = live.world.hexes.filter((c) => (c.k12Enrollment ?? 0) > 0)
+      .map((c) => ({ c, students: Math.round((c.k12Enrollment ?? 0) * (c.hazardIndex ?? 0)) }))
+      .sort((a, b) => b.students - a.students).slice(0, 3);
+    console.log(`top cells by students exposed (k12Enrollment x hazardIndex${schoolHours ? ', school in session' : '; NOT school hours, so potential only'}):`);
+    for (const { c, students } of exposed) {
+      const names = (live.world.facilities ?? []).filter((f) => f.kind === 'school' && f.hex === c.hex).map((f) => `${f.name} (${f.enrollment ?? '?'})`).join('; ');
+      console.log(`  ${c.hex}: ${schoolHours ? students : 0} exposed (k12 ${c.k12Enrollment}, hazardIndex ${c.hazardIndex}, outage ${c.towerOutagePct}%): ${names}`);
+    }
     console.log(`languages: ${Object.entries(langs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${((100 * v) / hh.length).toFixed(1)}%`).join(', ')}`);
     const fac = live.world.facilities ?? [];
     const kinds: Record<string, number> = {};
