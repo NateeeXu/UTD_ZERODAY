@@ -46,8 +46,11 @@ export function peopleLine({ est, replies, reports, followup }: HouseholdSignals
   if (followup?.closureReason) detail = `Closed: ${CLOSURES.find((c) => c.value === followup.closureReason)?.label ?? followup.closureReason}`;
   if (!est) return { status: '—', detail, tone: 'warn' };
   const lifeSafety = step === 'emergency_referral' || step.startsWith('referral_');
+  const head = est.accounted ? 'Accounted' : 'Not heard from';
+  const stepLabel = ESCALATION[step]?.label ?? step;
   return {
-    status: `${est.accounted ? 'Accounted' : 'Not heard from'} · ${ESCALATION[step]?.label ?? step}`,
+    // Skip the step when it is empty or repeats the head ("Accounted · Accounted").
+    status: stepLabel && stepLabel !== head ? `${head} · ${stepLabel}` : head,
     detail,
     tone: lifeSafety ? 'bad' : est.accounted ? 'ok' : 'warn',
   };

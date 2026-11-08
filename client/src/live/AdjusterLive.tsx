@@ -59,8 +59,10 @@ function AdjusterScreen() {
       .slice(0, 10),
     [candidates, assigned.length], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  // Only the households on this screen (the full table is 20–30k rows on the real regions).
-  const householdBy = useHouseholdsById(useMemo(() => [...assignedIdsAll, ...suggestions.map((c) => c.householdId)], [assignedIdsAll, suggestions]));
+  // Household rows only for my assignments and the open card (the full table is 20–30k rows on the real
+  // regions). Suggested rows render from inspection_candidate, so they stay out of this query: keyed on the
+  // top 10 it re-subscribed on every replay tick, a newly listed home never loaded and an open card closed.
+  const householdBy = useHouseholdsById(useMemo(() => (openId ? [...assignedIdsAll, openId] : assignedIdsAll), [assignedIdsAll, openId]));
 
   if (!me || me.role !== 'adjuster') {
     return (
@@ -74,6 +76,14 @@ function AdjusterScreen() {
 
   const open = openId ? householdBy.get(openId) : undefined;
   if (open) return <HouseholdCard hh={open} area={labeler.cell(open.hex)} fictional={fictional} kids={kidsNote(open)} onDone={() => setOpenId(null)} />;
+  if (openId) {
+    return (
+      <div className="phone">
+        <header className="phone-top"><button className="link muted back" onClick={() => setOpenId(null)}>← Tasks</button><ConnectionBadge /></header>
+        <p className="muted pad">Loading home…</p>
+      </div>
+    );
+  }
 
   const open_ = assigned.filter((a) => a.status === 'assigned').length;
   return (
