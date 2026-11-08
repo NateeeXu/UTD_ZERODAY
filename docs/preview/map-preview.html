@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Triage Loop · map style preview (A + C)</title>
+<title>Triage Loop · map style preview (A + C + D)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { --ink:#1d1d1f; --muted:#6b6b70; --line:#e3e3e8; --bg:#f6f6f7; --p0:#d93a35; --p1:#ee7d2b; --p2:#e8b931; }
@@ -33,6 +33,8 @@
   /* C: pulse ring, only on the most urgent silent cells */
   .pulse-ring { transform-box: fill-box; transform-origin: center; animation: ring 1.8s ease-out infinite; }
   @keyframes ring { 0% { transform: scale(1); stroke-opacity: .95; } 75% { transform: scale(1.9); stroke-opacity: 0; } 100% { transform: scale(1.9); stroke-opacity: 0; } }
+  /* D: question-mark badge on cells that need verification */
+  .qmark { width:16px; height:16px; border-radius:50%; background:#fff; border:1.5px solid currentColor; display:flex; align-items:center; justify-content:center; font:600 11px/1 -apple-system,BlinkMacSystemFont,sans-serif; box-sizing:border-box; pointer-events:none; }
   @media (max-width: 900px) { .grid { grid-template-columns:1fr; height:auto; } .map { height:60vh; } }
 </style>
 </head>
@@ -41,6 +43,7 @@
   <h1>Triage Loop</h1>
   <span class="sub">Synthetic exercise · real geography and census data · no real customer data · H3 res 8</span>
   <div class="seg" id="times"></div>
+  <label class="chk"><input type="checkbox" id="qmarks" checked> D: ? on cells to verify</label>
   <label class="chk"><input type="checkbox" id="schools"> Schools and hospitals</label>
 </header>
 <div class="grid">
@@ -53,6 +56,7 @@
   <span><span class="sw" style="background:var(--p2)"></span>P2</span>
   <span><span class="ramp"><i style="opacity:.2"></i><i style="opacity:.5"></i><i style="opacity:.85"></i></span>Fainter = less confident (needs verification)</span>
   <span><svg width="18" height="14" style="vertical-align:-2px;margin-right:4px"><polygon points="9,1 16,5 16,11 9,13 2,11 2,5" fill="none" stroke="#d93a35" stroke-width="2"/></svg>Pulsing = top 10 silent high-hazard cells to verify first</span>
+  <span><span class="qmark" style="display:inline-flex;color:#7a1714;vertical-align:-3px;margin-right:4px">?</span>Needs verification (zoomed out: top 25 P0 cells; zoom in to see all)</span>
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -63,6 +67,9 @@ const D = window.PREVIEW_DATA;
 const COLOR = { P0: '#d93a35', P1: '#ee7d2b', P2: '#e8b931' };
 const CAUSE = { outage: 'cell towers down', away: 'residents likely away at work', trapped: 'many vulnerable residents', unknown: 'cause unclear' };
 const PULSE_TOP = 10;
+const Q_TOP_ZOOMED_OUT = 25;
+const Q_ALL_ZOOM = 13;
+const DARK = { P0: '#7a1714', P1: '#7a3a0c', P2: '#6b5208' };
 let current = D.times[1];
 const state = {};
 
@@ -84,6 +91,8 @@ function setup(id) {
   }).addTo(map);
   const cells = L.layerGroup().addTo(map);
   const rings = L.layerGroup().addTo(map);
+  const qmarks = L.layerGroup().addTo(map);
+  map.on('zoomend', () => drawQmarks(id));
   const fac = L.layerGroup();
   for (const f of r.facilities) {
     const isSchool = f.k !== 'hospital';
@@ -94,7 +103,25 @@ function setup(id) {
   const first = r.snapshots[String(D.times[0])];
   const bounds = L.latLngBounds(first.flatMap((c) => h3.cellToBoundary(c.hex)));
   map.fitBounds(bounds, { padding: [10, 10] });
-  state[id] = { map, cells, rings, fac };
+  state[id] = { map, cells, rings, qmarks, fac, pulse: new Set() };
+}
+
+function drawQmarks(id) {
+  const st = state[id];
+  if (!st) return;
+  st.qmarks.clearLayers();
+  if (!document.getElementById('qmarks').checked) return;
+  const snap = D.regions[id].snapshots[String(current)];
+  let todo = snap.filter((c) => c.v === 'needs_verification' && !st.pulse.has(c.hex));
+  if (st.map.getZoom() < Q_ALL_ZOOM) {
+    todo = todo.filter((c) => c.p === 'P0').sort((a, b) => b.n * (1 - b.c) - a.n * (1 - a.c)).slice(0, Q_TOP_ZOOMED_OUT);
+  }
+  for (const c of todo) {
+    L.marker(h3.cellToLatLng(c.hex), {
+      interactive: false, keyboard: false,
+      icon: L.divIcon({ className: '', iconSize: [16, 16], html: `<div class="qmark" style="color:${DARK[c.p]}">?</div>` }),
+    }).addTo(st.qmarks);
+  }
 }
 
 function render(id) {
@@ -108,6 +135,7 @@ function render(id) {
     .sort((a, b) => b.si * b.hz * b.n - a.si * a.hz * a.n)
     .slice(0, PULSE_TOP);
   const pulse = new Set(suspected.map((c) => c.hex));
+  state[id].pulse = pulse;
 
   const counts = { P0: 0, P1: 0, P2: 0 }; let nv = 0;
   for (const c of snap) {
@@ -137,6 +165,7 @@ function render(id) {
     `<div class="stats">${r.households.toLocaleString()} synthetic policyholders · ${r.cells} cells · ` +
     `t = ${fmtTime(current)} · <b style="color:${COLOR.P0}">${counts.P0} P0</b> · ${counts.P1} P1 · ${counts.P2} P2 · ` +
     `<b>${nv}</b> need verification</div>`;
+  drawQmarks(id);
 }
 
 function renderAll() { render('tx'); render('ca'); }
@@ -149,6 +178,7 @@ for (const t of D.times) {
   if (t === current) b.classList.add('on');
   seg.appendChild(b);
 }
+document.getElementById('qmarks').onchange = () => { drawQmarks('tx'); drawQmarks('ca'); };
 document.getElementById('schools').onchange = (e) => {
   for (const id of ['tx', 'ca']) e.target.checked ? state[id].fac.addTo(state[id].map) : state[id].fac.remove();
 };
