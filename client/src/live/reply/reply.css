@@ -81,7 +81,7 @@
 /* Composer + footer. The note above it shows "Sending…" or "Not sent. Try again." for typed text. */
 .rp-compose-note { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; min-height: 32px; padding: 0 16px; background: var(--rp-bg); }
 .rp-compose-note:empty { min-height: 0; }
-.rp-composer { flex-shrink: 0; display: flex; align-items: center; gap: 2px; padding: 8px 10px; background: var(--rp-surface); border-top: 1px solid var(--rp-line); }
+.rp-composer { flex-shrink: 0; display: flex; align-items: center; gap: 2px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--rp-surface); border-top: 1px solid var(--rp-line); }
 .rp-icon { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; background: none; color: #5b5b62; border-radius: 50%; cursor: default; }
 .rp-input { flex: 1; min-width: 0; height: 46px; margin-left: 4px; padding: 0 14px; border: 1px solid var(--rp-border); border-radius: var(--rp-radius); background: #f7f7f8; font: inherit; font-size: 16px; color: var(--rp-text); }
 .rp-input::placeholder { color: #8e8e95; }
@@ -89,8 +89,7 @@
 .rp-input:disabled { opacity: 0.6; }
 .rp-send { display: grid; place-items: center; flex-shrink: 0; width: 50px; height: 46px; margin-left: 6px; border: 0; border-radius: var(--rp-radius); background: #e4e4e7; color: #fff; }
 .rp-send.on { background: var(--brand-red); cursor: pointer; }
-.rp-foot { flex-shrink: 0; padding: 0 8px calc(10px + env(safe-area-inset-bottom)); background: var(--rp-surface); text-align: center; white-space: nowrap; font-size: min(12px, 2.45vw); color: var(--rp-muted); }
-.rp[data-kb] .rp-foot { padding-bottom: 8px; } /* the keyboard covers the home indicator */
+.rp[data-kb] .rp-composer { padding-bottom: 8px; } /* the keyboard covers the home indicator */
 
 /* Passcode bottom sheet */
 .rp-sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, 0.32); }
@@ -122,12 +121,6 @@
 .rp[data-app] .rp-close { padding: 0 12px 0 6px; color: var(--brand-red); font-size: 17px; }
 .rp[data-app] .rp-more { color: var(--brand-red); }
 .rp[data-app] .rp-sub { padding: 4px 0 12px; }
-.rp-convo { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.rp-logo { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: var(--brand-red); color: #fff; overflow: hidden; }
-.rp-logo img { width: 100%; height: 100%; object-fit: cover; }
-.rp-convo-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.rp-convo-text b { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rp-convo-text span { font-size: 13px; color: var(--rp-muted); }
 .rp[data-app] .rp-911 { border-color: #d4d4d8; }
 
 /* Messages: automatic notice = beige card, adjuster = white card, the user = red bubble on the right */
@@ -158,7 +151,6 @@
 /* Composer + footer */
 .rp[data-app] .rp-input { border-radius: var(--rp-radius); background: #fff; }
 .rp[data-app] .rp-send { border-radius: var(--rp-radius); }
-.rp[data-app] .rp-foot { white-space: normal; font-size: 13px; line-height: 1.35; padding-top: 2px; }
 
 /* Top notification (new automatic notice or adjuster message): white card sliding in under the status bar */
 .rp-toast {
@@ -174,3 +166,61 @@
 .rp-toast-text span { font-size: 13px; color: #6b6b72; }
 @keyframes rp-toast-in { from { transform: translate(-50%, -24px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .rp-toast { animation: none; } }
+
+/* Compact sizes and the message center, in the same language as the adjuster app. */
+.rp[data-app] .rp-top { padding: env(safe-area-inset-top) 12px 0; }
+.rp[data-app] .rp-head { min-height: 44px; }
+.rp[data-app] .rp-head h1 { max-width: 200px; overflow: hidden; font-size: 15.5px; line-height: 18px; text-align: center; text-overflow: ellipsis; }
+.rp-head-sub { display: block; font-size: 11.5px; font-weight: 400; line-height: 14px; color: var(--rp-muted); }
+.rp[data-app] .rp-close { padding: 0 8px 0 0; margin-left: -4px; font-size: 15px; }
+.rp[data-app] .rp-sub { gap: 8px; padding: 0 0 6px; }
+.rp-danger-q { font-size: 12px; color: var(--rp-muted); }
+.rp[data-app] .rp-911 { position: relative; gap: 4px; min-height: 28px; height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: #c62828; color: #fff; font-size: 12.5px; font-weight: 700; }
+.rp[data-app] .rp-911::after, .rp[data-app] .rp-chip::after { content: ''; position: absolute; inset: -8px -2px; }
+.rp[data-app] .rp-911 svg { width: 13px; height: 13px; }
+.rp[data-app] .rp-thread { padding: 10px 12px; }
+.rp[data-app] .rp-thread-in, .rp[data-app] .rp-log { gap: 8px; }
+.rp[data-app] .rp-meta { gap: 6px; font-size: 12px; }
+.rp[data-app] .rp-shield { width: 20px; height: 20px; }
+.rp[data-app] .rp-shield svg { width: 12px; height: 12px; }
+.rp[data-app] .rp-bubble { min-width: 34px; padding: 7px 11px; font-size: 14px; line-height: 1.35; }
+.rp[data-app] .rp-bubble.them.sys { padding: 9px 11px; font-size: 13px; }
+.rp[data-app] .rp-bubble.tiny { text-align: center; }
+.rp[data-app] .rp-msg, .rp[data-app] .rp-out { gap: 2px; }
+.rp[data-app] .rp-from { padding: 0 3px; font-size: 11px; }
+.rp[data-app] .rp-status { font-size: 11.5px; }
+.rp[data-app] .rp-chips { gap: 5px; }
+.rp[data-app] .rp-chip { position: relative; min-height: 30px; height: 30px; padding: 0 11px; font-size: 12.5px; font-weight: 600; }
+.rp[data-app] .rp-damage { padding: 0; overflow: hidden; }
+.rp[data-app] .rp-damage h2 { padding: 8px 11px 5px; font-size: 13px; }
+.rp[data-app] .rp-damage-row { min-height: 38px; padding: 0 10px 0 11px; font-size: 13.5px; }
+.rp[data-app] .rp-icon { display: none; }
+.rp[data-app] .rp-composer { gap: 6px; padding: 7px 12px calc(7px + env(safe-area-inset-bottom)); }
+.rp[data-app][data-kb] .rp-composer { padding-bottom: 7px; }
+.rp[data-app] .rp-input { height: 36px; margin-left: 0; padding: 0 13px; border-radius: 18px; } /* text stays 16 px so iOS doesn't zoom */
+.rp[data-app] .rp-send { width: 36px; height: 36px; margin-left: 0; border-radius: 50%; }
+.rp[data-app] .rp-send svg { width: 16px; height: 16px; }
+.rp[data-app] .rp-compose-note { min-height: 20px; padding: 0 12px; }
+.rp-toast { gap: 9px; min-height: 50px; padding: 8px 11px; border-radius: 12px; }
+.rp-toast-badge { width: 32px; height: 32px; }
+.rp-toast-text b { font-size: 13.5px; }
+.rp-toast-text span { font-size: 12px; }
+
+.rp-mc { z-index: 10; }
+.mc-sec { margin: 2px 2px 6px; font-size: 13px; font-weight: 600; color: var(--rp-muted); }
+.mc-group { margin-bottom: 14px; overflow: hidden; }
+.mc-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 58px; padding: 8px 11px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.mc-row + .mc-row { border-top: 1px solid var(--rp-line); }
+.mc-row.off { cursor: default; }
+.mc-row > svg { flex-shrink: 0; color: #b0b0b5; }
+button.mc-row:active { background: var(--rp-bg); }
+.mc-av { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: #fdecec; color: var(--brand-red); }
+.mc-av img { width: 100%; height: 100%; object-fit: cover; }
+.mc-av.off { background: #efeff1; color: var(--rp-muted); }
+.mc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mc-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14.5px; }
+.mc-top b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-top time { flex-shrink: 0; font-size: 12px; color: var(--rp-muted); }
+.mc-prev { overflow: hidden; font-size: 12.5px; color: var(--rp-muted); text-overflow: ellipsis; white-space: nowrap; }
+.mc-row.new .mc-prev { font-weight: 500; color: var(--rp-text); }
+.mc-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--brand-red); }

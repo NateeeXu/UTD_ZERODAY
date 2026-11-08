@@ -1,7 +1,8 @@
 // Policyholder "Disaster check-in" page (QR target): #/reply?h=<householdId>&code=<reply passcode>. No login.
-// FollowLive (#/app?code=<reply passcode>) is the same chat in an insurer-app messages look (appMode): it follows
-// the household of the newest automatic (system) message, so a demo phone switches to a home as soon as an
-// adjuster accepts it. appMode styles live under .rp[data-app], so #/reply is unchanged.
+// FollowLive (#/app?code=<reply passcode>) is an insurer-app message center over the same chat (appMode). It follows
+// the household of the newest automatic (system) message: when an adjuster accepts a home, the message center
+// shows a banner and an unread row at once, alongside the iMessage. appMode styles live under .rp[data-app],
+// so #/reply is unchanged.
 // Mobile first (390×844), safe areas, 44 px targets. One red token (--brand-red) for small accents only;
 // the one large red area is the full-width Call 911 after "Need help". Styles: ./reply/reply.css.
 //
@@ -18,14 +19,14 @@ import type ChatMessageRowDef from '../module_bindings/chat_message_table.ts';
 import { LiveProvider } from './LiveProvider';
 import { initialLiveRegion, type RegionId } from './config';
 import { useVisualViewport } from './useVisualViewport';
-import { ArrowUp, Camera, ChatIcon, ChevronLeft, ChevronRight, More, PhoneIcon, Pin, Shield } from './reply/icons';
+import { ArrowUp, Camera, ChatIcon, ChevronLeft, ChevronRight, Doc, More, PhoneIcon, Pin, Shield } from './reply/icons';
 import './reply/reply.css';
 
 const CODE_KEY = 'triage-reply-code'; // same key as the QR card on the dashboard
 const MAX_TEXT = 500; // submit_raw_reply accepts 1..500 characters
 const PLACE: Record<RegionId, string> = { tx: 'Corpus Christi', ca: 'the Bay Area', harbor: 'your area' };
 const BAD_LINK = "This link doesn't match a household in the current demo.";
-const LOGO_URL = ''; // appMode conversation badge; empty = neutral red shield
+const LOGO_URL = ''; // message center badge; empty = neutral red shield
 const TOAST_MS = 5000;
 // Damage scale the accept template asks about; a lone digit is understood by the backend.
 const DAMAGE_CHOICES: { n: string; label: string }[] = [
@@ -114,13 +115,41 @@ export function FollowLive({ code }: { code: string }) {
 
 type Toast = { key: number; text: string };
 
+// Name of the adjuster on this home's newest open assignment.
+function useAdjusterName(householdId: string, enabled: boolean): string | null {
+  const [assignRows] = useTable(useMemo(() => tables.assignment.where((r) => r.householdId.eq(householdId)), [householdId]), { enabled });
+  const [members] = useTable(tables.member, { enabled });
+  return useMemo(() => {
+    if (!enabled) return null;
+    const open = assignRows.filter((a) => a.status === 'assigned').sort((a, b) => (a.id < b.id ? 1 : -1))[0];
+    if (!open) return null;
+    const hex = open.adjuster.toHexString();
+    return members.find((m) => m.identity.toHexString() === hex)?.name.trim() || null;
+  }, [enabled, assignRows, members]);
+}
+
 function Follow({ code, place }: { code: string; place: string }) {
   const [all, ready] = useTable(tables.chatMessage);
+  const [worldRows] = useTable(tables.world);
   const latestSystem = useMemo(
     () => all.reduce<ChatRow | null>((a, r) => (r.sender === 'system' && (!a || r.id > a.id) ? r : a), null),
     [all],
   );
   const householdId = latestSystem?.householdId ?? null;
+  const thread = useMemo(() => all.filter((r) => r.householdId === householdId).sort(byId), [all, householdId]);
+  const name = useAdjusterName(householdId ?? '', !!householdId);
+  const hazard = worldRows[0]?.hazardType === 'earthquake' ? 'earthquake' : 'hurricane';
+
+  const [open, setOpen] = useState(false); // false = the message center list
+  const showList = !open || !householdId;
+
+  // Unread: anything not from the policyholder that arrived after the conversation was last open.
+  const newest = thread.length ? thread[thread.length - 1].id : 0n;
+  const [readTo, setReadTo] = useState(0n);
+  useEffect(() => {
+    if (!showList && newest > readTo) setReadTo(newest);
+  }, [showList, newest, readTo]);
+  const unread = thread.some((r) => r.id > readTo && r.sender !== 'policyholder');
 
   // Notifications only for messages that arrive after the page opened (a reload doesn't replay them).
   const seen = useRef<bigint | null>(null);
@@ -141,45 +170,97 @@ function Follow({ code, place }: { code: string; place: string }) {
   }, [toast]);
   const openLatest = () => {
     setToast(null);
-    document.querySelector('.rp[data-app] .rp-thread')?.scrollTo({ top: 1e9, behavior: 'smooth' });
+    setOpen(true);
+    requestAnimationFrame(() => document.querySelector('.rp[data-app]:not(.rp-mc) .rp-thread')?.scrollTo({ top: 1e9, behavior: 'smooth' }));
   };
 
   return (
     <>
-      {householdId ? (
-        <CheckIn key={householdId} appMode householdId={householdId} urlCode={code} place={place} />
-      ) : (
-        <Page appMode helpSent={false} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), onRetry: () => undefined, enabled: false, state: 'idle' }}>
-          <p className="rp-note rp-empty">{ready ? 'No messages yet.' : 'Loading…'}</p>
-        </Page>
-      )}
+      {/* The conversation stays mounted under the list, so quick replies and drafts survive going back. */}
+      {householdId && <CheckIn key={householdId} appMode onBack={() => setOpen(false)} householdId={householdId} urlCode={code} place={place} />}
+      {showList && <MessageCenter thread={thread} name={name} unread={unread} ready={ready} question={`After the ${hazard} in ${place}, are you and your household safe?`} onOpen={openLatest} />}
       {toast && (
         <button key={toast.key} type="button" className="rp-toast" role="status" onClick={openLatest}>
           <span className="rp-toast-badge"><Shield /></span>
-          <span className="rp-toast-text"><b>{toast.text}</b><span>Tap to view</span></span>
+          <span className="rp-toast-text"><b>{toast.text}</b><span>Tap to read and reply</span></span>
         </button>
       )}
     </>
   );
 }
 
-function CheckIn({ householdId, urlCode, place, appMode = false }: { householdId: string; urlCode: string; place: string; appMode?: boolean }) {
+function MessageCenter({ thread, name, unread, ready, question, onOpen }: {
+  thread: ChatRow[];
+  name: string | null;
+  unread: boolean;
+  ready: boolean;
+  question: string;
+  onOpen: () => void;
+}) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  useVisualViewport(pageRef);
+  const last = thread[thread.length - 1];
+  const preview = last ? `${last.sender === 'policyholder' ? 'You: ' : ''}${last.text.split('\n')[0]}` : '';
+  return (
+    <div className="rp rp-mc" ref={pageRef} data-app="">
+      <div className="rp-top">
+        <header className="rp-head">
+          <button type="button" className="rp-close">Close</button> {/* static in the concept */}
+          <h1>Message center</h1>
+          <span />
+        </header>
+      </div>
+      <main className="rp-thread">
+        {last ? (
+          <>
+            <h2 className="mc-sec">Latest</h2>
+            <div className="rp-card mc-group">
+              <button type="button" className={`mc-row${unread ? ' new' : ''}`} onClick={onOpen}>
+                <span className="mc-av">{LOGO_URL ? <img src={LOGO_URL} alt="" /> : <Shield size={18} />}</span>
+                <span className="mc-main">
+                  <span className="mc-top"><b>{name ?? 'Your adjuster'}</b><time>{fmtWhen(last.createdAt.toDate()).replace('Today ', '')}</time></span>
+                  <span className="mc-prev">{preview}</span>
+                </span>
+                {unread ? <span className="mc-dot" role="img" aria-label="Unread" /> : <ChevronRight />}
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="rp-note rp-empty">{ready ? 'No messages yet.' : 'Loading…'}</p>
+        )}
+        <h2 className="mc-sec">Earlier</h2>
+        <div className="rp-card mc-group">
+          {last && (
+            <button type="button" className="mc-row" onClick={onOpen}>
+              <span className="mc-av off"><ChatIcon size={17} /></span>
+              <span className="mc-main">
+                <span className="mc-top"><b>Disaster check-in</b></span>
+                <span className="mc-prev">{question}</span>
+              </span>
+              <ChevronRight />
+            </button>
+          )}
+          <div className="mc-row off">
+            <span className="mc-av off"><Doc size={17} /></span>
+            <span className="mc-main">
+              <span className="mc-top"><b>Policy documents</b></span>
+              <span className="mc-prev">Your renewal documents are available.</span>
+            </span>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function CheckIn({ householdId, urlCode, place, appMode = false, onBack }: { householdId: string; urlCode: string; place: string; appMode?: boolean; onBack?: () => void }) {
   const [rows, ready] = useTable(useMemo(() => tables.household.where((r) => r.id.eq(householdId)), [householdId]));
   const [worldRows] = useTable(tables.world);
   const [sentRows] = useTable(useMemo(() => tables.smsSent.where((r) => r.householdId.eq(householdId)), [householdId]));
   const [chatRows] = useTable(useMemo(() => tables.chatMessage.where((r) => r.householdId.eq(householdId)), [householdId]));
   const submitParsed = useReducer(reducers.submitParsedReply);
   const submitRaw = useReducer(reducers.submitRawReply);
-  // appMode header: the adjuster of this home's newest open assignment (name from member).
-  const [assignRows] = useTable(useMemo(() => tables.assignment.where((r) => r.householdId.eq(householdId)), [householdId]), { enabled: appMode });
-  const [members] = useTable(tables.member, { enabled: appMode });
-  const adjusterName = useMemo(() => {
-    if (!appMode) return null;
-    const open = assignRows.filter((a) => a.status === 'assigned').sort((a, b) => (a.id < b.id ? 1 : -1))[0];
-    if (!open) return null;
-    const hex = open.adjuster.toHexString();
-    return members.find((m) => m.identity.toHexString() === hex)?.name.trim() || null;
-  }, [appMode, assignRows, members]);
+  const adjusterName = useAdjusterName(householdId, appMode);
 
   const hazard = worldRows[0]?.hazardType === 'earthquake' ? 'earthquake' : 'hurricane';
   const known = rows.length > 0;
@@ -324,6 +405,7 @@ function CheckIn({ householdId, urlCode, place, appMode = false }: { householdId
     <Page
       appMode={appMode}
       who={adjusterName}
+      onBack={onBack}
       helpSent={helpSent}
       scrollKey={scrollKey}
       onAddCode={() => { pending.current = null; setSheet(true); }}
@@ -389,7 +471,7 @@ function ChatBubble({ row, received }: { row: ChatRow; received: boolean }) {
   if (row.sender === 'policyholder') {
     return (
       <div className="rp-out">
-        <div className="rp-bubble me">{row.text}</div>
+        <div className={`rp-bubble me${row.text.trim().length <= 2 ? ' tiny' : ''}`}>{row.text}</div>
         {received && <span className="rp-status" aria-live="polite">Received.</span>}
       </div>
     );
@@ -459,9 +541,10 @@ function useStickToBottom(thread: RefObject<HTMLElement | null>, content: RefObj
 }
 
 // Call 911 is visual only in this demo: it never dials and shows no message.
-function Page({ appMode = false, who = null, helpSent, scrollKey, onAddCode, composer, sheet, children }: {
+function Page({ appMode = false, who = null, onBack, helpSent, scrollKey, onAddCode, composer, sheet, children }: {
   appMode?: boolean;
   who?: string | null; // appMode: the adjuster's name, if one is assigned
+  onBack?: () => void; // appMode: back to the message center
   helpSent: boolean;
   scrollKey?: string;
   onAddCode?: () => void;
@@ -482,13 +565,16 @@ function Page({ appMode = false, who = null, helpSent, scrollKey, onAddCode, com
       <div className="rp-top">
         <header className="rp-head">
           {appMode ? (
-            <button type="button" className="rp-close">Close</button> /* static in the concept */
+            <button type="button" className="rp-close" onClick={onBack}><ChevronLeft size={18} /> Messages</button>
           ) : (
             <button type="button" className="rp-close" onClick={() => { if (window.history.length > 1) window.history.back(); }}>
               <ChevronLeft /> Close
             </button>
           )}
-          <h1>{appMode ? 'Messages' : 'Disaster check-in'}</h1>
+          <h1>
+            {appMode ? (who ?? 'Disaster check-in') : 'Disaster check-in'}
+            {appMode && <span className="rp-head-sub">{who ? 'Your adjuster' : 'Automated assistant'}</span>}
+          </h1>
           <button type="button" className="rp-more" aria-label="More" aria-expanded={menu} onClick={() => setMenu((v) => !v)} disabled={!onAddCode}>
             <More />
           </button>
@@ -500,13 +586,7 @@ function Page({ appMode = false, who = null, helpSent, scrollKey, onAddCode, com
         )}
         <div className="rp-sub">
           {appMode ? (
-            <span className="rp-convo">
-              <span className="rp-logo">{LOGO_URL ? <img src={LOGO_URL} alt="" /> : <Shield size={20} />}</span>
-              <span className="rp-convo-text">
-                <b>{who ?? 'Disaster check-in'}</b>
-                <span>{who ? 'Your adjuster' : 'Automated assistant'}</span>
-              </span>
-            </span>
+            <span className="rp-danger-q">In danger now?</span>
           ) : (
             <span className="rp-auto"><ChatIcon /> Automated assistant</span>
           )}
@@ -543,7 +623,6 @@ function Page({ appMode = false, who = null, helpSent, scrollKey, onAddCode, com
           placeholder="Message" aria-label="Message" disabled={!composer.enabled} enterKeyHint="send" />
         <button type="submit" className={`rp-send${canSend ? ' on' : ''}`} disabled={!canSend} aria-label={sending ? 'Sending' : 'Send'}><ArrowUp /></button>
       </form>
-      <footer className="rp-foot">Concept prototype for the State Farm challenge. Not the State Farm app.</footer>
       {sheet}
     </div>
   );
