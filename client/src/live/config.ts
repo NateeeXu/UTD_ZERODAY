@@ -7,14 +7,14 @@ export type RegionId = 'harbor' | 'tx' | 'ca';
 export interface RegionConfig {
   id: RegionId;
   label: string;
-  db: string | null;              // null = database not published yet
-  preview: 'tx' | 'ca' | null;    // read-only snapshot from docs/preview/preview-data.js while db is null
+  db: string | null;              // live database (set an env var to '' to fall back to the preview)
+  preview: 'tx' | 'ca' | null;    // read-only snapshot from docs/preview/preview-data.js, used only when db is empty
 }
 
 // Region → database. Override per region with env vars once Nate publishes them.
 export const REGIONS: RegionConfig[] = [
-  { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? null, preview: 'tx' },
-  { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? null, preview: 'ca' },
+  { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? 'triage-loop-nateeexu-tx', preview: 'tx' },
+  { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? 'triage-loop-nateeexu-ca', preview: 'ca' },
   { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null },
 ];
 

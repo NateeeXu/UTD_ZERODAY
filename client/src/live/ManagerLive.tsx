@@ -7,11 +7,12 @@ import { LiveMap } from './LiveMap';
 import { JoinDialog } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { LiveQrCard } from './LiveQrCard';
+import { actionEstimates, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
 import { CAUSE, COLOR, RANK, prio, type MapUnit, type Priority } from './mapModel';
 import type { HexStatsRow, HouseholdRow } from './rows';
-import { addressOf, fmtT, pct } from '../format';
+import { fmtT, homeLabel, pct } from '../format';
 
 export function ManagerLive() {
   const [region, setRegion] = useState<RegionConfig>(initialRegion);
@@ -78,8 +79,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [facilities] = useTable(tables.facility);
   const [members] = useTable(tables.member);
   const [myMember] = useTable(tables.myMember);
-  const [households] = useTable(tables.household);
-  const [estimates] = useTable(tables.householdEstimate);
+  const [estimates] = useTable(actionEstimates);
   const [candidates] = useTable(tables.inspectionCandidate);
   const [assignments] = useTable(tables.assignment);
 
@@ -123,7 +123,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const labelFor = useCallback((u: MapUnit) => (u.res === 7 ? labeler.district(u.id) : labeler.cell(u.id)), [labeler]);
 
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
-  const householdBy = useMemo(() => new Map(households.map((h) => [h.id, h])), [households]);
   const adjusters = useMemo(() => members.filter((m) => m.role === 'adjuster'), [members]);
   const [adjusterHex, setAdjusterHex] = useState('');
   const pickedAdjuster = adjusters.find((a) => a.identity.toHexString() === adjusterHex) ?? adjusters[0];
@@ -174,15 +173,25 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     return items.sort((a, b) => b.t - a.t || b.at - a.at).slice(0, 50);
   }, [smsReplies, claims, fieldReports]);
 
-  // QR target: a texted household in the most urgent silent cell, so a judge's reply lands somewhere visible.
-  const qrHousehold = useMemo(() => {
-    const ranked = [...cells].sort((a, b) => b.silence * b.hazard * b.households - a.silence * a.hazard * a.households);
-    for (const c of ranked) {
-      const h = households.find((x) => x.hex === c.hex && x.phoneOnFile);
-      if (h) return h;
+  // Household details only for rows on screen (action queue + selected cell's candidates).
+  const detailIds = useMemo(() => {
+    const ids = actionQueue.map((x) => x.e.householdId);
+    if (sel) {
+      const kids = new Set(sel.kids.map((k) => k.hex));
+      for (const c of candidates) if (kids.has(c.hex)) ids.push(c.householdId);
     }
-    return households.find((h) => h.phoneOnFile) ?? null;
-  }, [cells, households]);
+    return ids;
+  }, [actionQueue, sel, candidates]);
+  const householdBy = useHouseholdsById(detailIds);
+
+  // QR target: a household with a phone in the most urgent silent cell, so a judge's reply lands somewhere visible.
+  const qrHex = useMemo(() => {
+    const top = [...cells].filter((c) => c.households > 0)
+      .sort((a, b) => b.silence * b.hazard * b.households - a.silence * a.hazard * a.households || b.severity - a.severity)[0];
+    return top?.hex ?? null;
+  }, [cells]);
+  const qrCell = useHouseholdsInCell(qrHex);
+  const qrHousehold = useMemo(() => qrCell.find((h) => h.phoneOnFile) ?? qrCell[0] ?? null, [qrCell]);
 
   const assignHex = useReducer(reducers.assignHex);
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -215,7 +224,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
       </RegionHeader>
 
       <div className="metrics-strip">
-        <span className="ms-title">{world?.name ?? '…'}{world ? ` · ${world.hazardType}` : ''}</span>
+        <span className="ms-title" title={world?.name}>{world?.name ?? '…'}</span>
         {(['P0', 'P1', 'P2'] as Priority[]).map((p) => (
           <span key={p}><i className="sw" style={{ background: COLOR[p] }} /><b>{counts[p]}</b> {p}</span>
         ))}
@@ -280,6 +289,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               onClose={() => setSelected(null)}
               canAssign={isManager}
               adjusterName={pickedAdjuster?.name}
+              fictional={fictional}
             />
           ) : (
             <aside className="card queues">
@@ -306,7 +316,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
                       <Chip p={prio(cell.priority)} unverified={cell.verification === 'needs_verification'} />
                       <span className="area-row-main">
                         <b>{labeler.cell(cell.hex)}</b>
-                        <span className="muted small">{householdLine(householdBy.get(e.householdId))}</span>
+                        <span className="muted small">{householdLine(householdBy.get(e.householdId), fictional) || homeLabel(e.householdId, fictional)}</span>
                       </span>
                       <span className="small num">help {pct(e.pNeedsHelp)}</span>
                     </button>
@@ -362,7 +372,7 @@ function unitFromCell(c: HexStatsRow): MapUnit {
   };
 }
 
-function householdLine(h: HouseholdRow | undefined): string {
+function householdLine(h: HouseholdRow | undefined, fictional: boolean): string {
   if (!h) return '';
   const flags: string[] = [];
   if (h.age75) flags.push('75+');
@@ -372,7 +382,7 @@ function householdLine(h: HouseholdRow | undefined): string {
   if (h.disability) flags.push('disability');
   if (h.noVehicle) flags.push('no vehicle');
   if (h.limitedEnglish) flags.push(`limited English${h.primaryLanguage ? ` (${h.primaryLanguage})` : ''}`);
-  return [addressOf(h), ...flags].join(' · ');
+  return [homeLabel(h.id, fictional), ...flags].join(' · ');
 }
 
 function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
@@ -383,7 +393,7 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false }: {
+export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false, fictional = false }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
@@ -394,6 +404,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   canAssign: boolean;
   adjusterName: string | undefined;
   readOnly?: boolean;
+  fictional?: boolean;
 }) {
   const kidHexes = new Set(unit.kids.map((k) => k.hex));
   const top = candidates.filter((c) => kidHexes.has(c.hex)).sort((a, b) => b.inspectScore - a.inspectScore).slice(0, 6);
@@ -433,8 +444,8 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
           {top.map((c) => (
             <li key={c.householdId}>
               <span className="hh-main">
-                <b>{addressOf({ id: c.householdId })}</b>
-                <span className="muted small">{householdLine(households.get(c.householdId)).split(' · ').slice(1).join(' · ') || 'no vulnerability flags'}</span>
+                <b>{homeLabel(c.householdId, fictional)}</b>
+                <span className="muted small">{householdLine(households.get(c.householdId), fictional).split(' · ').slice(1).join(' · ') || 'no vulnerability flags'}</span>
               </span>
               <span className="small num">help {pct(c.pNeedsHelp)} · severe {pct(c.pSevere)}</span>
             </li>

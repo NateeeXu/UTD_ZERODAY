@@ -59,3 +59,10 @@ export function describeEvent(e: SimEvent): string {
       return `Field report (${e.adjusterId}): ${e.safety.replace('_', ' ')} · ${DAMAGE_LABEL[e.damage]}`;
   }
 }
+
+// Real geography: never invent street names over real places; use a neutral home number.
+export function homeLabel(id: string, fictional: boolean): string {
+  if (fictional) return addressOf({ id });
+  const digits = id.match(/(\d+)$/)?.[1];
+  return digits ? `Home #${digits}` : `Home ${id}`;
+}

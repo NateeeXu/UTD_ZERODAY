@@ -5,9 +5,10 @@ import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { initialLiveRegion } from './config';
 import { JoinDialog } from './JoinDialog';
 import { makeLabeler } from './labels';
+import { useEstimatesById, useHouseholdsById } from './hooks';
 import { prio, RANK } from './mapModel';
 import type { HouseholdRow } from './rows';
-import { addressOf, fmtT, pct } from '../format';
+import { fmtT, homeLabel, pct } from '../format';
 
 export function AdjusterLive() {
   const region = useMemo(initialLiveRegion, []);
@@ -24,8 +25,6 @@ const DAMAGE = ['None', 'Minor', 'Severe', 'Uninhabitable'] as const;
 function AdjusterScreen() {
   const [myMember] = useTable(tables.myMember);
   const [mine] = useTable(tables.myAssignments);
-  const [households] = useTable(tables.household);
-  const [estimates] = useTable(tables.householdEstimate);
   const [cells] = useTable(tables.hexStats);
   const [candidates] = useTable(tables.inspectionCandidate);
   const [worldRows] = useTable(tables.world);
@@ -33,10 +32,11 @@ function AdjusterScreen() {
   const me = myMember[0];
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const householdBy = useMemo(() => new Map(households.map((h) => [h.id, h])), [households]);
-  const estimateBy = useMemo(() => new Map(estimates.map((e) => [e.householdId, e])), [estimates]);
+  const assignedIdsAll = useMemo(() => mine.map((a) => a.householdId), [mine]);
+  const estimateBy = useEstimatesById(assignedIdsAll);
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
-  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), !worldRows[0]?.region), [cells.length, worldRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fictional = !worldRows[0]?.region;
+  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cells.length, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assigned = useMemo(
     () => [...mine].filter((a) => a.status !== 'cancelled').sort((a, b) => Number(a.status !== 'assigned') - Number(b.status !== 'assigned') || (estimateBy.get(b.householdId)?.inspectScore ?? 0) - (estimateBy.get(a.householdId)?.inspectScore ?? 0)),
@@ -50,6 +50,8 @@ function AdjusterScreen() {
       .slice(0, 10),
     [candidates, assigned.length], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  // Only the households on this screen (the full table is 20–30k rows on the real regions).
+  const householdBy = useHouseholdsById(useMemo(() => [...assignedIdsAll, ...suggestions.map((c) => c.householdId)], [assignedIdsAll, suggestions]));
 
   if (!me || me.role !== 'adjuster') {
     return (
@@ -62,7 +64,7 @@ function AdjusterScreen() {
   }
 
   const open = openId ? householdBy.get(openId) : undefined;
-  if (open) return <HouseholdCard hh={open} area={labeler.cell(open.hex)} onDone={() => setOpenId(null)} />;
+  if (open) return <HouseholdCard hh={open} area={labeler.cell(open.hex)} fictional={fictional} onDone={() => setOpenId(null)} />;
 
   const open_ = assigned.filter((a) => a.status === 'assigned').length;
   return (
@@ -82,7 +84,7 @@ function AdjusterScreen() {
               <button className="task" onClick={() => setOpenId(a.householdId)} disabled={!hh}>
                 <span className={`chip chip-${prio(cell?.priority ?? 'P2')}`}>{prio(cell?.priority ?? 'P2')}</span>
                 <span className="task-main">
-                  <b>{addressOf({ id: a.householdId })}</b>
+                  <b>{homeLabel(a.householdId, fictional)}</b>
                   <span className="muted small">{labeler.cell(a.hex)}</span>
                   <span className="small">{a.status === 'done' ? 'Reported ✓' : `help ${pct(est?.pNeedsHelp ?? 0)} · severe ${pct(est?.pSevere ?? 0)}`}{hh ? flags(hh) : ''}</span>
                 </span>
@@ -101,7 +103,7 @@ function AdjusterScreen() {
                 <button className="task" onClick={() => setOpenId(c.householdId)}>
                   <span className={`chip chip-${prio(c.cellPriority)}`} style={{ opacity: c.cellVerification === 'needs_verification' ? 0.55 : 1 }}>{prio(c.cellPriority)}</span>
                   <span className="task-main">
-                    <b>{addressOf({ id: c.householdId })}</b>
+                    <b>{homeLabel(c.householdId, fictional)}</b>
                     <span className="muted small">{labeler.cell(c.hex)}</span>
                     <span className="small">help {pct(c.pNeedsHelp)} · severe {pct(c.pSevere)}</span>
                   </span>
@@ -124,7 +126,7 @@ function flags(h: HouseholdRow): string {
   return f.length ? ` · ${f.join(' · ')}` : '';
 }
 
-function HouseholdCard({ hh, area, onDone }: { hh: HouseholdRow; area: string; onDone: () => void }) {
+function HouseholdCard({ hh, area, fictional, onDone }: { hh: HouseholdRow; area: string; fictional: boolean; onDone: () => void }) {
   const [replies] = useTable(tables.smsReply.where((r) => r.householdId.eq(hh.id)));
   const [claims] = useTable(tables.claim.where((r) => r.householdId.eq(hh.id)));
   const [reports] = useTable(tables.fieldReport.where((r) => r.householdId.eq(hh.id)));
@@ -160,7 +162,7 @@ function HouseholdCard({ hh, area, onDone }: { hh: HouseholdRow; area: string; o
     <div className="phone">
       <div className="card">
         <button className="link muted back" onClick={onDone}>← Tasks</button>
-        <h2>{addressOf(hh)}</h2>
+        <h2>{homeLabel(hh.id, fictional)}</h2>
         <p className="muted small">{area}</p>
         <div className="tags">
           <Tag on={hh.windCovered}>Wind</Tag>

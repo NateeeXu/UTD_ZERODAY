@@ -18,15 +18,22 @@ npm run dev        # also served on the LAN (--host), so phones on the same Wi-F
 - **Energy:** always **Pause** the replay when you're not demoing; a running replay uses Maincloud energy.
 
 ## Configuration (`.env.local`, never commit secrets)
+Defaults already point at the team's Maincloud databases; override only if they move:
 ```
-VITE_SPACETIME_HOST=https://maincloud.spacetimedb.com   # default
-VITE_SPACETIME_DB=triage-loop-nateeexu-dev              # Harbor Bend dev database (default)
-VITE_SPACETIME_DB_TX=<corpus christi database>          # enables the region button
-VITE_SPACETIME_DB_CA=<bay area database>
+VITE_SPACETIME_HOST=https://maincloud.spacetimedb.com
+VITE_SPACETIME_DB_TX=triage-loop-nateeexu-tx    # Corpus Christi, hurricane (20k households)
+VITE_SPACETIME_DB_CA=triage-loop-nateeexu-ca    # Bay Area / Alameda County, Hayward Fault quake (30k households)
+VITE_SPACETIME_DB=triage-loop-nateeexu-dev      # Harbor Bend, dev testing
 ```
-- `?region=tx|ca|harbor` in the URL (before the `#`) picks a region; the choice is remembered.
-- **Regions without a live database** (`VITE_SPACETIME_DB_TX` / `_CA` unset) open a read-only **preview snapshot**: A's approved data in `docs/preview/preview-data.js` at t = 2 h / 6 h / 24 h. It uses the same map and panels, without replay, assignments or QR.
-- Set the env var and the same button goes live. The adjuster and reply screens always use a region with a live database.
+- `?region=tx|ca|harbor` in the URL (before the `#`) picks a region; the choice is remembered. The phone screens use the same region.
+- No Spacetime account is needed: the client connects with its own anonymous identity, reads public tables, and writes through reducers after `join_as` with the passcode.
+- Setting a region's env var to an empty string falls back to the read-only preview snapshot (`docs/preview/preview-data.js`).
+- **Subscriptions stay small on purpose.** The full `household` table is 20–30k rows and takes about 25 s to load. Screens subscribe to:
+  - `household_estimate WHERE p_needs_help > 0.1`;
+  - the households currently on screen, by id;
+  - one cell for the QR target.
+
+  See `src/live/hooks.ts`.
 
 ## Bindings (`src/module_bindings/`)
 - Copied from `spacetimedb/bindings/`.
