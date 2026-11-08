@@ -13,3 +13,8 @@
 .right-rail .hh-panel .detail-title .pill.tone-blue { border-color: #2b5fb4; color: #234f97; }
 .right-rail .hh-panel .detail-title .pill.tone-muted { border-color: var(--line); color: var(--muted); }
 .right-rail .hh-panel .detail-body > .readout + p { margin-top: 10px; }
+/* Home panel history: one line per event, time in a fixed column, cut with an ellipsis. */
+.right-rail .hh-panel .hh-history li { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 8px; overflow: hidden; white-space: nowrap; }
+.right-rail .hh-panel .hh-history li > span:first-child { font-variant-numeric: tabular-nums; }
+.right-rail .hh-panel .hh-history li.muted { display: block; }
+.right-rail .hh-panel .hh-history .hh-ev { overflow: hidden; text-overflow: ellipsis; }

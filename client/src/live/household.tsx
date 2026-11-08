@@ -130,6 +130,25 @@ export function contactHistory(s: HouseholdSignals) {
   ].sort((a, b) => a.t - b.t);
 }
 
+// The Home panel's history: one short line per event, newest first ("Text · safe · Minor").
+// The full wording (and the reply text) is in the decision trace.
+const HISTORY_SHOWN = 3;
+function shortHistory({ replies, claims, reports }: HouseholdSignals) {
+  const dmg = (known: boolean, d: number) => (known ? ` · ${DAMAGE[d] ?? d}` : '');
+  return [
+    ...replies.map((r) => ({
+      t: r.t,
+      text: `${r.channel === 'call' ? 'Call' : 'Text'} · ${r.lifeSafety ? 'danger' : r.safety === 'needs_help' ? 'needs help' : r.notHome ? 'safe, not home' : 'safe'}${dmg(r.damageKnown, r.damage)}`,
+    })),
+    ...claims.map((c) => ({ t: c.t, text: `Claim · ${DAMAGE[c.reportedDamage] ?? c.reportedDamage}` })),
+    ...reports.map((f) => ({ t: f.t, text: `Visit · ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')}${dmg(f.damageKnown, f.damage)}` })),
+  ].sort((a, b) => b.t - a.t);
+}
+const shortT = (t: number) => {
+  const m = Math.max(0, Math.round(t));
+  return m % 60 ? `T+${Math.floor(m / 60)}h ${m % 60}m` : `T+${m / 60}h`;
+};
+
 // The manager never contacts policyholders: every next step is a task for an adjuster, and the result
 // comes back with the adjuster's report. The recommended step follows the household's escalation.
 export type Channel = 'resend' | 'call' | 'locate';
@@ -197,7 +216,7 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
   const [followRows] = useTable(useMemo(() => tables.householdFollowup.where((r) => r.householdId.eq(householdId)), [householdId]));
   const followup = followRows[0];
   const signals: HouseholdSignals = { est, replies, reports, claims, followup };
-  const history = contactHistory(signals);
+  const history = shortHistory(signals);
   const flags = riskFlags(household);
   const kids = noteFor?.(household);
   const step = est?.escalation ?? '';
@@ -230,7 +249,10 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
         {sentTo && <p className="small"><span className="esc esc-green">Adjuster sent · {sentTo}</span></p>}
         <h3 className="eyebrow divider">Contact history</h3>
         {history.length ? (
-          <ul className="history small">{history.map((h, i) => <li key={i}><span className="muted">{fmtT(h.t)}</span> {h.text}</li>)}</ul>
+          <ul className="history hh-history small">
+            {history.slice(0, HISTORY_SHOWN).map((h, i) => <li key={i}><span className="muted">{shortT(h.t)}</span><span className="hh-ev">{h.text}</span></li>)}
+            {history.length > HISTORY_SHOWN && <li className="muted">+{history.length - HISTORY_SHOWN} earlier</li>}
+          </ul>
         ) : (
           <p className="muted small">{household?.phoneOnFile === false ? 'No phone on file.' : 'Texted, no reply yet.'}</p>
         )}
@@ -238,8 +260,6 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
           <ContactActions householdId={householdId} recommended={channelFor(est.escalation)} canAssign={canAssign} adjusterUrl={adjusterUrl}
             onSend={(id) => onAssign(id)} />
         )}
-        <h3 className="eyebrow divider">Close without contact</h3>
-        <CloseHousehold householdId={householdId} followup={followup} reports={reports} />
       </div>
     </aside>
   );
