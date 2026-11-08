@@ -139,7 +139,15 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const labelFor = useCallback((u: MapUnit) => (u.res === 7 ? labeler.district(u.id) : labeler.cell(u.id)), [labeler]);
 
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
-  const adjusters = useMemo(() => members.filter((m) => m.role === 'adjuster'), [members]);
+  // Every new browser is a new member, so old identities pile up and a task sent to one is never seen. Offer the
+  // phones in use (they have an adjuster_location row), latest first; everyone only if no phone has reported yet.
+  const adjusters = useMemo(() => {
+    const all = members.filter((m) => m.role === 'adjuster');
+    const seen = new Map(adjusterLocations.map((l) => [l.identity.toHexString(), l.updatedAt.toDate().getTime()]));
+    const at = (m: (typeof all)[number]) => seen.get(m.identity.toHexString());
+    const active = all.filter((m) => at(m) !== undefined).sort((a, b) => at(b)! - at(a)!);
+    return active.length ? active : all;
+  }, [members, adjusterLocations]);
   const [adjusterHex, setAdjusterHex] = useState('');
   const pickedAdjuster = adjusters.find((a) => a.identity.toHexString() === adjusterHex) ?? adjusters[0];
 
