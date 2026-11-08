@@ -3,7 +3,14 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary, cellToLatLng } from 'h3-js';
 import type { FacilityRow, HexStatsRow } from './rows';
+import type { HazardGeometry } from '@shared/types';
 import { COLOR, LOD_ZOOM, cellSetKey, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
+import { hazardLabel } from './hazard';
+
+// The hazard is drawn in slate so it never reads as a priority colour (red / orange / yellow).
+const HAZARD_FILL = '#3b5b8c';
+const HAZARD_INK = '#1e2a3a';
+export type FitTarget = { target: 'cells' | 'cone'; n: number };
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 
@@ -20,6 +27,8 @@ interface Props {
   padLeft?: number;                     // px covered by the left rail, for fitBounds
   onResChange?: (res: 7 | 8) => void;
   mode?: MapMode;
+  hazard?: HazardGeometry | null;       // the disaster itself (world.hazardGeometryJson)
+  fitTo?: FitTarget | null;             // explicit fit request: forecast cone, or back to the cells
 }
 
 // Leaflet internals used for smooth wheel zoom (same calls its own pinch-zoom handler makes).
@@ -89,10 +98,11 @@ function smoothWheelZoom(m: L.Map): () => void {
   };
 }
 
-export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority' }: Props) {
+export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority', hazard = null, fitTo = null }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
-  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup } | null>(null);
+  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup; hazard: L.LayerGroup } | null>(null);
+  const lastFitN = useRef(0);
   // Polygons are kept and restyled in place; rebuilt only when the level of detail changes.
   const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; shape: MapUnit['shape'] }> } | null>(null);
   const unitById = useRef(new Map<string, MapUnit>());
@@ -116,11 +126,19 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     m.getPane('labels')!.style.zIndex = '450';
     m.getPane('labels')!.style.pointerEvents = 'none';
     L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: 'labels', keepBuffer: 4 }).addTo(m);
+    // Hazard panes: the forecast cone under the cells (overlayPane is 400), track / markers / label above
+    // them. Neither takes clicks, so cells stay selectable through the hazard.
+    for (const [name, z] of [['hazardBelow', '350'], ['hazardAbove', '455']] as const) {
+      m.createPane(name);
+      m.getPane(name)!.style.zIndex = z;
+      m.getPane(name)!.style.pointerEvents = 'none';
+    }
     groups.current = {
       cells: L.layerGroup().addTo(m),
       rings: L.layerGroup().addTo(m),
       sel: L.layerGroup().addTo(m),
       fac: L.layerGroup(),
+      hazard: L.layerGroup().addTo(m),
     };
     const stopWheel = smoothWheelZoom(m);
     m.on('zoomend', () => setZoom(m.getZoom()));
@@ -248,6 +266,60 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
       L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 3, fill: false, interactive: false, lineJoin: 'round' }).addTo(g.sel);
     }
   }, [selId, res]);
+
+  // The disaster itself. Redrawn whenever the world's hazard changes (a new disaster also remounts the map).
+  useEffect(() => {
+    const g = groups.current;
+    if (!g) return;
+    g.hazard.clearLayers();
+    if (!hazard) return;
+    const ll = (p: { lat: number; lng: number }): [number, number] => [p.lat, p.lng];
+    const below = { pane: 'hazardBelow', interactive: false };
+    const above = { pane: 'hazardAbove', interactive: false };
+    let at: [number, number];
+    if (hazard.kind === 'hurricane') {
+      if (hazard.cone.polygon.length >= 3) {
+        L.polygon(hazard.cone.polygon.map(ll), { ...below, color: HAZARD_FILL, weight: 1, opacity: 0.6, fillColor: HAZARD_FILL, fillOpacity: 0.09 }).addTo(g.hazard);
+      }
+      if (hazard.track.length >= 2) {
+        L.polyline(hazard.track.map(ll), { ...above, color: HAZARD_INK, weight: 2, opacity: 0.85, dashArray: '6 6' }).addTo(g.hazard);
+      }
+      // track[0]: where the storm was when the forecast was issued (hollow); landfall (solid).
+      if (hazard.track.length) {
+        L.circleMarker(ll(hazard.track[0]), { ...above, radius: 5, color: HAZARD_INK, weight: 2, fillColor: '#ffffff', fillOpacity: 1 }).addTo(g.hazard);
+      }
+      L.circleMarker(ll(hazard.landfall), { ...above, radius: 6, color: '#ffffff', weight: 2, fillColor: HAZARD_INK, fillOpacity: 1 }).addTo(g.hazard);
+      at = ll(hazard.landfall);
+    } else {
+      if (hazard.rupture) {
+        L.polyline(hazard.rupture.map(ll), { ...above, color: HAZARD_INK, weight: 4, opacity: 0.85, lineCap: 'round' }).addTo(g.hazard);
+      }
+      L.circleMarker(ll(hazard.epicenter), { ...above, radius: 11, color: HAZARD_INK, weight: 1.5, fill: false }).addTo(g.hazard);
+      L.circleMarker(ll(hazard.epicenter), { ...above, radius: 5, color: '#ffffff', weight: 2, fillColor: HAZARD_INK, fillOpacity: 1 }).addTo(g.hazard);
+      at = ll(hazard.epicenter);
+    }
+    const text = hazardLabel(hazard);
+    const tag = document.createElement('span'); // textContent: the fault name comes from data, never parsed as HTML
+    tag.textContent = text;
+    tag.title = text;
+    L.marker(at, {
+      pane: 'hazardAbove', interactive: false, keyboard: false,
+      icon: L.divIcon({ className: 'hazard-label', html: tag, iconSize: [0, 0], iconAnchor: [-14, 11] }),
+    }).addTo(g.hazard);
+  }, [hazard]);
+
+  // "Show forecast cone" / "Back to affected areas": one fit per request.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !fitTo || fitTo.n === lastFitN.current) return;
+    lastFitN.current = fitTo.n;
+    const pts: [number, number][] = fitTo.target === 'cone' && hazard?.kind === 'hurricane'
+      ? hazard.cone.polygon.map((p) => [p.lat, p.lng])
+      : cells.flatMap((c) => cellToBoundary(c.hex) as [number, number][]);
+    if (pts.length < 2) return;
+    touched.current = true; // a chosen view: don't snap back to the cells while they stream in
+    m.flyToBounds(L.latLngBounds(pts), { paddingTopLeft: [padLeft, 24], paddingBottomRight: [padRight, 24], duration: 0.6 });
+  }, [fitTo, hazard, cells, padLeft, padRight]);
 
   // Schools / universities / hospitals.
   useEffect(() => {

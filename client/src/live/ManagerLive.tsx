@@ -3,7 +3,8 @@ import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './config';
-import { LiveMap } from './LiveMap';
+import { LiveMap, type FitTarget } from './LiveMap';
+import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
@@ -112,6 +113,10 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
   const [showFacilities, setShowFacilities] = useState(false);
+  // The disaster itself (cone / track / landfall, or epicentre / rupture). Parsed once per world.
+  const hazard = useMemo(() => parseHazard(world?.hazardGeometryJson), [world?.hazardGeometryJson]);
+  const [fitTo, setFitTo] = useState<FitTarget | null>(null); // map opens on the cells; the button flips to the cone and back
+  const coneShown = fitTo?.target === 'cone';
 
   // Rebuilt only when the cell set itself changes (not on every stats tick).
   const cellKey = useMemo(() => cellSetKey(cells), [cells]);
@@ -269,6 +274,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           padLeft={420}
           padRight={40}
           mode={mapMode}
+          hazard={hazard}
+          fitTo={fitTo}
         />
 
         <div className="left-rail">
@@ -306,6 +313,12 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} disabled={!facilities.length} />
               Schools and hospitals
             </label>
+            {hasCone(hazard) && (
+              <button className="glass-chip chip-btn" aria-pressed={coneShown}
+                onClick={() => setFitTo((f) => ({ target: f?.target === 'cone' ? 'cells' : 'cone', n: (f?.n ?? 0) + 1 }))}>
+                {coneShown ? 'Back to affected areas' : 'Show forecast cone'}
+              </button>
+            )}
           </div>
           {loading && (
             <div className="toast loading" role="status">
@@ -331,6 +344,23 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             <svg width="14" height="13" aria-hidden><polygon points="7,1 13,4 13,9.5 7,12.5 1,9.5 1,4" fill="none" stroke={COLOR.P0} strokeWidth="2" /></svg>
             silent high-hazard
           </span>
+          {hazard?.kind === 'hurricane' && (
+            <span className="muted hazard-key" title={hasCone(hazard) ? `Forecast cone issued ${hazard.cone.issuedHoursBeforeLandfall} h before landfall` : undefined}>
+              <svg width="18" height="10" aria-hidden><line x1="1" y1="5" x2="17" y2="5" stroke="#1e2a3a" strokeWidth="2" strokeDasharray="4 3" /></svg>
+              track
+              <svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="3.5" fill="#fff" stroke="#1e2a3a" strokeWidth="1.5" /></svg>
+              when forecast issued
+              <svg width="10" height="10" aria-hidden><circle cx="5" cy="5" r="4" fill="#1e2a3a" /></svg>
+              landfall
+            </span>
+          )}
+          {hazard?.kind === 'earthquake' && (
+            <span className="muted hazard-key">
+              <svg width="14" height="14" aria-hidden><circle cx="7" cy="7" r="6" fill="none" stroke="#1e2a3a" strokeWidth="1.2" /><circle cx="7" cy="7" r="3" fill="#1e2a3a" /></svg>
+              epicentre
+              {hazard.rupture && <><svg width="18" height="10" aria-hidden><line x1="2" y1="5" x2="16" y2="5" stroke="#1e2a3a" strokeWidth="3.5" strokeLinecap="round" /></svg>rupture</>}
+            </span>
+          )}
         </div>
 
         {focus && (

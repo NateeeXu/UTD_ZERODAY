@@ -611,3 +611,16 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 
 .free-text { flex-wrap: wrap; }
 .free-text-error { flex-basis: 100%; margin: 0; }
+
+/* Hazard on the map (world.hazardGeometryJson): label next to landfall / epicentre, cone button, legend */
+.hazard-label { pointer-events: none; }
+.hazard-label span {
+  display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,0.92); border: 1px solid #1e2a3a;
+  color: #1e2a3a; font-size: 12px; font-weight: 600; box-shadow: 0 2px 8px rgba(20,20,40,0.15);
+}
+.chip-btn { cursor: pointer; font: inherit; font-size: 12.5px; color: #111; }
+.chip-btn[aria-pressed="true"] { background: #111; color: #fff; border-color: #111; }
+.map-legend .hazard-key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.map-legend .hazard-key svg { flex-shrink: 0; }
+.manager.live .overlay.map-legend { white-space: nowrap; }
