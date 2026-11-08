@@ -300,16 +300,32 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
   // Phase 3: estimate and write.
   const m = getMetrics(ctx);
   let metricsDirty = m.engine !== estimator.name;
+  let accountingDirty = false;
   m.engine = estimator.name;
   for (const p of prepared) {
     const hexId = p.input.cell.hex;
     const out = estimator.estimate(p, refs);
+    const sigById = new Map(p.input.households.map((s) => [s.household.id, s]));
+    const priorityNow = out.hex.priority;
+    let accounted = 0, vulnerable = 0, unaccountedVulnerable = 0;
+    const acct = new Map<string, { accounted: boolean; escalation: string }>();
+    for (const e of out.households) {
+      const s = sigById.get(e.householdId);
+      const a = accountFor(s, e.pNeedsHelp, priorityNow, prep.nowMin);
+      acct.set(e.householdId, a);
+      if (a.accounted) accounted++;
+      if (s && isVulnerable(s.household)) {
+        vulnerable++;
+        if (!a.accounted) unaccountedVulnerable++;
+      }
+    }
 
     // One index scan per cell instead of one primary-key lookup per household.
     const prevById = new Map<string, ReturnType<typeof ctx.db.householdEstimate.householdId.find>>();
     for (const r of ctx.db.householdEstimate.hex.filter(hexId)) prevById.set(r.householdId, r);
     for (const e of out.households) {
       const prev = prevById.get(e.householdId);
+      const a = acct.get(e.householdId)!;
       const row = {
         householdId: e.householdId,
         hex: hexId,
@@ -318,6 +334,8 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
         uncertainty: e.uncertainty,
         verified: e.verified,
         inspectScore: e.inspectScore,
+        accounted: a.accounted,
+        escalation: a.escalation,
         updatedAt: ctx.timestamp,
       };
       if (!prev) ctx.db.householdEstimate.insert(row);
@@ -326,13 +344,15 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
         changed(prev.pNeedsHelp, row.pNeedsHelp) ||
         changed(prev.uncertainty, row.uncertainty) ||
         changed(prev.inspectScore, row.inspectScore) ||
-        prev.verified !== row.verified
+        prev.verified !== row.verified ||
+        prev.accounted !== row.accounted ||
+        prev.escalation !== row.escalation
       )
         ctx.db.householdEstimate.householdId.update(row);
     }
 
     const h = out.hex;
-    writeCandidates(ctx, hexId, out.households, h.priority, h.verification);
+    writeCandidates(ctx, hexId, out.households.map((e) => ({ ...e, ...acct.get(e.householdId)! })), h.priority, h.verification);
 
     const stats = ctx.db.hexStats.hex.find(hexId)!;
     const reason = h.reason ?? '';
@@ -344,8 +364,16 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       bumpPriority(m, h.priority, h.verification, 1);
       metricsDirty = true;
     }
+    const unaccounted = out.households.length - accounted;
+    const accountingChanged =
+      stats.accounted !== accounted ||
+      stats.unaccounted !== unaccounted ||
+      stats.vulnerable !== vulnerable ||
+      stats.unaccountedVulnerable !== unaccountedVulnerable;
+    if (accountingChanged) accountingDirty = true;
     const material =
       priorityChanged ||
+      accountingChanged ||
       stats.reason !== reason ||
       stats.silenceCause !== silenceCause ||
       changed(stats.hazard, hazard) ||
@@ -367,9 +395,25 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       hazard,
       silenceCause,
       reason,
+      accounted,
+      unaccounted,
+      vulnerable,
+      unaccountedVulnerable,
       updatedAt: ctx.timestamp,
       updatedSimMinutes: prep.nowMin,
     });
+  }
+  if (accountingDirty) {
+    // Totals over all cells (a few hundred rows), so full rebuilds and partial recomputes agree.
+    let acc = 0, un = 0, vul = 0, unVul = 0;
+    for (const s of ctx.db.hexStats.iter()) { acc += s.accounted; un += s.unaccounted; vul += s.vulnerable; unVul += s.unaccountedVulnerable; }
+    m.accounted = acc;
+    m.unaccounted = un;
+    m.accountedRate = acc + un > 0 ? acc / (acc + un) : 0;
+    m.vulnerable = vul;
+    m.vulnerableAccounted = vul - unVul;
+    m.vulnerableAccountedRate = vul > 0 ? (vul - unVul) / vul : 0;
+    metricsDirty = true;
   }
   if (metricsDirty) {
     m.updatedAt = ctx.timestamp;
@@ -377,11 +421,38 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
   }
 }
 
+/**
+ * "No one overlooked": escalation ladder for a household we have not heard from yet.
+ * Minutes are sim minutes since the outreach text (or since landfall when there is no phone on file).
+ *   sms_sent (< 2 h) -> sms_resend (< 6 h) -> agent_call (< 12 h, or a low-risk P2 cell) -> field_visit
+ * Heard from: 'emergency_referral' when they reported needing help and nobody has visited,
+ * 'accounted' otherwise, 'verified' once an adjuster filed a field report.
+ */
+export const ESCALATION = ['sms_sent', 'sms_resend', 'agent_call', 'field_visit', 'emergency_referral', 'accounted', 'verified'] as const;
+
+function accountFor(s: HouseholdSignals | undefined, pNeedsHelp: number, cellPriority: string, nowMin: number): { accounted: boolean; escalation: string } {
+  if (!s) return { accounted: false, escalation: 'sms_sent' };
+  if (s.field) return { accounted: true, escalation: 'verified' };
+  if (s.reply || s.claim) {
+    const needsHelp = s.reply?.safety === 'needs_help';
+    return { accounted: true, escalation: needsHelp ? 'emergency_referral' : 'accounted' };
+  }
+  const since = nowMin - (s.smsSentT ?? 0);
+  if (s.smsSentT !== null && since < 120) return { accounted: false, escalation: 'sms_sent' };
+  if (s.smsSentT !== null && since < 360) return { accounted: false, escalation: 'sms_resend' };
+  if (since < 720 || (cellPriority === 'P2' && pNeedsHelp < 0.2)) return { accounted: false, escalation: 'agent_call' };
+  return { accounted: false, escalation: 'field_visit' };
+}
+
+function isVulnerable(h: HouseholdSignals['household']): boolean {
+  return !!(h.age75 || h.disability || h.noVehicle || h.limitedEnglish || h.medicalDevice || (h.age65 && h.livesAlone));
+}
+
 /** Keep the cell's top-INSPECT_PER_CELL unverified households in inspection_candidate. */
 function writeCandidates(
   ctx: Ctx,
   hexId: string,
-  households: { householdId: string; verified: boolean; inspectScore: number; pSevere: number; pNeedsHelp: number; uncertainty: number }[],
+  households: { householdId: string; verified: boolean; inspectScore: number; pSevere: number; pNeedsHelp: number; uncertainty: number; accounted: boolean; escalation: string }[],
   cellPriority: string,
   cellVerification: string
 ) {
@@ -401,7 +472,9 @@ function writeCandidates(
         !changed(x.pSevere, e.pSevere) &&
         !changed(x.pNeedsHelp, e.pNeedsHelp) &&
         x.cellPriority === cellPriority &&
-        x.cellVerification === cellVerification
+        x.cellVerification === cellVerification &&
+        x.accounted === e.accounted &&
+        x.escalation === e.escalation
       );
     });
   if (same) return;
@@ -417,6 +490,8 @@ function writeCandidates(
       uncertainty: e.uncertainty,
       cellPriority,
       cellVerification,
+      accounted: e.accounted,
+      escalation: e.escalation,
     })
   );
 }

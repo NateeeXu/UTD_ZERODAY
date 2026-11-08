@@ -283,6 +283,11 @@ export const hexStats = table(
     hazard: t.f64(), // 0-1 hazard score used by the verification rule (hazardIndex when present)
     silenceCause: t.string(), // 'away' | 'trapped' | 'outage' | 'unknown' | '' (not silent)
     reason: t.string(), // engine's one-line explanation of priority / verification
+    // "no one overlooked": a household is accounted for once it replied, filed a claim or got a field report
+    accounted: t.u32(),
+    unaccounted: t.u32(),
+    vulnerable: t.u32(), // CMIST-vulnerable households (75+, disability, no vehicle, limited English, medical device, 65+ alone)
+    unaccountedVulnerable: t.u32(),
     updatedAt: t.timestamp(),
     updatedSimMinutes: t.f64(),
   }
@@ -299,6 +304,8 @@ export const householdEstimate = table(
     uncertainty: t.f64(),
     verified: t.bool(),
     inspectScore: t.f64(), // 0..1, higher = send an adjuster here first (severity x uncertainty)
+    accounted: t.bool(), // replied, filed a claim or has a field report
+    escalation: t.string(), // next contact step, see ESCALATION in fusion/index.ts
     updatedAt: t.timestamp(),
   }
 );
@@ -321,6 +328,8 @@ export const inspectionCandidate = table(
     uncertainty: t.f64(),
     cellPriority: t.string(),
     cellVerification: t.string(),
+    accounted: t.bool(),
+    escalation: t.string(),
   }
 );
 
@@ -338,6 +347,12 @@ export const metrics = table(
     fieldReports: t.u32(),
     verifiedHouseholds: t.u32(),
     verifiedCoverage: t.f64(), // verifiedHouseholds / households
+    accounted: t.u32(), // households we have heard from (reply, claim or field report)
+    unaccounted: t.u32(), // the number to drive to zero
+    accountedRate: t.f64(),
+    vulnerable: t.u32(),
+    vulnerableAccounted: t.u32(),
+    vulnerableAccountedRate: t.f64(), // equity check: compare with accountedRate
     p0Cells: t.u32(),
     p1Cells: t.u32(),
     p2Cells: t.u32(),

@@ -63,6 +63,10 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     hazard: 0,
     silenceCause: '',
     reason: '',
+    accounted: 0,
+    unaccounted: 0,
+    vulnerable: 0,
+    unaccountedVulnerable: 0,
     updatedAt: ctx.timestamp,
     updatedSimMinutes: 0,
   };

@@ -33,6 +33,10 @@ export default __t.row({
   hazard: __t.f64(),
   silenceCause: __t.string().name("silence_cause"),
   reason: __t.string(),
+  accounted: __t.u32(),
+  unaccounted: __t.u32(),
+  vulnerable: __t.u32(),
+  unaccountedVulnerable: __t.u32().name("unaccounted_vulnerable"),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),
 });
