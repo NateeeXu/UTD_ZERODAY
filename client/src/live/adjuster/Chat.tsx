@@ -1,54 +1,13 @@
-// Adjuster and policyholder thread for one household, and the "Customer notified" chips shown after Accept.
+// Adjuster and policyholder thread for one household.
 // The backend inserts every chat row (send_chat_message); nothing is added locally.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useReducer } from 'spacetimedb/react';
 import { reducers } from '../../module_bindings/index.ts';
 import { resetPageScroll, useVisualViewport } from '../useVisualViewport';
-import { useChatThread, type ChatRow, type ImessageRow } from './data';
+import { useChatThread, type ChatRow } from './data';
 import { Icon } from './icons';
 
 const MAX = 500;
-
-/** iMessage delivery state from the latest imessage_outbox row. */
-export function imessageChip(row: ImessageRow | undefined): { text: string; tone: '' | 'ok' | 'amber' } | null {
-  if (!row) return null;
-  if (row.status === 'sent') return { text: 'iMessage sent', tone: 'ok' };
-  if (row.status === 'failed') return { text: 'iMessage failed', tone: 'amber' };
-  return { text: 'iMessage simulated', tone: '' };
-}
-
-export function NotifiedChips({ imessage }: { imessage: ImessageRow | undefined }) {
-  const im = imessageChip(imessage);
-  return (
-    <span className="adj-chips" aria-label="Customer notified by">
-      <span className="adj-tag ok">In-app</span>
-      {im && <span className={`adj-tag ${im.tone}`}>{im.text}</span>}
-    </span>
-  );
-}
-
-/** Notice on the Tasks sheet right after an accepted task arrives. */
-export function NotifiedCard({ label, imessage, onMessage, onOpen, onDismiss }: {
-  label: string; imessage: ImessageRow | undefined; onMessage: () => void; onOpen: () => void; onDismiss: () => void;
-}) {
-  return (
-    <article className="adj-card adj-notified" aria-label="Customer notified" aria-live="polite">
-      <div className="adj-notified-top">
-        <span className="adj-okdot"><Icon name="check" size={15} stroke={3} /></span>
-        <span className="adj-notified-main">
-          <b>Customer notified</b>
-          <span>{label} added to your tasks</span>
-        </span>
-        <button type="button" className="adj-iconbtn t44" aria-label="Dismiss" onClick={onDismiss}><Icon name="close" size={16} stroke={2.2} /></button>
-      </div>
-      <NotifiedChips imessage={imessage} />
-      <div className="adj-actions">
-        <button type="button" className="adj-btn outline" onClick={onMessage}><Icon name="talk" size={16} stroke={2} />Message</button>
-        <button type="button" className="adj-btn dark grow" onClick={onOpen}>Open home</button>
-      </div>
-    </article>
-  );
-}
 
 const fmtClock = (r: ChatRow) => r.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const codePoints = (s: string) => [...s].length;

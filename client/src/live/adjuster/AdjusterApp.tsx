@@ -20,7 +20,7 @@ import { ChatScreen } from './Chat';
 import { useOutbox, type Draft, type ReportMode, type SentRecord } from './outbox';
 import { PhoneMap, type MapArea } from './PhoneMap';
 import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget } from './ReportFlow';
-import { Icon, needIcon } from './icons';
+import { Icon } from './icons';
 import { useStickySheet } from './sheetState';
 import { useBackgroundLocation } from './location';
 import { useSheetDrag } from './sheetDrag';
