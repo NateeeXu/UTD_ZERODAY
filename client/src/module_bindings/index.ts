@@ -45,6 +45,7 @@ import LeaveReducer from "./leave_reducer.ts";
 import LoadModelReducer from "./load_model_reducer.ts";
 import MarkImessageReducer from "./mark_imessage_reducer.ts";
 import MarkReplyParsedReducer from "./mark_reply_parsed_reducer.ts";
+import NotifyAssignedTaskReducer from "./notify_assigned_task_reducer.ts";
 import PauseReplayReducer from "./pause_replay_reducer.ts";
 import RecomputeAllReducer from "./recompute_all_reducer.ts";
 import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
@@ -496,6 +497,7 @@ const reducersSchema = __reducers(
   __reducerSchema("load_model", LoadModelReducer),
   __reducerSchema("mark_imessage", MarkImessageReducer),
   __reducerSchema("mark_reply_parsed", MarkReplyParsedReducer),
+  __reducerSchema("notify_assigned_task", NotifyAssignedTaskReducer),
   __reducerSchema("pause_replay", PauseReplayReducer),
   __reducerSchema("recompute_all", RecomputeAllReducer),
   __reducerSchema("refresh_metrics", RefreshMetricsReducer),

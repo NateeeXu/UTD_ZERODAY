@@ -240,6 +240,13 @@ function Field({ meName }: { meName: string }) {
   }, [acceptRec, nextBest, accepting, showToast]);
   const imessageBy = useImessageFor(acceptedId ? [...ids, acceptedId] : ids);
 
+  // Opening a task a manager sent tells the policyholder (the backend sends it once; accepted tasks already did).
+  const notifyAssigned = useReducer(reducers.notifyAssignedTask);
+  const openedHome = route.name === 'home' ? route.id : null;
+  useEffect(() => {
+    if (openedHome && conn.isActive) notifyAssigned({ householdId: openedHome }).catch(() => undefined);
+  }, [openedHome, conn.isActive, notifyAssigned]);
+
   // Rebuild "Next best" when the Tasks page opens (and after a reconnect); useBackgroundLocation keeps it fresh.
   const onTasks = route.name === 'tasks';
   const refreshRef = useRef(refreshRecs);
