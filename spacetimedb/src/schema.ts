@@ -231,7 +231,7 @@ export const claim = table(
   { name: 'claim', public: true },
   {
     ...eventColumns,
-    peril: t.string(), // 'wind' | 'flood'
+    peril: t.string(), // 'wind' | 'flood' | 'earthquake'
     reportedDamage: t.u8(),
   }
 );

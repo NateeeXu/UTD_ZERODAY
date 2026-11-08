@@ -334,11 +334,19 @@ export function rebuildAll(ctx: Ctx) {
   }
   const repliedHH = new Set<string>();
   let helpReplies = 0;
+  let callContacts = 0;
   for (const e of ctx.db.smsReply.iter()) {
     const s = byHex.get(e.hex);
     if (e.safety === 'needs_help') helpReplies++;
+    // Same rules as onEvent: agent calls are counted apart from SMS replies; unknown damage is not "severe".
+    if (e.channel === 'call') {
+      callContacts++;
+      if (s) s.callContacts++;
+      if (s && e.safety === 'needs_help') s.helpReplies++;
+      continue;
+    }
     if (!s) continue;
-    if (e.damage >= 2) s.severeReplies++;
+    if (e.damageKnown && e.damage >= 2) s.severeReplies++;
     if (e.safety === 'needs_help') s.helpReplies++;
     if (!repliedHH.has(e.householdId)) {
       repliedHH.add(e.householdId);
@@ -374,6 +382,7 @@ export function rebuildAll(ctx: Ctx) {
   m.households = households;
   m.smsSent = sentHH.size;
   m.smsReplies = repliedHH.size;
+  m.callContacts = callContacts;
   m.helpReplies = helpReplies;
   m.claims = claims;
   m.fieldReports = fieldReports;
