@@ -20,7 +20,6 @@ import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
 import { HouseholdPanel, reportDamage } from './household';
-import { SevereCard } from './SevereCard';
 import { DecisionTrace, useReplyCellCapture } from './DecisionTrace';
 import { homeLabel, pct } from '../format';
 import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
@@ -417,12 +416,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               labelCell={labeler.cell}
               fictional={fictional}
             />
-          </div>
-        )}
-
-        {!focus && !sel && (
-          <div className="right-top">
-            <SevereCard metrics={metrics} simMinutes={simMinutes} maxMinutes={replay?.maxMinutes || 4320} />
           </div>
         )}
 
