@@ -125,7 +125,7 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
     <div className="adj-page adj-chat" ref={pageRef} aria-label={`Messages with ${label}`}>
       <header className="adj-topbar">
         <button type="button" className="adj-circle t44" aria-label="Back" onClick={onBack}><Icon name="back" size={18} stroke={2.2} /></button>
-        <div className="center"><strong>Messages</strong><span>{label} · Policyholder</span></div>
+        <div className="center"><strong>{label}</strong><span>Policyholder</span></div>
         {live}
       </header>
 
@@ -141,7 +141,7 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
           const sameAsPrev = !!prev && prev.sender === m.sender && prev.senderName === m.senderName;
           return (
             <div key={String(m.id)} className={`adj-msg ${mine ? 'mine' : m.sender}`}>
-              {!sameAsPrev && <span className="adj-msg-who">{who} · {fmtClock(m)}</span>}
+              {!sameAsPrev && <span className="adj-msg-who">{who}, {fmtClock(m)}</span>}
               <p className="adj-bubble">{m.text}</p>
             </div>
           );
@@ -159,8 +159,10 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
             onChange={(e) => { setText(e.target.value); if (error) setError(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); } }}
           />
-          <button type="button" className="adj-btn dark adj-send" disabled={!ok} onClick={() => void submit()}>
-            {sending ? <span className="adj-spin" aria-label="Sending" /> : 'Send'}
+          <button type="button" className="adj-btn dark adj-send" aria-label={sending ? 'Sending' : 'Send'} disabled={!ok} onClick={() => void submit()}>
+            {sending ? <span className="adj-spin" /> : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            )}
           </button>
         </div>
         {n > MAX - 100 && <span className="adj-muted adj-count">{n}/{MAX}</span>}
