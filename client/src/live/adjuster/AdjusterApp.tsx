@@ -1,7 +1,7 @@
 // Adjuster phone (docs/ADJUSTER_APP.md): Tasks, Home, Go to area, Field report, Report sent, Can't make contact.
 // Areas, never house points: the households are synthetic but their coordinates fall on real streets, so
 // the phone shows the H3 cell and routes to its center inside the app (no external map app).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { cellToLatLng } from 'h3-js';
 import { reducers, tables } from '../../module_bindings/index.ts';
@@ -732,6 +732,41 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
   const expanded = sheet === 'all';
   const up = () => setSheet((s) => (s === 'peek' ? 'next' : 'all'));
   const down = () => setSheet((s) => (s === 'all' ? 'next' : 'peek'));
+  // Smooth height change into and out of peek (FLIP): remember the height after every render and,
+  // when the sheet enters or leaves peek, animate from that height to the new one.
+  const sheetRef = useRef<HTMLElement>(null);
+  const lastH = useRef(0);
+  const prevSheet = useRef(sheet);
+  useLayoutEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const was = prevSheet.current;
+    prevSheet.current = sheet;
+    const from = lastH.current;
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (was !== sheet && (was === 'peek' || sheet === 'peek') && from > 0 && !still) {
+      const to = el.offsetHeight;
+      el.style.transition = 'none';
+      el.style.overflow = 'hidden';
+      el.style.height = `${from}px`;
+      void el.offsetHeight; // apply the start height before animating
+      el.style.transition = 'height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      el.style.height = `${to}px`;
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        el.removeEventListener('transitionend', done);
+        el.style.height = ''; el.style.transition = ''; el.style.overflow = '';
+        lastH.current = el.offsetHeight;
+      };
+      el.addEventListener('transitionend', done);
+      setTimeout(done, 450);
+      lastH.current = to;
+    } else if (!el.style.height) {
+      lastH.current = el.offsetHeight;
+    }
+  });
   const [whyOpen, setWhyOpen] = useState(false);
   // Picking a start: only before the region has loaded (no default yet), or after "Move start".
   const picking = !hasStart || moving;
@@ -748,8 +783,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
     ...open.map((t) => ({ hex: t.hex, color: COLOR[t.priority], pill: (t === next ? 'dark' : 'light') as 'dark' | 'light', label: String(t.number) })),
   ], [open, done, next]);
   const route = useMemo(() => (me && open.length ? [me, ...open.map((t) => D.cellCenter(t.hex))] : undefined), [me, open]);
-  // Refit when the sheet drops to (or rises from) peek, so the areas fill the freed map.
-  const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}:${sheet === 'peek' ? 'peek' : 'open'}`;
+  const fitKey = `tasks:${all.map((t) => t.id).join(',')}:${me ? 'me' : ''}`;
   const nb = next ? bannerFor(next) : null;
   const rest = all.filter((t) => t !== next);
   // Tap an area: select its task (tap again to cycle when one area holds several homes).
@@ -764,7 +798,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
     <>
       <PhoneMap
         areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
-        padBottom={sheet === 'peek' ? TAB_SPACE + 90 : TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
+        padBottom={TAB_SPACE + (expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
         fallbackCenter={regionCenter}
         onAreaClick={picking ? undefined : pickArea}
         onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
@@ -787,7 +821,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
         </span>
       )}
 
-      <section className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : ''}`} aria-label="Tasks">
+      <section ref={sheetRef} className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : ''}`} aria-label="Tasks">
         <button
           type="button" className="adj-handle" aria-expanded={sheet !== 'peek'}
           aria-label={sheet === 'peek' ? 'Show tasks' : expanded ? 'Show next up only' : 'Show all tasks'}

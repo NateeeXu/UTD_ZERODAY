@@ -366,4 +366,7 @@ button.adj-row:active { background: var(--soft); }
   border: 0; background: none; font: inherit; text-align: left; color: #222; cursor: pointer;
 }
 .adj-peekline b { font-size: 16px; }
+.adj-sheet.peek .adj-peekline, .adj-sheet:not(.peek) > :not(.adj-handle) { animation: adj-sheet-fade 260ms ease-out; }
+@keyframes adj-sheet-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .adj-sheet.peek .adj-peekline, .adj-sheet:not(.peek) > :not(.adj-handle) { animation: none; } }
 .adj-peekline span { font-size: 13px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
