@@ -292,6 +292,9 @@ export const hexStats = table(
     verification: t.string(), // 'verified' | 'needs_verification'
     silence: t.f64(),
     expectedSevere: t.f64(),
+    severeLo: t.f64(), // 90% interval for the number of severe households (engine/src/interval.ts)
+    severeHi: t.f64(),
+    severeVar: t.f64(), // variance of that count (region totals add these)
     maxPNeedsHelp: t.f64(),
     hazard: t.f64(), // 0-1 hazard score used by the verification rule (hazardIndex when present)
     silenceCause: t.string(), // 'away' | 'trapped' | 'outage' | 'unknown' | '' (not silent)
@@ -411,6 +414,7 @@ export const staffSim = table(
     enabled: t.bool(),
     callsPerHour: t.u32(),
     visitsPerHour: t.u32(),
+    inspectionsPerHour: t.u32(), // property track: adjusters inspect the top of inspection_candidate
     lastRunMin: t.f64(),
     callsMade: t.u32(),
     callsReached: t.u32(),
@@ -419,6 +423,7 @@ export const staffSim = table(
     referralsResolved: t.u32(),
     helpFound: t.u32(), // households that needed help and were found by a staff call or visit
     visitsNobodyHome: t.u32(), // visits that inspected the property but found no occupants
+    inspectionsMade: t.u32(), // property inspections (inspection_candidate), separate from welfare visits
     updatedAt: t.timestamp(),
   }
 );
@@ -465,6 +470,14 @@ export const metrics = table(
     assistanceRequests: t.u32(),
     inspectionRequests: t.u32(),
     locateDue: t.u32(),
+    // Region total of severely damaged households with its 90% interval (sum of cell means, sd = sqrt of summed
+    // cell variances, rounded outward and clipped to [sum of cell lo, sum of cell hi]); severeIntervalWidth = sum of cell widths.
+    expectedSevereTotal: t.f64(),
+    severeTotalLo: t.f64(),
+    severeTotalHi: t.f64(),
+    severeIntervalWidth: t.f64(),
+    intervalCoverageLive: t.f64(), // share of cells whose 90% severe-count interval contains the simulated true count (demo honesty check)
+    intervalCellsLive: t.u32(),
     p0Cells: t.u32(),
     p1Cells: t.u32(),
     p2Cells: t.u32(),

@@ -18,6 +18,7 @@ import type { CellAggregate, FeatureName, Snapshot } from './features.ts';
 import { FEATURE_SOURCE, buildSnapshot, householdFeatureRecord, isFeatureName, neutralValue, selectFeatures } from './features.ts';
 import type { LinearModel } from './logistic.ts';
 import { predictProb, sigmoid } from './logistic.ts';
+import { cellSevereInterval, type CellInterval, CELL_INTERVAL_TAIL } from './interval.ts';
 
 export type SourceTrust = ModelParams['sourceTrust'];
 
@@ -33,6 +34,10 @@ export interface ResolvedModels {
   severe: LinearModel;
   needsHelp: LinearModel;
   multipliers: SourceMultipliers;
+  /** cell-level overdispersion for the severe-count interval (params.cellOverdispersion or the config default) */
+  overdispersion: number;
+  /** tail probability of the severe-count interval (params.cellIntervalTail or 0.05) */
+  intervalTail: number;
 }
 
 /** Validate ModelParams shape; throws with a precise message instead of mis-indexing weights. */
@@ -99,6 +104,8 @@ export function resolveModels(params: ModelParams, cfg: TriageConfig = DEFAULT_C
     severe: modulate(params.severe, params.features, multipliers, cfg),
     needsHelp: modulate(params.needsHelp, params.features, multipliers, cfg),
     multipliers,
+    overdispersion: params.cellOverdispersion ?? cfg.interval.defaultOverdispersion,
+    intervalTail: params.cellIntervalTail ?? CELL_INTERVAL_TAIL,
   };
 }
 
@@ -266,6 +273,10 @@ export interface CellContext {
   cell?: HexCell;
   facilities?: readonly Facility[];
   schoolHours?: boolean;
+  /** cell-level overdispersion for the severe-count interval (defaults to cfg.interval.defaultOverdispersion) */
+  tau2?: number;
+  /** tail probability of the severe-count interval (defaults to 0.05) */
+  tail?: number;
 }
 
 function fmtInt(x: number): string {
@@ -290,6 +301,34 @@ export function studentsNote(ctx: CellContext | undefined, hazard: number, cfg: 
   return `${fmtInt(n)} students at ${top.name}${more} (school hours)`;
 }
 
+/**
+ * 90% interval for the number of severe households in a cell: unverified households contribute their
+ * (neighbour-updated) pSevere, verified ones count as known (severe if pSevere >= 0.5), and the shared
+ * cell-level error shrinks with the cell's field reports. Exported so the database can store the variance.
+ */
+export function severeIntervalFor(agg: CellAggregate, members: readonly HouseholdEstimate[], cfg: TriageConfig, tau2?: number, tail?: number): CellInterval {
+  const pUnverified: number[] = [];
+  let verifiedSevere = 0;
+  let verifiedTotal = 0;
+  for (const m of members) {
+    if (!m.verified) pUnverified.push(m.pSevere);
+    else {
+      verifiedTotal++;
+      if (m.pSevere >= 0.5) verifiedSevere++;
+    }
+  }
+  return cellSevereInterval({
+    pUnverified,
+    verifiedSevere,
+    verifiedTotal,
+    n: agg.households,
+    tau2: tau2 ?? cfg.interval.defaultOverdispersion,
+    shrink: cfg.neighbourUpdate.shrinkageCount,
+    k: agg.fieldReported,
+    ...(tail !== undefined ? { tail } : {}),
+  });
+}
+
 /** Classify one cell from its aggregate and the estimates of its households. */
 export function classifyCell(agg: CellAggregate, members: readonly HouseholdEstimate[], cfg: TriageConfig, ctx?: CellContext): HexEstimate {
   const n = agg.households;
@@ -306,6 +345,8 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
     if (!m.verified) spreadSum += 4 * m.pSevere * (1 - m.pSevere);
     else if (m.pNeedsHelp >= cfg.verifiedValues.high) verifiedHelp++;
   }
+  // 90% interval for the number of severe households (src/interval.ts).
+  const interval = severeIntervalFor(agg, members, cfg, ctx?.tau2, ctx?.tail);
   const severeShare = n > 0 ? expectedSevere / n : 0;
   const severity = clamp01(1 - (1 - severeShare) * (1 - maxPNeedsHelp));
 
@@ -365,6 +406,8 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
     hex: agg.hex,
     households: n,
     expectedSevere,
+    severeLo: interval.lo,
+    severeHi: interval.hi,
     maxPNeedsHelp,
     severity,
     confidence,
@@ -413,13 +456,13 @@ export function groupByHex(snap: Snapshot, estimates: readonly HouseholdEstimate
   return groups;
 }
 
-export function cellContext(snap: Snapshot, hex: HexId): CellContext {
-  return { cell: snap.cellById.get(hex), facilities: snap.facilitiesByHex.get(hex) ?? [], schoolHours: snap.ctx.schoolHours };
+export function cellContext(snap: Snapshot, hex: HexId, tau2?: number, tail?: number): CellContext {
+  return { cell: snap.cellById.get(hex), facilities: snap.facilitiesByHex.get(hex) ?? [], schoolHours: snap.ctx.schoolHours, ...(tau2 !== undefined ? { tau2 } : {}), ...(tail !== undefined ? { tail } : {}) };
 }
 
-export function estimateHexesFromSnapshot(snap: Snapshot, estimates: readonly HouseholdEstimate[], cfg: TriageConfig): HexEstimate[] {
+export function estimateHexesFromSnapshot(snap: Snapshot, estimates: readonly HouseholdEstimate[], cfg: TriageConfig, tau2?: number, tail?: number): HexEstimate[] {
   const groups = groupByHex(snap, estimates);
-  return snap.world.hexes.map((c) => classifyCell(snap.cells.get(c.hex)!, groups.get(c.hex)!, cfg, cellContext(snap, c.hex)));
+  return snap.world.hexes.map((c) => classifyCell(snap.cells.get(c.hex)!, groups.get(c.hex)!, cfg, cellContext(snap, c.hex, tau2, tail)));
 }
 
 /** Fill inspectScore on every household estimate from its cell's estimate (pure). */
@@ -454,7 +497,7 @@ export function estimateAll(
   const models = resolveModels(params, cfg, trust);
   const snapshot = buildSnapshot(world, events, t, cfg);
   const raw = estimateHouseholdsFromSnapshot(snapshot, models, cfg);
-  const hexes = estimateHexesFromSnapshot(snapshot, raw, cfg);
+  const hexes = estimateHexesFromSnapshot(snapshot, raw, cfg, models.overdispersion, models.intervalTail);
   const households = withInspectScores(snapshot, raw, hexes, cfg);
   return { t, snapshot, models, households, hexes };
 }

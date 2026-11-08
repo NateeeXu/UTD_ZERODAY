@@ -96,6 +96,13 @@ Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", t
 - New reducer for the Claude parser: `submit_parsed_reply(householdId, safety, damage (0–3, 255 = unknown), lifeSafety, needs, notHome, text, language, passcode)`; see docs/CLAUDE_PARSER.md. The "I need help" button (`submit_sms_reply` with `needs_help`) counts as a generic plea = life safety.
 - Data assumptions and limitations: docs/DATA.md.
 
+### Uncertainty on the map
+
+- `hex_stats.severeLo` / `severeHi`: 90 % interval for the number of severely damaged households in the cell (show as "6–11"); `expectedSevere` is the point estimate. `severeVar` is its variance.
+- `metrics.expectedSevereTotal`, `severeTotalLo` / `severeTotalHi` (region range = summed cell bounds), `severeIntervalWidth` (falls as calls, visits and inspections arrive: a good "uncertainty shrinking" chart), `intervalCoverageLive` (share of cells whose interval contains the simulated truth; show it next to the map, it should approach 90 %).
+- Staff now also do property inspections: `staff_sim.inspectionsPerHour` (default 0.2 % of households), `inspectionsMade`; `set_staff_sim(enabled, callsPerHour, visitsPerHour, inspectionsPerHour)` (0 = default).
+- How it is computed and validated: docs/DATA.md section 8.
+
 ### Simulated staff (`staff_sim`, on by default)
 
 So the numbers move during the demo without anyone clicking, simulated staff work the queues every 30 sim minutes (src/staff.ts). Outcomes come from the private sim truth, never from the model.

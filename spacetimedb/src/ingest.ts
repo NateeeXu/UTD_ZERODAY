@@ -71,6 +71,9 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     verification: '',
     silence: 0,
     expectedSevere: 0,
+    severeLo: 0,
+    severeHi: 0,
+    severeVar: 0,
     maxPNeedsHelp: 0,
     hazard: 0,
     silenceCause: '',
@@ -425,6 +428,22 @@ export function refreshHoldoutMetrics(ctx: Ctx) {
   m.holdoutBrierHelp = n ? brierHelp / n : 0;
   m.holdoutSevereRecall = severeN ? severeCaught / severeN : 0;
   m.holdoutSimMinutes = getReplay(ctx).simMinutes;
+  // Live check of the cell intervals against the simulated truth: should stay near 90 %.
+  const trueSevere = new Map<string, number>();
+  for (const h of ctx.db.household.iter()) {
+    const tr = ctx.db.simTruth.householdId.find(h.id);
+    if (tr && tr.damage >= 2) trueSevere.set(h.hex, (trueSevere.get(h.hex) ?? 0) + 1);
+  }
+  let cells = 0;
+  let inside = 0;
+  for (const s of ctx.db.hexStats.iter()) {
+    if (s.households === 0) continue;
+    cells++;
+    const y = trueSevere.get(s.hex) ?? 0;
+    if (y >= s.severeLo && y <= s.severeHi) inside++;
+  }
+  m.intervalCellsLive = cells;
+  m.intervalCoverageLive = cells ? inside / cells : 0;
   m.updatedAt = ctx.timestamp;
   ctx.db.metrics.id.update(m);
 }

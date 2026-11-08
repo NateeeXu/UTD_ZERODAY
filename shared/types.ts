@@ -142,7 +142,21 @@ export interface ModelParams {
     auc?: number;                                          // v2 可选
     needsHelp?: { brier: number; ece: number; auc: number };
     baseline?: { brier: number; ece: number; auc: number }; // 只看灾害强度的基线
+    // v3 区间：按格子做聚类 bootstrap 的 95% 置信区间（留一事件预测汇总）
+    brierCI?: [number, number];
+    aucCI?: [number, number];
+    eceCI?: [number, number];
+    brierRange?: [number, number];   // 各次留一事件的最小 / 最大值（事件之间的真实差异，不是抽样误差）
+    bss?: number;                    // Brier skill score = 1 - brier / 基线 brier（不受事件强度影响，更可比）
+    bssRange?: [number, number];
+    // 格子严重户数 90% 区间在留出事件上的实际覆盖率（应接近 0.9）和平均宽度
+    cellIntervalCoverage?: number;
+    cellIntervalMeanWidth?: number;
   };
+  // v3：格子层面的共享误差方差（超出二项分布的部分，相对于未核实户预期严重数的平方），由留一事件回测估计
+  cellOverdispersion?: number;
+  // v3：区间每侧的尾部概率，由回测校准：在留出事件上覆盖率仍 ≥ 90% 的最大值（越大区间越窄）
+  cellIntervalTail?: number;
   region?: string;      // v2：这个模型对应的地区
   hazardType?: HazardType;
   trainedOn: string[];  // 用了哪些回测事件
@@ -161,6 +175,8 @@ export interface HexEstimate {
   hex: HexId;
   households: number;
   expectedSevere: number;   // 预计严重受损的户数
+  severeLo?: number;        // v3：严重受损户数的 90% 区间下界
+  severeHi?: number;        // v3：90% 区间上界
   maxPNeedsHelp: number;
   severity: number;         // 0–1
   confidence: number;       // 0–1

@@ -323,6 +323,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
   const m = getMetrics(ctx);
   let metricsDirty = m.engine !== estimator.name;
   let accountingDirty = false;
+  let intervalDirty = false;
   m.engine = estimator.name;
   for (const p of prepared) {
     const hexId = p.input.cell.hex;
@@ -408,6 +409,16 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     const reason = h.reason ?? '';
     const silenceCause = h.silenceCause ?? '';
     const hazard = h.hazard ?? 0;
+    // 90% interval for the cell's severe-household count (engine only; the stub falls back to the point estimate).
+    const severeLo = h.severeLo ?? h.expectedSevere;
+    const severeHi = h.severeHi ?? h.expectedSevere;
+    const severeVar = out.severeVar ?? 0;
+    const intervalChanged =
+      changed(stats.severeLo, severeLo) ||
+      changed(stats.severeHi, severeHi) ||
+      changed(stats.severeVar, severeVar) ||
+      changed(stats.expectedSevere, h.expectedSevere);
+    if (intervalChanged) intervalDirty = true;
     const priorityChanged = stats.priority !== h.priority || stats.verification !== h.verification;
     if (priorityChanged) {
       bumpPriority(m, stats.priority, stats.verification, -1);
@@ -434,6 +445,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     const material =
       priorityChanged ||
       accountingChanged ||
+      intervalChanged ||
       stats.reason !== reason ||
       stats.silenceCause !== silenceCause ||
       changed(stats.hazard, hazard) ||
@@ -451,6 +463,9 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       verification: h.verification,
       silence: h.silence,
       expectedSevere: h.expectedSevere,
+      severeLo,
+      severeHi,
+      severeVar,
       maxPNeedsHelp: h.maxPNeedsHelp,
       hazard,
       silenceCause,
@@ -492,6 +507,20 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     m.vulnerable = vul;
     m.vulnerableAccounted = vul - unVul;
     m.vulnerableAccountedRate = vul > 0 ? (vul - unVul) / vul : 0;
+    metricsDirty = true;
+  }
+  if (intervalDirty) {
+    // Region total: the sum of the cell bounds. Errors are correlated across cells within one event (the
+    // whole event can be over- or under-predicted), so adding variances as if cells were independent is
+    // overconfident; summed bounds are the honest (conservative) range.
+    let mean = 0, lo = 0, hi = 0;
+    for (const s of ctx.db.hexStats.iter()) {
+      mean += s.expectedSevere; lo += s.severeLo; hi += s.severeHi;
+    }
+    m.expectedSevereTotal = mean;
+    m.severeTotalLo = lo;
+    m.severeTotalHi = hi;
+    m.severeIntervalWidth = hi - lo;
     metricsDirty = true;
   }
   if (metricsDirty) {

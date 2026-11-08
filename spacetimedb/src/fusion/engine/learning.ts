@@ -225,7 +225,7 @@ export function reestimateCell(
   const agg = snap.cells.get(hex);
   if (!members || !agg) throw new Error(`reestimateCell: unknown hex ${hex}`);
   const cellMembers = estimateCellHouseholds(members, snap, models, cfg);
-  const newHex = classifyCell(agg, cellMembers, cfg, cellContext(snap, hex));
+  const newHex = classifyCell(agg, cellMembers, cfg, cellContext(snap, hex, models.overdispersion, models.intervalTail));
   const fresh = new Map<string, HouseholdEstimate>();
   for (const e of attachInspectScores(cellMembers, newHex, cfg)) fresh.set(e.householdId, e);
   const outHouseholds = households.map((e) => fresh.get(e.householdId) ?? e);

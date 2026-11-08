@@ -31,7 +31,7 @@ async function main() {
   const params = JSON.parse(readFileSync(modelPath, 'utf8')) as ModelParams;
   const { conn } = await connect(ownerToken());
   // The offline engine only sees the bundle + these reports, so simulated staff must be off.
-  await conn.reducers.setStaffSim({ enabled: false, callsPerHour: 0, visitsPerHour: 0 });
+  await conn.reducers.setStaffSim({ enabled: false, callsPerHour: 0, visitsPerHour: 0, inspectionsPerHour: 0 });
   await conn.reducers.resetDemo({});
   await conn.reducers.jumpTo({ minutes: T });
   await subscribe(conn, [
@@ -67,7 +67,7 @@ async function main() {
   const offline = estimateAll(bundle.world, [...bundle.events, ...extra], tCompare, params, DEFAULT_CONFIG, params.sourceTrust);
 
   const live = new Map([...conn.db.householdEstimate.iter()].map(e => [e.householdId, e]));
-  const d = { pSevere: 0, pNeedsHelp: 0, uncertainty: 0, inspectScore: 0, silence: 0, confidence: 0, hazard: 0 };
+  const d = { pSevere: 0, pNeedsHelp: 0, uncertainty: 0, inspectScore: 0, silence: 0, confidence: 0, hazard: 0, severeLo: 0, severeHi: 0 };
   let missing = 0;
   for (const e of offline.households) {
     const l = live.get(e.householdId);
@@ -99,6 +99,8 @@ async function main() {
     d.silence = Math.max(d.silence, Math.abs(s.silence - h.silence));
     d.confidence = Math.max(d.confidence, Math.abs(s.confidence - h.confidence));
     d.hazard = Math.max(d.hazard, Math.abs(s.hazard - (h.hazard ?? 0)));
+    d.severeLo = Math.max(d.severeLo, Math.abs(s.severeLo - (h.severeLo ?? h.expectedSevere)));
+    d.severeHi = Math.max(d.severeHi, Math.abs(s.severeHi - (h.severeHi ?? h.expectedSevere)));
   }
 
   // inspection_candidate vs. the engine's recommendInspections (per-cell cap, global ranking).
@@ -134,7 +136,7 @@ async function main() {
   });
   if (firstReasonDiff) console.log('first reason difference:', firstReasonDiff);
   console.log(ok ? 'PARITY OK' : 'PARITY MISMATCH');
-  await conn.reducers.setStaffSim({ enabled: true, callsPerHour: 0, visitsPerHour: 0 });
+  await conn.reducers.setStaffSim({ enabled: true, callsPerHour: 0, visitsPerHour: 0, inspectionsPerHour: 0 });
   await conn.reducers.resetDemo({});
   conn.disconnect();
   process.exit(ok ? 0 : 1);

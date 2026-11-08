@@ -234,16 +234,16 @@ export const setRecomputeCadence = spacetimedb.reducer(
 );
 
 /**
- * Simulated staff for the demo (see src/staff.ts). callsPerHour / visitsPerHour = 0 means the default
- * (2% / 0.3% of households per hour). Takes effect from the current sim time.
+ * Simulated staff for the demo (see src/staff.ts). callsPerHour / visitsPerHour / inspectionsPerHour = 0 means the default
+ * (2% / 0.3% / 0.2% of households per hour). Takes effect from the current sim time.
  */
 export const setStaffSim = spacetimedb.reducer(
   { name: 'set_staff_sim' },
-  { enabled: t.bool(), callsPerHour: t.u32(), visitsPerHour: t.u32() },
-  (ctx, { enabled, callsPerHour, visitsPerHour }) => {
+  { enabled: t.bool(), callsPerHour: t.u32(), visitsPerHour: t.u32(), inspectionsPerHour: t.u32() },
+  (ctx, { enabled, callsPerHour, visitsPerHour, inspectionsPerHour }) => {
     requireManager(ctx);
     const cap = defaultCapacity(Number(ctx.db.household.count()));
-    if (callsPerHour > 100_000 || visitsPerHour > 100_000) throw new SenderError('capacity too large');
+    if (callsPerHour > 100_000 || visitsPerHour > 100_000 || inspectionsPerHour > 100_000) throw new SenderError('capacity too large');
     const st = getStaff(ctx);
     const rs = getReplay(ctx);
     ctx.db.staffSim.id.update({
@@ -251,6 +251,7 @@ export const setStaffSim = spacetimedb.reducer(
       enabled,
       callsPerHour: callsPerHour || cap.callsPerHour,
       visitsPerHour: visitsPerHour || cap.visitsPerHour,
+      inspectionsPerHour: inspectionsPerHour || cap.inspectionsPerHour,
       // Turning staff on mid-replay starts from now (no backlog of missed steps).
       lastRunMin: enabled && !st.enabled ? Math.floor(rs.simMinutes / STAFF_STEP_MIN) * STAFF_STEP_MIN : st.lastRunMin,
       updatedAt: ctx.timestamp,

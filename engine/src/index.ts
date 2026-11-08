@@ -29,3 +29,4 @@ export * from './metrics.ts';
 export * from './infer.ts';
 export * from './learning.ts';
 export * from './active.ts';
+export * from './interval.ts';

@@ -62,7 +62,7 @@ export const LIVE_EVENT: EventConfig = {
   },
 };
 
-// Six fictional past storms, each in its own fictional world.
+// Ten fictional past storms, each in its own fictional world.
 export const BACKTEST_EVENTS: EventConfig[] = [
   {
     eventId: 'backtest-1', name: 'Pelican Point, TX', seed: 1101, landfallIso: '2019-09-14T07:00:00.000Z',
@@ -93,5 +93,25 @@ export const BACKTEST_EVENTS: EventConfig[] = [
     eventId: 'backtest-6', name: 'Oyster Creek Flats, TX', seed: 6606, landfallIso: '2024-09-30T18:45:00.000Z',
     center: { lat: 29.3, lng: -94.95 }, households: HOUSEHOLDS_PER_EVENT, fieldReports: true,
     storm: { coastCrossKm: 3.0, headingDeg: -12, curvature: 0.008, vmaxMph: 138, windDecayKm: 4.0, surgeFt: 12, surgeInlandKm: 5.5, extraOutageClusters: 2 },
+  },
+  {
+    eventId: 'backtest-7', name: 'Heron Cove, TX', seed: 7707, landfallIso: '2018-09-05T14:30:00.000Z',
+    center: { lat: 28.6, lng: -96.35 }, households: HOUSEHOLDS_PER_EVENT, fieldReports: true,
+    storm: { coastCrossKm: -2.5, headingDeg: -40, curvature: 0.005, vmaxMph: 92, windDecayKm: 6.5, surgeFt: 4, surgeInlandKm: 3.0, extraOutageClusters: 1 },
+  },
+  {
+    eventId: 'backtest-8', name: 'Mesquite Point, TX', seed: 8808, landfallIso: '2017-08-26T02:00:00.000Z',
+    center: { lat: 28.05, lng: -97.0 }, households: HOUSEHOLDS_PER_EVENT, fieldReports: true,
+    storm: { coastCrossKm: 1.0, headingDeg: -8, curvature: 0.018, vmaxMph: 150, windDecayKm: 3.8, surgeFt: 14, surgeInlandKm: 5.0, extraOutageClusters: 3 },
+  },
+  {
+    eventId: 'backtest-9', name: 'Tarpon Flats, TX', seed: 9909, landfallIso: '2016-10-02T20:15:00.000Z',
+    center: { lat: 29.0, lng: -95.5 }, households: HOUSEHOLDS_PER_EVENT, fieldReports: true,
+    storm: { coastCrossKm: 4.0, headingDeg: 18, curvature: -0.012, vmaxMph: 105, windDecayKm: 5.0, surgeFt: 8, surgeInlandKm: 4.0, extraOutageClusters: 2 },
+  },
+  {
+    eventId: 'backtest-10', name: 'Sandpiper Bend, TX', seed: 10010, landfallIso: '2015-09-18T09:45:00.000Z',
+    center: { lat: 28.35, lng: -96.75 }, households: HOUSEHOLDS_PER_EVENT, fieldReports: true,
+    storm: { coastCrossKm: -5.0, headingDeg: -28, curvature: 0.01, vmaxMph: 125, windDecayKm: 4.8, surgeFt: 9, surgeInlandKm: 4.5, extraOutageClusters: 2 },
   },
 ];

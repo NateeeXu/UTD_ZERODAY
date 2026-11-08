@@ -76,7 +76,9 @@ export interface HouseholdOutput extends HouseholdEstimate {
 
 export interface CellOutput {
   households: HouseholdOutput[];
-  hex: HexEstimate; // includes hazard, reason, silenceCause (v2)
+  hex: HexEstimate; // includes hazard, reason, silenceCause (v2), severeLo / severeHi (v3)
+  /** variance of the cell's severe-household count (engine only; region totals add these) */
+  severeVar?: number;
 }
 
 /**

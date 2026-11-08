@@ -129,6 +129,32 @@ The household is two things that are tracked separately:
 | Whereabouts when it hit (home / away / displaced) | 2,391 / 0 / 609 | 17,445 / 0 / 2,555 | 8,930 / 17,353 / 3,717 |
 | Replies (with text, unknown damage, not home) | 1,366 (0%, 0%, 13%) | 9,944 (25%, 5%, 10%) | 7,381 (25%, 39%, 58%) |
 | Life-safety / assistance / inspection replies | 7 / 48 / 237 | 56 / 355 / 2,111 | 65 / 240 / 1,289 |
-| Model LOEO severe Brier / ECE / AUC | 0.068 / 0.020 / 0.947 | 0.055 / 0.014 / 0.914 | 0.102 / 0.018 / 0.882 |
+| Model LOEO severe Brier / ECE / AUC | 0.058 / 0.017 / 0.954 | 0.042 / 0.004 / 0.931 | 0.102 / 0.018 / 0.882 |
 
 The Bay Area is a weekday-daytime earthquake: most people are away when it hits, so many replies cannot describe the house (damage unknown). That is why its Brier is higher than before (0.071 → 0.102): the model has less damage information there, by design.
+
+## 8. Uncertainty: how the intervals are computed
+
+**Cell severe-count interval (map, `hex_stats.severeLo/severeHi`).** Unverified households' severe count is a sum of independent Bernoulli(pSevere): its exact Poisson-binomial distribution gives the 5 % / 95 % quantiles; a small cell-level shared error (tau2, estimated from backtests: HB 0.012, TX 0.001, CA 0.008) widens it and shrinks as field reports arrive in the cell; verified households count as known. Code: `engine/src/interval.ts`.
+
+| Region | Normal approx (old) | Exact, deployed (90 %) | Backtest-calibrated tail (not deployed) |
+|---|---|---|---|
+| Harbor Bend | 99.1 % / 2.38 | 96.8 % / 1.64 | 90.4 % / 0.97 |
+| Corpus Christi | 98.9 % / 3.11 | 97.6 % / 2.44 | 90.2 % / 1.32 |
+| Bay Area | 97.3 % / 5.65 | 95.4 % / 4.87 | 90.8 % / 3.84 |
+
+(held-out coverage / mean width in households; leave-one-event-out, tau2 and tail chosen on the other events). The calibrated tail hits 90 % on historical-style events but was overconfident on the harder live events (Bay Area live cell coverage 67 % at t = 0), so live uses the conservative 90 % interval.
+
+**Region total (`metrics.severeTotalLo/Hi`)** = the sum of the cell bounds. Within one event every cell can be off in the same direction (the Bay Area live event is under-predicted by about 12 % before any field report), so adding cell variances as if independent was overconfident (it excluded the true total); summed bounds include it at every time we checked.
+
+**Live honesty check (`metrics.intervalCoverageLive`)**: share of cells whose interval contains the simulated true count. Measured with simulated staff on: Harbor Bend 96 % → 98 % (t = 0 → 72 h), Bay Area 73 % → 82 % → 91 % (0 / 24 / 72 h). Early in a harder-than-history event the model is biased; coverage recovers as field reports correct it. Summed cell width falls 69 % (HB) and 56 % (Bay Area) over 72 h, from new information (calls, visits, property inspections), not from narrower assumptions.
+
+**Model metrics** (leave-one-event-out, 95 % cell-cluster bootstrap CI; the range across events is the real event-to-event spread):
+
+| | Severe Brier [CI] (range) | AUC [CI] | ECE | Brier skill vs hazard-only (range) |
+|---|---|---|---|---|
+| Harbor Bend (10 events) | 0.058 [0.055, 0.062] (0.013–0.084) | 0.954 [0.949, 0.957] | 0.017 | 0.25 (0.20–0.30) |
+| Corpus Christi (8) | 0.042 [0.040, 0.043] (0.005–0.123) | 0.931 [0.925, 0.935] | 0.004 | 0.21 (0.15–0.27) |
+| Bay Area (5) | 0.102 [0.099, 0.105] (0.036–0.160) | 0.882 [0.877, 0.886] | 0.018 | 0.18 (0.09–0.24) |
+
+The bootstrap CIs are narrow because they only measure sampling noise within these simulated events; they say nothing about real-world accuracy (see Known limitations).

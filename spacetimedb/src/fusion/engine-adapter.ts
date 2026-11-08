@@ -21,6 +21,7 @@ import {
   classifyCell,
   estimateCellHouseholds,
   resolveModels,
+  severeIntervalFor,
   validateParams,
   type ResolvedModels,
 } from './engine/infer.ts';
@@ -143,9 +144,11 @@ function estimate(p: PreparedCell, refs: WorldRefs | null): CellOutput {
   };
   const m = models(input.params, input.trust);
   const raw = estimateCellHouseholds(members, snap, m, cfg); // includes the neighbour update
-  const hex = classifyCell(agg, raw, cfg, { cell, facilities: input.facilities, schoolHours: input.world.schoolHours });
+  const hex = classifyCell(agg, raw, cfg, { cell, facilities: input.facilities, schoolHours: input.world.schoolHours, tau2: m.overdispersion, tail: m.intervalTail });
   const households = attachInspectScores(raw, hex, cfg).map(e => ({ ...e, inspectScore: e.inspectScore ?? 0 }));
-  return { households, hex };
+  // Same interval as hex.severeLo / severeHi; the variance lets the database add cells into a region total.
+  const severeVar = severeIntervalFor(agg, raw, cfg, m.overdispersion, m.intervalTail).variance;
+  return { households, hex, severeVar };
 }
 
 export const engineEstimator: EngineEstimator = {

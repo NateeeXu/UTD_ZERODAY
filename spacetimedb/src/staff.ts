@@ -8,6 +8,9 @@
 //   3. Agents (callsPerHour): call the highest-scored queue households past the SMS window, with retries.
 //      Phones travel with people, so a call reaches them wherever they are; someone who is away cannot
 //      say how the house is (damage unknown). 'locate' households: the emergency contact is tried.
+//   4. Property inspections (inspectionsPerHour): adjusters inspect the top of inspection_candidate across
+//      all cells (severity x uncertainty), the property track that shrinks the cells' severe-count intervals.
+//      Occupants are seen only if they are home at that time.
 // Outcomes come from the private sim truth (the simulated world), never from the model. A reached call
 // is an sms_reply with channel 'call'; a visit is a field_report from 'sim-adjuster'.
 import type { Ctx } from './schema';
@@ -28,9 +31,16 @@ const AGENCY_RESOLVE_MIN = 360;
 const REACH = { phone: 0.75, noPhone: 0.4, needsHelp: 0.5, limitedEnglish: 0.8, destroyed: 0.7, emergencyContact: 0.6 };
 const REFERRAL_STATES = ['emergency_referral', 'referral_overdue', 'referral_pending', 'referral_acknowledged'];
 
-/** Default capacity: calls 2% and visits 0.3% of households per hour (e.g. 600 calls, 90 visits for 30,000). */
+/**
+ * Default capacity per hour: calls 2%, welfare visits 0.3%, property inspections 0.2% of households
+ * (e.g. 600 calls, 90 visits, 60 inspections for 30,000).
+ */
 export function defaultCapacity(households: number) {
-  return { callsPerHour: Math.max(20, Math.round(households * 0.02)), visitsPerHour: Math.max(5, Math.round(households * 0.003)) };
+  return {
+    callsPerHour: Math.max(20, Math.round(households * 0.02)),
+    visitsPerHour: Math.max(5, Math.round(households * 0.003)),
+    inspectionsPerHour: Math.max(3, Math.round(households * 0.002)),
+  };
 }
 
 export function getStaff(ctx: Ctx) {
@@ -49,6 +59,7 @@ export function getStaff(ctx: Ctx) {
     referralsResolved: 0,
     helpFound: 0,
     visitsNobodyHome: 0,
+    inspectionsMade: 0,
     updatedAt: ctx.timestamp,
   });
 }
@@ -66,6 +77,7 @@ export function resetStaffCounters(ctx: Ctx) {
     referralsResolved: 0,
     helpFound: 0,
     visitsNobodyHome: 0,
+    inspectionsMade: 0,
     updatedAt: ctx.timestamp,
   });
 }
@@ -203,6 +215,7 @@ function staffStep(ctx: Ctx, at: number) {
   const batch = newBatch(ctx);
   let calls = 0;
   let visits = 0;
+  const visited = new Set<string>();
   for (const q of queue) {
     if (calls >= callBudget && visits >= visitBudget) break;
     const hh = ctx.db.household.id.find(q.householdId);
@@ -226,6 +239,7 @@ function staffStep(ctx: Ctx, at: number) {
       (recheck ? failed >= 2 && !lastReplyNotHome(ctx, hh.id) : failed >= 2 || (failed >= 1 && wait >= VISIT_AFTER_MIN));
     if (visitDue && visits < visitBudget) {
       visits++;
+      visited.add(hh.id);
       const seen = home;
       if (!seen) st.visitsNobodyHome++;
       else if (safety === 'needs_help') st.helpFound++;
@@ -290,6 +304,36 @@ function staffStep(ctx: Ctx, at: number) {
   }
   st.callsMade += calls;
   st.visitsMade += visits;
+
+  // 4. Property inspections: the top unverified inspection candidates across all cells.
+  const inspBudget = Math.round((st.inspectionsPerHour * STAFF_STEP_MIN) / 60);
+  if (inspBudget > 0) {
+    const candidates = [...ctx.db.inspectionCandidate.iter()].sort(
+      (a, b) => b.inspectScore - a.inspectScore || (a.householdId < b.householdId ? -1 : 1)
+    );
+    let inspections = 0;
+    for (const cnd of candidates) {
+      if (inspections >= inspBudget) break;
+      if (visited.has(cnd.householdId)) continue;
+      if ([...ctx.db.fieldReport.householdId.filter(cnd.householdId)].length > 0) continue;
+      const hh = ctx.db.household.id.find(cnd.householdId);
+      const truth = ctx.db.simTruth.householdId.find(cnd.householdId);
+      if (!hh || !truth) continue;
+      const safety = (truth.safety === 'needs_help' ? 'needs_help' : 'safe') as 'safe' | 'needs_help';
+      const seen = locationAt(truth, at) === 'home';
+      if (seen && safety === 'needs_help') st.helpFound++;
+      const note = seen ? 'simulated property inspection: occupants seen' : 'simulated property inspection: nobody home';
+      onEvent(
+        ctx,
+        { kind: 'field_report', t: at, householdId: hh.id, adjusterId: 'sim-adjuster', safety: seen ? safety : 'unsure', damage: truth.damage as Damage, note },
+        'staff_sim',
+        batch
+      );
+      visited.add(hh.id);
+      inspections++;
+    }
+    st.inspectionsMade += inspections;
+  }
 
   if (batch.stats.size > 0) flushBatch(ctx, batch);
   const rest = [...followupHexes].filter((h) => !batch.stats.has(h));
