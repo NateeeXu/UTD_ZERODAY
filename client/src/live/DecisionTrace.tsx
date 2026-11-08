@@ -184,7 +184,7 @@ function actionFor(esc: string): { label: string; tone: 'ref' | 'req' | 'none' |
     case 'emergency_referral': return { label: 'Referral created', tone: 'ref', call911: true };
     case 'assistance': return { label: 'Customer care request', tone: 'req', call911: false };
     case 'inspection_request': return { label: 'Inspection request', tone: 'req', call911: false };
-    case 'accounted': return { label: 'No action', tone: 'none', call911: false };
+    case 'accounted': return { label: 'No further action', tone: 'none', call911: false };
     default: return { label: ESCALATION[esc]?.label ?? (esc || '—'), tone: 'other', call911: false };
   }
 }
