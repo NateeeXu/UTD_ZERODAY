@@ -147,6 +147,16 @@ async function main() {
   a = toReducerArgs(p, 'ok');
   check('safe + damage null -> safe, 255', a.safety === 'safe' && a.damage === DAMAGE_UNKNOWN && !a.lifeSafety && a.needs === '');
 
+  // Damage level from the accept notice.
+  p = await parseReply('3, roof is gone', { create: json({ damage: 1 }) });
+  check('leading level overrides the parsed damage', toReducerArgs(p, '3, roof is gone').damage === 3);
+  p = await parseReply('4 - we are ok', { create: json({ damage: 2 }) });
+  check('leading level 4 means unknown damage', toReducerArgs(p, '4 - we are ok').damage === DAMAGE_UNKNOWN);
+  for (const text of ['3 people trapped', '1.5 feet of water inside', '3-4 of us are here', 'roof 3']) {
+    p = await parseReply(text, { create: json({ damage: 2 }) });
+    check(`not a level: ${text}`, toReducerArgs(p, text).damage === 2);
+  }
+
   console.log(failures === 0 ? '\nall parser checks passed' : `\n${failures} parser check(s) failed`);
   process.exit(failures === 0 ? 0 : 1);
 }

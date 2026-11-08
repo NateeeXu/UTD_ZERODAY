@@ -690,7 +690,7 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 | Needs-help report filed | "Referral created" and "Call 911 now if anyone is in danger." |
 | Life-safety report not sent | "Not delivered — call 911 directly" |
 | Peril not covered | "Flood not covered · refer to FEMA / NFIP · don't promise payment" (and wind, quake variants) |
-| Task accepted, notice to the policyholder | "Adjuster {name} has been assigned to {task}." and "If anyone is in danger, call 911." |
+| Task accepted, notice to the policyholder | One template (`spacetimedb/src/notice-template.ts`): "Adjuster {name} has been assigned to {task}.", damage levels 1 minor or none, 2 moderate, 3 severe, 4 not sure, then "If anyone is in danger, call 911." |
 | Never | "help is on the way", promised arrival times, "predicts who is trapped", "guarantees" |
 | Prompt rule | "Never promise help, arrival times or coverage." |
 | Eligibility wording | Temporary housing is reviewed for eligibility; it depends on the loss being covered and on the policy |

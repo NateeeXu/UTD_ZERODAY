@@ -10,6 +10,7 @@ import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
 import { addChat, notifyTaskAccepted } from '../chat';
+import { replyLevel } from '../notice-template';
 import { afterFieldReport, dropFromAllLists, forgetAdjuster, recomputeRecommendations, setAdjusterLocation, stillNeeded } from '../recommend';
 
 function checkDamage(damage: number) {
@@ -201,6 +202,14 @@ export const submitRawReply = spacetimedb.reducer(
     const body = text.trim();
     const len = [...body].length;
     if (len < 1 || len > 500) throw new SenderError('text must be 1..500 characters');
+    const level = replyLevel(body);
+    if (level?.only) {
+      // Just the number from the notice: nothing for Claude to read. It rates the home and says nothing
+      // about people, so it goes in as call-back-only (isCallbackOnly) and marks nobody safe or in danger.
+      smsReply(ctx, { householdId, safety: 'needs_help', damage: level.damage, passcode, text: body, lifeSafety: false, needs: [], notHome: false });
+      addChat(ctx, householdId, 'policyholder', '', body);
+      return;
+    }
     let mine = 0;
     for (const r of ctx.db.replyInbox.householdId.filter(householdId)) if (r.status === 'pending') mine++;
     if (mine >= MAX_PENDING_PER_HOUSEHOLD) throw new SenderError('too many replies waiting for this household, try again shortly');

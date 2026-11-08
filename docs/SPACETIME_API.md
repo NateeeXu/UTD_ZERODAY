@@ -447,8 +447,9 @@ const inspectionValue = (inspectScore * 2) / (2 + verifiedHouseholdsInCell);
 `id` (u64 PK), `householdId`, `text`, `status` (`queued` / `sent` / `failed`), `error` (`''`, or why the send failed, truncated to 200), `createdAt`, `updatedAt`. No phone number is stored. Rows stay `queued` unless `scripts/imessage-bridge.ts` (section 9) is running, so **the UI must label `queued` rows as simulated**. Public only because this demo has no policyholder login; production restricts it. Cleared with the demo state.
 
 **Notice on accept:** when `accept_recommendation` creates the assignment, the same transaction adds one `chat_message` (`sender = 'system'`) and one `imessage_outbox` row (`queued`).
-- In the app: `Adjuster {name} has been assigned to {task}. Reply here with any update. If anyone is in danger, call 911.`
-- By iMessage: the same, with `Reply in the app with any update.`, because iMessage replies are not read.
+- Both use the one template in `spacetimedb/src/notice-template.ts`: who was assigned, a 1-4 home damage question (1 minor or none, 2 moderate, 3 severe, 4 not sure), safety, whereabouts and needs, then the 911 line.
+- In the app it says `Reply here`. By iMessage it says `Open the Saviu app and reply`, because iMessage replies are not read.
+- A reply that is only `1`-`4` skips the parser and is stored as `damage` 1, 2, 3 or unknown, with no statement about the people (call-back-only). A reply that starts with a level (`3, roof is gone`) goes to the parser and keeps that level as its damage.
 - `{task}` is `inspect your home` (`kind = 'inspection'`) or `check on your household` (`welfare`). Neither text promises an arrival time.
 - No notice when the task was no longer needed, and none for manager assignments (`assign`, `assign_hex`).
 

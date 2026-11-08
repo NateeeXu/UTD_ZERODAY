@@ -356,6 +356,9 @@ async function main() {
     const notice = notices()[0];
     check('accept posts one in-app notice and queues one iMessage', chat().filter(c => c.sender === 'system').length === 1 && notices().length === 1 && notice.status === 'queued', `${chat().length} chat, ${notices().length} iMessage`);
     check('notices name the adjuster, say call 911 and promise no arrival', [...chat(), ...notices()].every(m => m.text.includes('has been assigned') && m.text.includes('call 911') && !/on the way|arriv|minutes|soon/i.test(m.text)), notice?.text ?? '');
+    const inAppNotice = chat().find(c => c.sender === 'system');
+    check('both notices carry the 1-4 damage levels', [inAppNotice, notice].every(m => /1 - Minor[\s\S]*2 - Moderate[\s\S]*3 - Severe[\s\S]*4 - Not sure/.test(m?.text ?? '')));
+    check('the iMessage sends people to the app, the in-app notice takes the reply', !!notice?.text.includes('Open the Saviu app') && !!inAppNotice?.text.includes('Reply here'));
     await adjuster.conn.reducers.sendChatMessage({ householdId: top.householdId, text: '  Checking in, is everyone OK?  ' });
     await sleep(300);
     check('assigned adjuster can chat (trimmed)', chat().some(c => c.sender === 'adjuster' && c.text === 'Checking in, is everyone OK?'));
@@ -365,6 +368,26 @@ async function main() {
     await outsider.conn.reducers.submitRawReply({ householdId: top.householdId, text: 'we are OK, thanks', passcode: REPLY_PASSCODE });
     await sleep(300);
     check('typed policyholder reply appears in the chat', chat().some(c => c.sender === 'policyholder' && c.text === 'we are OK, thanks'));
+
+    // A bare 1-4 from the notice rates the home without Claude and says nothing about the people.
+    await subscribe(manager.conn, ['SELECT * FROM sms_reply']);
+    const pendingInbox = () => [...db.replyInbox.iter()].filter(r => r.householdId === top.householdId && r.status === 'pending').length;
+    const latestReply = () => [...db.smsReply.iter()].filter(r => r.householdId === top.householdId).sort((x, y) => (x.id < y.id ? 1 : -1))[0];
+    const replyLevelOf = async (text: string) => {
+      await outsider.conn.reducers.submitRawReply({ householdId: top.householdId, text, passcode: REPLY_PASSCODE });
+      await sleep(300);
+    };
+    const inboxBefore = pendingInbox();
+    const helpBefore = metrics()?.helpReplies ?? 0;
+    await replyLevelOf('3');
+    const severe = latestReply();
+    check('reply "3" records damage 3 without the parser', severe?.damage === 3 && severe.damageKnown && severe.text === '3' && pendingInbox() === inboxBefore, JSON.stringify({ damage: severe?.damage, inbox: pendingInbox() }));
+    check('reply "3" is not life safety and not a help request', severe?.lifeSafety === false && severe.needs === '' && metrics()?.helpReplies === helpBefore);
+    check('reply "3" appears in the chat', chat().some(c => c.sender === 'policyholder' && c.text === '3'));
+    await replyLevelOf('4.');
+    check('reply "4." records damage as unknown', latestReply()?.text === '4.' && latestReply()?.damageKnown === false);
+    await replyLevelOf('3 people trapped upstairs');
+    check('a count is not a level: "3 people trapped" goes to the parser', pendingInbox() === inboxBefore + 1 && latestReply()?.text === '4.');
     if (notice) {
       await expectReject('outsider mark_imessage', outsider.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' }));
       await manager.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' });

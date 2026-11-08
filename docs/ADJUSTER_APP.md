@@ -326,7 +326,7 @@ Purpose: let the adjuster and the policyholder talk about one task inside the ap
 **Thread**
 - All `chat_message` rows for the household, oldest first (sort by `id`). New rows arrive through the subscription; no system notification and no message text in a toast.
 - Sender label: `senderName` for `system` ("Automated assistant") and `adjuster`; "Policyholder" for `policyholder`, whose `senderName` is empty.
-- Accepted through Next best: the thread starts with the notice, e.g. "Adjuster J. Ortiz has been assigned to check on your household. Reply here with any update. If anyone is in danger, call 911."
+- Accepted through Next best: the thread starts with the notice from `spacetimedb/src/notice-template.ts`, which names the adjuster, asks for a 1-4 damage level and ends with the 911 line.
 - Assigned by a manager: no notice, so the thread can be empty: "No messages yet".
 - The notice gives no arrival time. Keep it that way in any copy around it (principle 2 in section 1).
 
