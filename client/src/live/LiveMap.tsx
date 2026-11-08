@@ -295,7 +295,7 @@ export function LiveMap({ cells, labelFor, selected, onSelect, flash, fitKey, pa
       at = ll(hazard.landfall);
     } else {
       if (hazard.rupture) {
-        L.polyline(hazard.rupture.map(ll), { ...above, color: HAZARD_INK, weight: 4, opacity: 0.85, lineCap: 'round' }).addTo(g.hazard);
+        L.polyline(hazard.rupture.map(ll), { ...above, color: HAZARD_INK, weight: 2.5, opacity: 0.85, lineCap: 'round', dashArray: '0.5 6' }).addTo(g.hazard);
       }
       L.circleMarker(ll(hazard.epicenter), { ...above, radius: 11, color: HAZARD_INK, weight: 1.5, fill: false }).addTo(g.hazard);
       L.circleMarker(ll(hazard.epicenter), { ...above, radius: 5, color: '#ffffff', weight: 2, fillColor: HAZARD_INK, fillOpacity: 1 }).addTo(g.hazard);

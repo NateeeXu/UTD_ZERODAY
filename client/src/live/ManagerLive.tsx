@@ -386,7 +386,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             <span className="muted hazard-key">
               <svg width="14" height="14" aria-hidden><circle cx="7" cy="7" r="6" fill="none" stroke="#1e2a3a" strokeWidth="1.2" /><circle cx="7" cy="7" r="3" fill="#1e2a3a" /></svg>
               epicentre
-              {hazard.rupture && <><svg width="18" height="10" aria-hidden><line x1="2" y1="5" x2="16" y2="5" stroke="#1e2a3a" strokeWidth="3.5" strokeLinecap="round" /></svg>rupture</>}
+              {hazard.rupture && <><svg width="18" height="10" aria-hidden><line x1="2" y1="5" x2="16" y2="5" stroke="#1e2a3a" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="0.5 4.5" /></svg>rupture</>}
             </span>
           )}
         </div>
