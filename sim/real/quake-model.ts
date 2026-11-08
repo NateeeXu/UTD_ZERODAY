@@ -13,7 +13,10 @@ export interface QuakeModel {
   rupture: { a: number; b: number };
 }
 
-// Atkinson & Wald (2007) California IPE and Wells & Coppersmith (1994) strike-slip rupture length.
+// Atkinson & Wald (2007) California IPE (Table 1; valid ~10-500 km, sigma ~0.4 MMI; likely overpredicts near the
+// fault above M6) and Wells & Coppersmith (1994) Table 2A strike-slip surface rupture length (M5.6-8.1).
+// Both verified against the original papers. D = closest horizontal distance to the rupture; h is the
+// effective depth, so the hypocentral depth is not added again.
 export const QUAKE_MODEL: QuakeModel = {
   ipe: { c1: 12.27, c2: 2.27, c3: 0.1304, c4: -1.3, c5: -0.0007070, c6: 1.95, c7: -0.577, h: 14.0, Rt: 30.0 },
   rupture: { a: -3.55, b: 0.74 },
