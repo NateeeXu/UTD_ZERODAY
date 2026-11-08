@@ -502,7 +502,7 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .staff-switch:disabled { opacity: 0.5; cursor: default; }
 .tab-badge { margin-left: 5px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(120,120,128,0.2); color: #333; }
 .tab-badge.red { background: var(--p0); color: #fff; }
-.p2-row.late { background: rgba(217,58,53,0.1); box-shadow: inset 3px 0 0 var(--p0); }
+.p2-row.late { background: rgba(217,58,53,0.1); }
 .qr-backdrop { z-index: 3000; }
 .qr-modal { padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 16px; border-radius: 28px; }
 .qr-card.large { flex-direction: column; text-align: center; border: none; background: none; padding: 0; gap: 14px; }
@@ -556,9 +556,9 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .hh-panel .contact-actions { padding: 8px 0 0; }
 .ca-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .ca-buttons .small-btn { align-self: auto; }
-.req-tabs { margin: 8px 12px 0; align-self: flex-start; }
-.req-tabs button { font-size: 12px; }
-.req-tabs .tab-badge { margin-left: 3px; }
+.req-tabs { margin: 8px 12px 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.req-tabs button { font-size: 12px; padding: 0 6px; min-width: 0; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
+.req-tabs .tab-badge { margin-left: 4px; flex-shrink: 0; }
 .p2-note { padding: 6px 10px 2px; }
 .hh-panel .detail-title { flex-wrap: wrap; }
 .hh-close { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--bg); font: inherit; font-size: 13px; }
@@ -575,3 +575,4 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .hh-panel .detail-body > :not(.eyebrow) { margin-left: 20px; margin-right: 20px; }
 .hh-panel .detail-body > .btn { margin-top: 8px; }
 .hh-panel .history { margin-bottom: 4px; }
+.p2-list > li + li { margin-top: 4px; }

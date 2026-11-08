@@ -167,8 +167,8 @@ export function OutreachPanel(p: Props) {
           {tab === 'requests' && (
             <>
               <div className="gseg req-tabs" role="tablist" aria-label="Request type">
-                {([['referral', '911 / agency'], ['assistance', 'Customer care'], ['inspection_request', 'Inspection']] as [RequestTab, string][]).map(([id, label]) => (
-                  <button key={id} role="tab" aria-selected={reqTab === id} className={reqTab === id ? 'on' : ''} onClick={() => setReqTab(id)}>
+                {([['referral', '911 / agency', '911 / local agency referrals (life safety)'], ['assistance', 'Care', 'Customer care requests'], ['inspection_request', 'Inspection', 'Inspection requests']] as [RequestTab, string, string][]).map(([id, label, title]) => (
+                  <button key={id} role="tab" aria-selected={reqTab === id} className={reqTab === id ? 'on' : ''} onClick={() => setReqTab(id)} title={title}>
                     {label} <span className={`tab-badge${id === 'referral' && overdue ? ' red' : ''}`}>{reqCounts[id].toLocaleString()}</span>
                   </button>
                 ))}
