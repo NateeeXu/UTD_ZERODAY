@@ -9,3 +9,7 @@
 /* Keep the tools row clear of the right rail (380 px + 16 px gutter + 16 px gap): when the toast
    doesn't fit beside the pills it drops to a second line under them instead of running under the rail. */
 .manager.live div.overlay.map-tools { right: 412px; }
+/* Map legend: centred horizontally on the screen (the left and right rails are the same width). */
+.manager.live div.overlay.map-legend { left: 50%; transform: translateX(-50%); }
+/* Narrow screens: not enough room to centre between the rails, so it starts right of the left rail as before. */
+@media (max-width: 1480px) { .manager.live div.overlay.map-legend { left: 412px; transform: none; } }
