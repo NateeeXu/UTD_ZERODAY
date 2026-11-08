@@ -327,3 +327,7 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .tip-why, .tip-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tip-title { gap: 7px; }
 .tip-status { margin-left: 14px; }
+/* Clicking a hex focuses its SVG path; Chrome then draws a blue focus box around it. */
+.leaflet-container path.leaflet-interactive:focus,
+.leaflet-container path.leaflet-interactive:focus-visible { outline: none; }
+.leaflet-container { -webkit-tap-highlight-color: transparent; }

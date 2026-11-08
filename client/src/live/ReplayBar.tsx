@@ -26,6 +26,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   };
   const max = replay?.maxMinutes || 4320;
   const t = replay?.simMinutes ?? 0;
+  const atEnd = t >= max - 0.5;
   const run = (fn: () => Promise<void>) => async () => {
     if (!canControl) return onNeedJoin();
     setBusy(true);
@@ -45,8 +46,17 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       {replay?.running ? (
         <button className="btn primary" onClick={run(() => pause())} disabled={busy}>Pause</button>
       ) : (
-        <button className="btn primary" onClick={run(() => start({ speed: REPLAY_SPEED * shownMult }))} disabled={busy}>
-          {t > 0 && t < max ? 'Resume' : 'Start'}
+        <button
+          className="btn primary"
+          onClick={run(async () => {
+            // At the end of the 72 h, Start means "play it again": reset to landfall first.
+            if (atEnd) await reset();
+            await start({ speed: REPLAY_SPEED * shownMult });
+          })}
+          disabled={busy}
+          title={atEnd ? 'Resets the demo and replays from landfall' : undefined}
+        >
+          {t > 0 && !atEnd ? 'Resume' : 'Start'}
         </button>
       )}
       <div className="timeline-track">
