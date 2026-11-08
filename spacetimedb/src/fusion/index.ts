@@ -320,7 +320,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       const f = fups.get(e.householdId);
       const vul = !!s && isVulnerable(s.household);
       const highRisk = vul || e.pNeedsHelp >= 0.3 || priorityNow === 'P0';
-      const a = accountFor(s, f, e.pNeedsHelp, priorityNow, prep.nowMin, highRisk, prevById.get(e.householdId)?.escalation ?? '');
+      const a = accountFor(s, f, e.pNeedsHelp, priorityNow, prep.nowMin, highRisk, vul, prevById.get(e.householdId)?.escalation ?? '');
       acct.set(e.householdId, { accounted: a.accounted, escalation: a.escalation });
       if (a.accounted) accounted++;
       if (vul) {
@@ -339,7 +339,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       if (!a.accounted || a.recheck)
         queue.push({
           householdId: e.householdId,
-          weight: queueWeight(e.pNeedsHelp, e.pSevere, vul, priorityNow),
+          weight: queueWeight(e.pNeedsHelp, e.pSevere, vul, priorityNow) * (a.recheck ? RECHECK_WEIGHT : 1),
           waitSinceMin: prep.nowMin - a.waitMin,
           escalation: a.escalation,
           vulnerable: vul,
@@ -478,7 +478,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
  *   high-risk:  sms_sent -> sms_resend (30 m) -> agent_call (90 m)  -> field_visit (4 h)
  *   standard:   sms_sent -> sms_resend (2 h)  -> agent_call (6 h)   -> field_visit (12 h; 48 h for low-risk P2)
  *   no phone on file: agent_call (outreach through the agent / emergency contact) -> field_visit
- * Heard from but high-risk and the last contact is older than RECHECK_MIN: 'recheck' (still accounted,
+ * Heard from but vulnerable and the last contact is older than RECHECK_MIN: 'recheck' (still accounted,
  * counted in recheckDue and put back in the outreach queue).
  * Needs help (reply or a reported missing member), until the referral is resolved:
  *   emergency_referral -> (manager refers) referral_pending -> referral_acknowledged
@@ -500,8 +500,10 @@ export const LOW_RISK_VISIT_MIN = 2880;
 export const REFER_MIN = 30;
 /** A referral not acknowledged within this many sim minutes is overdue. */
 export const REFERRAL_ACK_MIN = 60;
-/** "Safe" expires for high-risk households after this many sim minutes without new contact. */
-export const RECHECK_MIN = 720;
+/** "Safe" expires for vulnerable households after this many sim minutes without new contact (daily welfare check). */
+export const RECHECK_MIN = 1440;
+/** A re-check ranks below a never-contacted household of the same risk. */
+export const RECHECK_WEIGHT = 0.5;
 /** Outreach-queue rows kept per cell, and the aging constant of the client-side score. */
 export const QUEUE_PER_CELL = 5;
 export const QUEUE_AGING_MIN = 360;
@@ -516,15 +518,23 @@ export function accountFor(
   cellPriority: string,
   nowMin: number,
   highRisk: boolean,
+  vulnerable: boolean,
   prevEscalation: string
 ): Accounting {
   const base = { accounted: true, waitMin: 0, openReferral: false, overdue: false, recheck: false };
   if (f?.closureReason) return { ...base, escalation: 'closed' };
   // Someone needs help (reply or a missing household member): open until the referral is resolved.
+  // Needs-help statements (SMS / agent call reply, or an adjuster on site) newer than the last "safe"
+  // statement and the last resolved referral.
   const resolved = f?.referralStatus === 'resolved';
-  const helpOpen = s?.reply?.safety === 'needs_help' && !(resolved && s.reply.t <= f!.referralSimMinutes);
+  const resolvedAt = resolved ? f!.referralSimMinutes : -Infinity;
+  const stmts = [s?.field, s?.reply].filter((x): x is NonNullable<typeof x> => !!x);
+  const lastSafeT = Math.max(-Infinity, ...stmts.filter((x) => x.safety === 'safe').map((x) => x.t));
+  const helpTs = stmts.filter((x) => x.safety === 'needs_help' && x.t > resolvedAt && x.t > lastSafeT).map((x) => x.t);
+  const helpOpen = helpTs.length > 0;
   const missingOpen = !!f?.memberMissing && !resolved;
-  if (helpOpen || missingOpen) {
+  const inFlight = f?.referralStatus === 'referred' || f?.referralStatus === 'acknowledged';
+  if (helpOpen || missingOpen || inFlight) {
     const status = resolved ? '' : (f?.referralStatus ?? '');
     if (status === 'acknowledged') return { ...base, escalation: 'referral_acknowledged', openReferral: true };
     let wait: number, overdue: boolean, escalation: string;
@@ -533,7 +543,7 @@ export function accountFor(
       overdue = wait > REFERRAL_ACK_MIN;
       escalation = overdue ? 'referral_overdue' : 'referral_pending';
     } else {
-      const reportedT = Math.min(helpOpen ? s!.reply!.t : Infinity, missingOpen ? f!.reportedSimMinutes : Infinity);
+      const reportedT = Math.min(...helpTs, missingOpen ? f!.reportedSimMinutes : Infinity);
       wait = nowMin - reportedT;
       overdue = wait > REFER_MIN;
       escalation = overdue ? 'referral_overdue' : 'emergency_referral';
@@ -546,7 +556,7 @@ export function accountFor(
   if (s.reply || s.claim || f?.memberMissing) {
     const lastT = Math.max(s.reply?.t ?? -Infinity, s.claim?.t ?? -Infinity, f?.memberMissing ? f.reportedSimMinutes : -Infinity);
     const stale = nowMin - lastT - RECHECK_MIN;
-    if (highRisk && stale > 0) return { ...base, escalation: 'recheck', waitMin: stale, recheck: true };
+    if (vulnerable && stale > 0) return { ...base, escalation: 'recheck', waitMin: stale, recheck: true };
     return { ...base, escalation: 'accounted' };
   }
   // Not heard from yet.

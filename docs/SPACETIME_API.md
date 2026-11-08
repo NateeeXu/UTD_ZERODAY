@@ -46,8 +46,8 @@ Five guarantees, each backed by data the frontend can show:
 1. **Nobody is silently "fine"**: silence = unaccounted; the only exits are contact or a documented closure (`close_household`).
 2. **Everyone has a next step**: every household has an `escalation`, and the ladder ends with a person at the door (low-risk households too, after 48 h).
 3. **Nobody starves in the queue**: `unaccounted_queue` ranks by risk x waiting time, so every hour of silence raises a household.
-4. **"Safe" expires for high-risk people**: a vulnerable / high-risk household whose last contact is older than 12 h goes back to the queue as `recheck`.
-5. **Life-safety reports cannot stall**: a needs-help reply or a missing member opens a referral with timers (not referred in 30 min, or not acknowledged in 60 min → `referral_overdue`).
+4. **"Safe" expires for vulnerable people**: a vulnerable household whose last contact is older than 24 h goes back to the queue as `recheck` (daily welfare check; ranks below never-contacted households).
+5. **Life-safety reports cannot stall**: a needs-help reply, an adjuster finding someone who needs help, or a missing member opens a referral with timers (not referred in 30 min, or not acknowledged in 60 min → `referral_overdue`).
 
 | Where | Columns |
 |---|---|
@@ -56,6 +56,7 @@ Five guarantees, each backed by data the frontend can show:
 | `household_estimate`, `inspection_candidate` | `accounted` (bool), `escalation` |
 | `household_followup` | per household: `memberMissing`, `reportedSimMinutes`, `referralStatus` (`''` / `referred` / `acknowledged` / `resolved`), `referralSimMinutes` (when referred, or when resolved), `closureReason` (`vacant` / `not_in_area` / `unreachable_after_visit`), `closedBy` |
 | `unaccounted_queue` | top 5 per cell that still need contact: `rank`, `weight`, `waitSinceMin`, `escalation`, `vulnerable`, `cellPriority` |
+| `staff_sim` (singleton) | `enabled`, `callsPerHour`, `visitsPerHour`, `lastRunMin`, counters (see below) |
 
 `escalation` values:
 - **Not heard from** (high-risk = vulnerable, pNeedsHelp ≥ 0.3, or a P0 cell; the step never moves backwards):
@@ -63,7 +64,7 @@ Five guarantees, each backed by data the frontend can show:
   - standard: `sms_sent` → `sms_resend` (2 h) → `agent_call` (6 h) → `field_visit` (12 h; 48 h for low-risk P2 cells)
   - no phone on file: `agent_call` (agent / emergency contact) → `field_visit`
 - **Needs help** (reply or missing member, until resolved): `emergency_referral` → `referral_pending` → `referral_acknowledged`; `referral_overdue` when a timer runs out. Pick the button from `household_followup.referralStatus`: `''` → "Refer to 911 / local agency", `referred` → "Agency acknowledged", `acknowledged` → "Resolved".
-- **Heard from**: `accounted`, `recheck` (high-risk, last contact > 12 h ago), `verified` (field report), `closed` (documented reason).
+- **Heard from**: `accounted`, `recheck` (vulnerable, last contact > 24 h ago), `verified` (field report), `closed` (documented reason).
 
 Queue score (rank across cells on the client; rows only change when the ranking changes):
 ```ts
@@ -77,10 +78,29 @@ Reducers:
 | `report_member_missing(householdId, passcode)` | reply page (policyholder_demo, manager, or reply passcode) | "Someone in my household is unaccounted for": opens a referral (a repeat report keeps the original clock) |
 | `update_referral(householdId, status)` | manager | `referred` / `acknowledged` / `resolved`; a needs-help reply after `resolved` opens a new referral |
 | `close_household(householdId, reason)` | manager or adjuster | `vacant`, `not_in_area`, `unreachable_after_visit` (needs an assignment first), or `''` to reopen |
+| `set_staff_sim(enabled, callsPerHour, visitsPerHour)` | manager | simulated staff on/off and capacity (0 = default) |
 
 Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
 Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", the outreach queue with one action button per `escalation`, a referrals panel (overdue in red), and `accountedRate` vs `vulnerableAccountedRate` side by side.
-Measured on the 72 h Harbor Bend replay with no staff actions: accounted 0 → 1,212 (5 h) → 1,748 (72 h), never decreasing; recheck due 616 at 72 h; Bay Area `jump_to(4320)` stays under 1 s.
+### Simulated staff (`staff_sim`, on by default)
+
+So the numbers move during the demo without anyone clicking, simulated staff work the queues every 30 sim minutes (src/staff.ts). Outcomes come from the private sim truth, never from the model.
+- **Referral desk** (no limit): refers every new needs-help report at the next step; the agency acknowledges after 30 min and resolves after 6 h.
+- **Agents** (`callsPerHour`, default 2% of households): call the top of `unaccounted_queue` once the text has had an hour; retry after 2 h, at most 3 tries. P(answer) 0.75, 0.35 if the household really needs help, 0.4 with no phone on file (emergency contact). A reached call is an `sms_reply` row with text `[agent call] reached by phone` and `source = 'staff_sim'`.
+- **Adjusters** (`visitsPerHour`, default 0.3%): visit queue households after two failed calls, or one failed call and 4 h of silence (also a re-check nobody answers). A visit is a `field_report` from `sim-adjuster`, so it also feeds trust learning.
+- Counters in `staff_sim`: `callsMade`, `callsReached`, `visitsMade`, `referralsMade`, `referralsResolved`, `helpFound` (people who needed help, found by a call or visit).
+- `set_staff_sim(enabled, callsPerHour, visitsPerHour)` (manager; 0 = default). Turn it off to show "no staff" vs "staff working the queue". Settings survive `reset_demo`.
+
+Measured, 72 h replays:
+| | no staff | staff on |
+|---|---|---|
+| Harbor Bend accounted at 24 h / 48 h | 1,590 / 1,693 of 3,000 | 2,570 / **3,000** |
+| Harbor Bend high-risk unaccounted at 24 h | 760 | 10 |
+| Harbor Bend overdue referrals | 55 | 0 |
+| Bay Area accounted at 24 h / 72 h | – / 8,981 of 30,000 | 19,032 / **30,000** |
+
+Cost: one staff step for the Bay Area is ~80 ms. The running replay does one step per tick; `step_replay(240)` takes ~1 s on Maincloud; a Bay Area `jump_to(1440)` takes ~4 s, so fast-forward big regions with repeated `step_replay(240)` calls (the UI also updates between them).
+Holdout metrics now score only households without a field report (verified households are known, not predicted).
 
 ## 1. What runs inside Spacetime
 

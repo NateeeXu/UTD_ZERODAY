@@ -8,11 +8,13 @@ import spacetimedb, { replayTick, type Ctx } from '../schema';
 import { getReplay, microsBetween, requireManager } from '../state';
 import { clearDemoState, flushBatch, newBatch, onEvent, rebuildAll, refreshHoldoutMetrics, type IngestEvent } from '../ingest';
 import { recomputeCells } from '../fusion';
+import { defaultCapacity, getStaff, runStaffUpTo, STAFF_STEP_MIN } from '../staff';
 import type { Damage, Peril, Safety } from '../fusion/contract';
 
 const TICK_MICROS = 1_000_000n; // 1 s
 const MAX_SPEED = 1440; // 1 sim-day per second
 const MAX_CADENCE_MIN = 4320;
+const JUMP_FULL_RECOMPUTE_MIN = 360;
 
 type StagedRow = NonNullable<ReturnType<Ctx['db']['stagedEvent']['seq']['find']>>;
 type ReplayRow = ReturnType<typeof getReplay>;
@@ -98,6 +100,7 @@ function advance(ctx: Ctx, rs: ReplayRow, next: number) {
   rs.lastTickAt = ctx.timestamp;
   ctx.db.replayState.id.update(rs); // persist the clock first: recomputes read sim time from the table
   releaseUpTo(ctx, rs, Math.floor(rs.simMinutes));
+  runStaffUpTo(ctx, rs.simMinutes);
   const finished = rs.simMinutes >= rs.maxMinutes && rs.nextSeq >= rs.totalStaged;
   const due = rs.fullRecomputeEveryMin > 0 && rs.simMinutes - rs.lastFullRecomputeMin >= rs.fullRecomputeEveryMin;
   if (due || finished) fullRecompute(ctx, rs);
@@ -180,10 +183,20 @@ export const jumpTo = spacetimedb.reducer({ name: 'jump_to' }, { minutes: t.f64(
       ctx.db.replayTick.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(TICK_MICROS) });
     }
   }
+  // With simulated staff on, walk forward in staff steps so they act on the queue as it was then.
+  // Touched cells are recomputed every step anyway; full recomputes (time-based escalation, re-checks)
+  // only every JUMP_FULL_RECOMPUTE_MIN inside a jump to keep long jumps affordable.
+  if (getStaff(ctx).enabled) {
+    const cadence = rs.fullRecomputeEveryMin;
+    rs.fullRecomputeEveryMin = Math.max(cadence, JUMP_FULL_RECOMPUTE_MIN);
+    while (rs.simMinutes + STAFF_STEP_MIN < minutes) advance(ctx, rs, rs.simMinutes + STAFF_STEP_MIN);
+    rs.fullRecomputeEveryMin = cadence;
+  }
   rs.simMinutes = minutes;
   rs.lastTickAt = ctx.timestamp;
   ctx.db.replayState.id.update(rs);
   releaseUpTo(ctx, rs, Math.floor(minutes));
+  runStaffUpTo(ctx, minutes);
   if (minutes >= rs.maxMinutes && rs.nextSeq >= rs.totalStaged) {
     rs.running = false;
     stopTicking(ctx);
@@ -213,5 +226,30 @@ export const setRecomputeCadence = spacetimedb.reducer(
     if (minutes > MAX_CADENCE_MIN) throw new SenderError(`minutes must be in [0, ${MAX_CADENCE_MIN}]`);
     const rs = getReplay(ctx);
     ctx.db.replayState.id.update({ ...rs, fullRecomputeEveryMin: minutes });
+  }
+);
+
+/**
+ * Simulated staff for the demo (see src/staff.ts). callsPerHour / visitsPerHour = 0 means the default
+ * (2% / 0.3% of households per hour). Takes effect from the current sim time.
+ */
+export const setStaffSim = spacetimedb.reducer(
+  { name: 'set_staff_sim' },
+  { enabled: t.bool(), callsPerHour: t.u32(), visitsPerHour: t.u32() },
+  (ctx, { enabled, callsPerHour, visitsPerHour }) => {
+    requireManager(ctx);
+    const cap = defaultCapacity(Number(ctx.db.household.count()));
+    if (callsPerHour > 100_000 || visitsPerHour > 100_000) throw new SenderError('capacity too large');
+    const st = getStaff(ctx);
+    const rs = getReplay(ctx);
+    ctx.db.staffSim.id.update({
+      ...st,
+      enabled,
+      callsPerHour: callsPerHour || cap.callsPerHour,
+      visitsPerHour: visitsPerHour || cap.visitsPerHour,
+      // Turning staff on mid-replay starts from now (no backlog of missed steps).
+      lastRunMin: enabled && !st.enabled ? Math.floor(rs.simMinutes / STAFF_STEP_MIN) * STAFF_STEP_MIN : st.lastRunMin,
+      updatedAt: ctx.timestamp,
+    });
   }
 );
