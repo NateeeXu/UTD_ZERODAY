@@ -190,6 +190,8 @@ Two random runs, simulated staff on (true severe count vs the live range):
 
 **Presets** (`--preset <id>`, all labeled "hypothetical, inspired by"): `celia-type-direct-hit` (Celia 1970, compact Cat 4, weekday 16:00), `harvey-type-stall` (Harvey 2017, stalling Cat 4 north of the county, weekday 22:00), `hanna-type-cat1` (Hanna 2020, Cat 1, weekend 17:00; landfall moved north into the region), `haywired-m705` (USGS HayWired M7.05 under Oakland, weekday 16:00), `hayward-1868-night` (1868 Hayward M6.8 replayed at 03:00; real time 7:53 am), `calaveras-north-m686` (USGS northern Calaveras M6.86, weekend 14:00).
 
+**Footprint**: each generated event keeps only the area it hits (cells with hazard index ≥ max(0.2, 40 % of the event's peak), plus one ring of neighbours), so every disaster has its own shape (72 to 581 cells in tests); households are made denser when few would remain (target about 12,000, generation capped at 60,000). `--full-county` keeps the whole county. The shape stays inside the two counties with data.
+
 **Fully random draws** are redrawn until at least 3 % of households are severely damaged (many real Bay Area quakes barely affect Alameda County; a demo should not land on one). Any explicit option, preset or `--seed` is honoured exactly; `--any` keeps every draw.
 
 Caveat: the random parameter ranges are research-based but simplified (a straight rupture, one IPE, no site amplification beyond liquefaction; a parametric hurricane wind and surge model). They make realistic-looking, varied events for testing the pipeline, not hazard forecasts.
