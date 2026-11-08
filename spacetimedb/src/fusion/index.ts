@@ -1,14 +1,30 @@
 // Fusion adapter: the only place where reducers touch the estimator.
-// recomputeHex(ctx, hexId) gathers one cell's households and events from the tables, calls a pure
-// estimator (CellEstimator), and writes household_estimate + the fusion columns of hex_stats.
 //
-// To swap in the real engine: see `activeEstimator` below and docs/SPACETIME_API.md ("Fusion engine").
+// recomputeCells(ctx, hexIds) runs in three phases so the engine's world reference rates are always
+// computed from up-to-date aggregates of every cell:
+//   1. per touched cell: gather households + events from the tables, aggregate (engine
+//      aggregateCellCounts) and persist the counters in the private cell_agg table;
+//   2. world refs = engine computeRefs over all cell_agg rows (one row per cell);
+//   3. per touched cell: estimate, then write household_estimate, inspection_candidate and the
+//      fusion columns of hex_stats (rows are rewritten only when something moved materially).
+// A cell's aggregate only changes with its own events, and every event recomputes its cell in the
+// same transaction, so cell_agg is always exact. Untouched cells pick up drifting refs / time at the
+// next full recompute (replay cadence, jump, pause, reset).
 import type { Ctx } from '../schema';
-import { getMetrics, getModelState, getReplay } from '../state';
+import { getMetrics, getModelState, getReplay, worldCtxOf, worldStampKey } from '../state';
 import { stubEstimator } from './stub';
-import { engineEstimator, engineWorldRefs } from './engine-adapter';
-import type { Damage, HexCell, Household, ModelParams, Peril, Safety } from './contract';
-import type { CellEstimator, CellInput, HouseholdSignals, SourceTrust, WorldRefs } from './types';
+import { engineEstimator, engineWorldRefs, INSPECT_PER_CELL } from './engine-adapter';
+import type { Damage, Facility, HexCell, Household, ModelParams, Peril, Safety } from './contract';
+import type {
+  CellEstimator,
+  CellInput,
+  HouseholdSignals,
+  PreparedCell,
+  RefsCounters,
+  SourceTrust,
+  WorldContext,
+  WorldRefs,
+} from './types';
 
 // ----- model params (parsed once per version) --------------------------------
 
@@ -17,7 +33,7 @@ let paramsCache: { key: string; params: ModelParams | null } | null = null;
 export function modelParams(ctx: Ctx): ModelParams | null {
   const ms = getModelState(ctx);
   if (!ms.loaded || !ms.paramsJson) return null;
-  const key = `${ms.version}:${ms.paramsJson.length}`;
+  const key = `${ms.version}:${ms.paramsJson.length}:${ms.updatedAt.microsSinceUnixEpoch}`;
   if (!paramsCache || paramsCache.key !== key) {
     let params: ModelParams | null = null;
     try {
@@ -30,9 +46,9 @@ export function modelParams(ctx: Ctx): ModelParams | null {
   return paramsCache.params;
 }
 
-/** Real engine when it is available and a model is loaded; the TEMPORARY stub otherwise. */
+/** Real engine when a valid model is loaded; the TEMPORARY stub otherwise. */
 export function activeEstimator(params: ModelParams | null): CellEstimator {
-  if (params && engineEstimator && engineEstimator.supports(params)) return engineEstimator;
+  if (params && engineEstimator.supports(params)) return engineEstimator;
   return stubEstimator;
 }
 
@@ -41,39 +57,108 @@ export function currentTrust(ctx: Ctx): SourceTrust {
   return { hazard: ms.trustHazard, sms: ms.trustSms, claims: ms.trustClaims };
 }
 
-// ----- gathering -------------------------------------------------------------
+// ----- row -> contract conversions ------------------------------------------
 
 type HexRow = NonNullable<ReturnType<Ctx['db']['hex']['hex']['find']>>;
 type HouseholdRow = NonNullable<ReturnType<Ctx['db']['household']['id']['find']>>;
+type FacilityRow = NonNullable<ReturnType<Ctx['db']['facility']['id']['find']>>;
+
+/** Copy defined optional fields only, so the engine sees exactly what the bundle had. */
+function withOptional<T extends object>(base: T, optional: Record<string, unknown>): T {
+  for (const [k, v] of Object.entries(optional)) if (v !== undefined) (base as Record<string, unknown>)[k] = v;
+  return base;
+}
 
 export function toHexCell(row: HexRow): HexCell {
-  return {
-    hex: row.hex,
-    lat: row.lat,
-    lng: row.lng,
-    windMph: row.windMph,
-    floodDepthFt: row.floodDepthFt,
-    towerOutagePct: row.towerOutagePct,
-    analystZone: row.analystZone as 0 | 1 | 2,
-  };
+  return withOptional<HexCell>(
+    {
+      hex: row.hex,
+      lat: row.lat,
+      lng: row.lng,
+      windMph: row.windMph,
+      floodDepthFt: row.floodDepthFt,
+      towerOutagePct: row.towerOutagePct,
+      analystZone: row.analystZone as 0 | 1 | 2,
+    },
+    {
+      hazardIndex: row.hazardIndex,
+      shakingMmi: row.shakingMmi,
+      liquefaction: row.liquefaction,
+      tractGeoid: row.tractGeoid,
+      daytimeWorkers: row.daytimeWorkers,
+      residentWorkers: row.residentWorkers,
+      k12Enrollment: row.k12Enrollment,
+      collegeEnrollment: row.collegeEnrollment,
+    }
+  );
 }
 
 export function toHousehold(row: HouseholdRow): Household {
-  return {
-    id: row.id,
-    hex: row.hex,
-    lat: row.lat,
-    lng: row.lng,
-    age65: row.age65,
-    livesAlone: row.livesAlone,
-    medicalDevice: row.medicalDevice,
-    windCovered: row.windCovered,
-    floodPolicy: row.floodPolicy,
-    earthquakeEndorsement: row.earthquakeEndorsement,
-    phoneOnFile: row.phoneOnFile,
-    holdout: row.holdout,
-  };
+  return withOptional<Household>(
+    {
+      id: row.id,
+      hex: row.hex,
+      lat: row.lat,
+      lng: row.lng,
+      age65: row.age65,
+      livesAlone: row.livesAlone,
+      medicalDevice: row.medicalDevice,
+      windCovered: row.windCovered,
+      floodPolicy: row.floodPolicy,
+      earthquakeEndorsement: row.earthquakeEndorsement,
+      phoneOnFile: row.phoneOnFile,
+      holdout: row.holdout,
+    },
+    {
+      tractGeoid: row.tractGeoid,
+      childrenUnder18: row.childrenUnder18,
+      awayDaytime: row.awayDaytime,
+      age75: row.age75,
+      disability: row.disability,
+      noVehicle: row.noVehicle,
+      limitedEnglish: row.limitedEnglish,
+      primaryLanguage: row.primaryLanguage,
+      mobileHome: row.mobileHome,
+      policyType: row.policyType,
+      schoolAgeChildren: row.schoolAgeChildren,
+      collegeStudent: row.collegeStudent,
+      nearestSchoolId: row.nearestSchoolId,
+    }
+  );
 }
+
+function toFacility(row: FacilityRow): Facility {
+  return withOptional<Facility>(
+    { id: row.id, kind: row.kind as Facility['kind'], name: row.name, lat: row.lat, lng: row.lng, hex: row.hex, source: row.source },
+    { enrollment: row.enrollment, capacity: row.capacity }
+  );
+}
+
+// ----- static world cache -----------------------------------------------------
+// Cells, households and facilities only change through the seed reducers, which stamp
+// config.worldStamp. Decoding 30,000 household rows was ~25% of a full recompute, so the converted
+// objects are kept in module memory keyed by that stamp. Derived data only: if the runtime does not
+// keep module state between calls, this simply misses and rebuilds.
+
+interface StaticCell {
+  cell: HexCell;
+  households: Household[];
+  facilities: Facility[];
+}
+let staticCache: { key: string; byHex: Map<string, StaticCell> } | null = null;
+
+export function staticWorld(ctx: Ctx): Map<string, StaticCell> {
+  const key = worldStampKey(ctx);
+  if (staticCache && staticCache.key === key) return staticCache.byHex;
+  const byHex = new Map<string, StaticCell>();
+  for (const h of ctx.db.hex.iter()) byHex.set(h.hex, { cell: toHexCell(h), households: [], facilities: [] });
+  for (const h of ctx.db.household.iter()) byHex.get(h.hex)?.households.push(toHousehold(h));
+  for (const f of ctx.db.facility.iter()) byHex.get(f.hex)?.facilities.push(toFacility(f));
+  staticCache = { key, byHex };
+  return byHex;
+}
+
+// ----- gathering -------------------------------------------------------------
 
 function emptySignals(h: HouseholdRow): HouseholdSignals {
   return { household: toHousehold(h), smsSentT: null, reply: null, claim: null, field: null };
@@ -108,10 +193,11 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
   }
 }
 
-/** Signals for every household of one cell (5 index scans). */
-export function gatherCellSignals(ctx: Ctx, hexId: string): HouseholdSignals[] {
+/** Signals for every household of one cell (static households from the cache + 4 event index scans). */
+export function gatherCellSignals(ctx: Ctx, hexId: string, members?: Household[]): HouseholdSignals[] {
   const byId = new Map<string, HouseholdSignals>();
-  for (const h of ctx.db.household.hex.filter(hexId)) byId.set(h.id, emptySignals(h));
+  for (const h of members ?? staticWorld(ctx).get(hexId)?.households ?? [])
+    byId.set(h.id, { household: h, smsSentT: null, reply: null, claim: null, field: null });
   foldEvents(byId, {
     sent: ctx.db.smsSent.hex.filter(hexId),
     replies: ctx.db.smsReply.hex.filter(hexId),
@@ -135,6 +221,31 @@ export function gatherHouseholdSignals(ctx: Ctx, h: HouseholdRow): HouseholdSign
 
 // ----- recompute -------------------------------------------------------------
 
+/** Everything a recompute needs that does not depend on the cell. Build once per transaction. */
+export interface RecomputePrep {
+  params: ModelParams | null;
+  estimator: CellEstimator;
+  trust: SourceTrust;
+  nowMin: number;
+  world: WorldContext;
+}
+
+export function prepareRecompute(ctx: Ctx): RecomputePrep {
+  const params = modelParams(ctx);
+  return {
+    params,
+    estimator: activeEstimator(params),
+    trust: currentTrust(ctx),
+    nowMin: getReplay(ctx).simMinutes,
+    world: worldCtxOf(ctx),
+  };
+}
+
+/** World reference rates from every cell's persisted aggregate. */
+export function currentWorldRefs(ctx: Ctx, world: WorldContext): WorldRefs {
+  return engineWorldRefs(ctx.db.cellAgg.iter() as Iterable<RefsCounters>, world);
+}
+
 // Rows are only rewritten when an output moved by at least this much. The model has a time feature,
 // so every recompute nudges every probability; skipping tiny moves keeps subscription traffic (and
 // Maincloud energy) proportional to real changes.
@@ -149,112 +260,163 @@ function bumpPriority(m: ReturnType<typeof getMetrics>, priority: string, verifi
   if (priority && verification === 'needs_verification') m.needsVerificationCells = add(m.needsVerificationCells);
 }
 
-/** World reference rates from the hex_stats counters (one pass over all cells). */
-export function computeWorldRefs(ctx: Ctx): WorldRefs {
-  const rows: { cell: HexCell; households: number; smsSent: number; replied: number; claimed: number }[] = [];
-  for (const s of ctx.db.hexStats.iter()) {
-    const cell = ctx.db.hex.hex.find(s.hex);
-    if (!cell) continue;
-    // hex_stats.claims counts claim events; the simulator files at most one claim per household.
-    rows.push({ cell: toHexCell(cell), households: s.households, smsSent: s.smsSent, replied: s.smsReplies, claimed: s.claims });
-  }
-  return engineWorldRefs(rows);
+/** Recompute one cell. */
+export function recomputeHex(ctx: Ctx, hexId: string, prep?: RecomputePrep) {
+  recomputeCells(ctx, [hexId], prep);
 }
 
-/** Everything recomputeHex needs that does not depend on the cell. Build once per batch. */
-export interface RecomputePrep {
-  params: ModelParams | null;
-  estimator: CellEstimator;
-  trust: SourceTrust;
-  nowMin: number;
-  refs: WorldRefs | null;
-}
-
-export function prepareRecompute(ctx: Ctx): RecomputePrep {
-  const params = modelParams(ctx);
-  const estimator = activeEstimator(params);
-  return {
-    params,
-    estimator,
-    trust: currentTrust(ctx),
-    nowMin: getReplay(ctx).simMinutes,
-    refs: estimator.needsRefs ? computeWorldRefs(ctx) : null,
-  };
-}
-
-/** Recompute one cell. Pass `prep` when recomputing many cells in the same transaction. */
-export function recomputeHex(ctx: Ctx, hexId: string, prep: RecomputePrep = prepareRecompute(ctx)) {
-  const cellRow = ctx.db.hex.hex.find(hexId);
-  const stats = ctx.db.hexStats.hex.find(hexId);
-  if (!cellRow || !stats) return;
-
+/** Recompute a set of cells in three phases (see the file header). */
+export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: RecomputePrep = prepareRecompute(ctx)) {
   const { estimator } = prep;
-  const input: CellInput = {
-    cell: toHexCell(cellRow),
-    households: gatherCellSignals(ctx, hexId),
-    nowMin: prep.nowMin,
-    trust: prep.trust,
-    params: prep.params,
-    refs: prep.refs,
-  };
-  const out = estimator.estimateCell(input);
 
-  for (const e of out.households) {
-    const prev = ctx.db.householdEstimate.householdId.find(e.householdId);
-    const row = {
-      householdId: e.householdId,
-      hex: hexId,
-      pSevere: e.pSevere,
-      pNeedsHelp: e.pNeedsHelp,
-      uncertainty: e.uncertainty,
-      verified: e.verified,
-      inspectScore: e.inspectScore,
-      updatedAt: ctx.timestamp,
+  // Phase 1: aggregate each touched cell and persist its refs counters.
+  const world = staticWorld(ctx);
+  const prepared: PreparedCell[] = [];
+  for (const hexId of hexIds) {
+    const st = world.get(hexId);
+    if (!st || !ctx.db.hexStats.hex.find(hexId)) continue;
+    const input: CellInput = {
+      cell: st.cell,
+      households: gatherCellSignals(ctx, hexId, st.households),
+      facilities: st.facilities,
+      nowMin: prep.nowMin,
+      world: prep.world,
+      trust: prep.trust,
+      params: prep.params,
     };
-    if (!prev) ctx.db.householdEstimate.insert(row);
-    else if (
-      changed(prev.pSevere, row.pSevere) ||
-      changed(prev.pNeedsHelp, row.pNeedsHelp) ||
-      changed(prev.uncertainty, row.uncertainty) ||
-      changed(prev.inspectScore, row.inspectScore) ||
-      prev.verified !== row.verified
-    )
-      ctx.db.householdEstimate.householdId.update(row);
+    const p = estimator.prepare(input);
+    const counters = estimator.refsCounters(p);
+    if (counters) {
+      if (ctx.db.cellAgg.hex.find(hexId)) ctx.db.cellAgg.hex.update(counters);
+      else ctx.db.cellAgg.insert(counters);
+    }
+    prepared.push(p);
   }
+  if (prepared.length === 0) return;
 
-  const h = out.hex;
+  // Phase 2: world reference rates over all cells.
+  const refs = estimator.needsRefs ? currentWorldRefs(ctx, prep.world) : null;
+
+  // Phase 3: estimate and write.
   const m = getMetrics(ctx);
-  const priorityChanged = stats.priority !== h.priority || stats.verification !== h.verification;
-  if (priorityChanged) {
-    bumpPriority(m, stats.priority, stats.verification, -1);
-    bumpPriority(m, h.priority, h.verification, 1);
+  let metricsDirty = m.engine !== estimator.name;
+  m.engine = estimator.name;
+  for (const p of prepared) {
+    const hexId = p.input.cell.hex;
+    const out = estimator.estimate(p, refs);
+
+    // One index scan per cell instead of one primary-key lookup per household.
+    const prevById = new Map<string, ReturnType<typeof ctx.db.householdEstimate.householdId.find>>();
+    for (const r of ctx.db.householdEstimate.hex.filter(hexId)) prevById.set(r.householdId, r);
+    for (const e of out.households) {
+      const prev = prevById.get(e.householdId);
+      const row = {
+        householdId: e.householdId,
+        hex: hexId,
+        pSevere: e.pSevere,
+        pNeedsHelp: e.pNeedsHelp,
+        uncertainty: e.uncertainty,
+        verified: e.verified,
+        inspectScore: e.inspectScore,
+        updatedAt: ctx.timestamp,
+      };
+      if (!prev) ctx.db.householdEstimate.insert(row);
+      else if (
+        changed(prev.pSevere, row.pSevere) ||
+        changed(prev.pNeedsHelp, row.pNeedsHelp) ||
+        changed(prev.uncertainty, row.uncertainty) ||
+        changed(prev.inspectScore, row.inspectScore) ||
+        prev.verified !== row.verified
+      )
+        ctx.db.householdEstimate.householdId.update(row);
+    }
+
+    const h = out.hex;
+    writeCandidates(ctx, hexId, out.households, h.priority, h.verification);
+
+    const stats = ctx.db.hexStats.hex.find(hexId)!;
+    const reason = h.reason ?? '';
+    const silenceCause = h.silenceCause ?? '';
+    const hazard = h.hazard ?? 0;
+    const priorityChanged = stats.priority !== h.priority || stats.verification !== h.verification;
+    if (priorityChanged) {
+      bumpPriority(m, stats.priority, stats.verification, -1);
+      bumpPriority(m, h.priority, h.verification, 1);
+      metricsDirty = true;
+    }
+    const material =
+      priorityChanged ||
+      stats.reason !== reason ||
+      stats.silenceCause !== silenceCause ||
+      changed(stats.hazard, hazard) ||
+      changed(stats.severity, h.severity) ||
+      changed(stats.confidence, h.confidence) ||
+      changed(stats.silence, h.silence) ||
+      changed(stats.expectedSevere, h.expectedSevere) ||
+      changed(stats.maxPNeedsHelp, h.maxPNeedsHelp);
+    if (!material) continue;
+    ctx.db.hexStats.hex.update({
+      ...stats,
+      severity: h.severity,
+      confidence: h.confidence,
+      priority: h.priority,
+      verification: h.verification,
+      silence: h.silence,
+      expectedSevere: h.expectedSevere,
+      maxPNeedsHelp: h.maxPNeedsHelp,
+      hazard,
+      silenceCause,
+      reason,
+      updatedAt: ctx.timestamp,
+      updatedSimMinutes: prep.nowMin,
+    });
   }
-  if (priorityChanged || m.engine !== estimator.name) {
-    m.engine = estimator.name;
+  if (metricsDirty) {
     m.updatedAt = ctx.timestamp;
     ctx.db.metrics.id.update(m);
   }
+}
 
-  const material =
-    priorityChanged ||
-    stats.reason !== out.reason ||
-    changed(stats.severity, h.severity) ||
-    changed(stats.confidence, h.confidence) ||
-    changed(stats.silence, h.silence) ||
-    changed(stats.expectedSevere, h.expectedSevere) ||
-    changed(stats.maxPNeedsHelp, h.maxPNeedsHelp);
-  if (!material) return;
-  ctx.db.hexStats.hex.update({
-    ...stats,
-    severity: h.severity,
-    confidence: h.confidence,
-    priority: h.priority,
-    verification: h.verification,
-    silence: h.silence,
-    expectedSevere: h.expectedSevere,
-    maxPNeedsHelp: h.maxPNeedsHelp,
-    reason: out.reason,
-    updatedAt: ctx.timestamp,
-    updatedSimMinutes: input.nowMin,
-  });
+/** Keep the cell's top-INSPECT_PER_CELL unverified households in inspection_candidate. */
+function writeCandidates(
+  ctx: Ctx,
+  hexId: string,
+  households: { householdId: string; verified: boolean; inspectScore: number; pSevere: number; pNeedsHelp: number; uncertainty: number }[],
+  cellPriority: string,
+  cellVerification: string
+) {
+  const top = households
+    .filter(e => !e.verified)
+    .sort((a, b) => b.inspectScore - a.inspectScore || (a.householdId < b.householdId ? -1 : 1))
+    .slice(0, INSPECT_PER_CELL);
+  const existing = [...ctx.db.inspectionCandidate.hex.filter(hexId)];
+  const same =
+    existing.length === top.length &&
+    top.every((e, i) => {
+      const x = existing.find(r => r.householdId === e.householdId);
+      return (
+        x &&
+        x.rank === i + 1 &&
+        !changed(x.inspectScore, e.inspectScore) &&
+        !changed(x.pSevere, e.pSevere) &&
+        !changed(x.pNeedsHelp, e.pNeedsHelp) &&
+        x.cellPriority === cellPriority &&
+        x.cellVerification === cellVerification
+      );
+    });
+  if (same) return;
+  for (const x of existing) ctx.db.inspectionCandidate.householdId.delete(x.householdId);
+  top.forEach((e, i) =>
+    ctx.db.inspectionCandidate.insert({
+      householdId: e.householdId,
+      hex: hexId,
+      rank: i + 1,
+      inspectScore: e.inspectScore,
+      pSevere: e.pSevere,
+      pNeedsHelp: e.pNeedsHelp,
+      uncertainty: e.uncertainty,
+      cellPriority,
+      cellVerification,
+    })
+  );
 }

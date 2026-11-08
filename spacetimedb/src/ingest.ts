@@ -2,17 +2,25 @@
 // policyholder page, an adjuster's field report) goes through onEvent, which:
 //   1. inserts the event row,
 //   2. updates the cell's hex_stats counters and the global metrics incrementally,
-//   3. calls recomputeHex (immediately, or once per cell at the end of a batch via `dirty`).
+//   3. calls recomputeHex (immediately, or once per cell at the end of a batch, see IngestBatch).
 import { SenderError } from 'spacetimedb/server';
 import type { Ctx } from './schema';
-import { freshLearning, getMetrics, getModelState, getReplay } from './state';
-import { gatherHouseholdSignals, prepareRecompute, recomputeHex, toHexCell } from './fusion';
+import { freshLearning, getMetrics, getModelState, getReplay, worldCtxOf } from './state';
+import { gatherHouseholdSignals, recomputeCells, recomputeHex, toHexCell } from './fusion';
 import { batchScores, DEFAULT_TRUST, nextTrust, sourceOpinions, TRUST_BATCH } from './fusion/trust';
 import type { Damage, Peril, Safety } from './fusion/contract';
 
 export type IngestEvent =
   | { kind: 'sms_sent'; t: number; householdId: string }
-  | { kind: 'sms_reply'; t: number; householdId: string; safety: 'safe' | 'needs_help'; damage: Damage }
+  | {
+      kind: 'sms_reply';
+      t: number;
+      householdId: string;
+      safety: 'safe' | 'needs_help';
+      damage: Damage;
+      text?: string; // free-text reply (already parsed into safety/damage)
+      language?: string;
+    }
   | { kind: 'claim'; t: number; householdId: string; peril: Peril; reportedDamage: Damage }
   | {
       kind: 'field_report';
@@ -52,23 +60,49 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     silence: 0,
     expectedSevere: 0,
     maxPNeedsHelp: 0,
+    hazard: 0,
+    silenceCause: '',
     reason: '',
     updatedAt: ctx.timestamp,
     updatedSimMinutes: 0,
   };
 }
 
+type StatsRow = NonNullable<ReturnType<Ctx['db']['hexStats']['hex']['find']>>;
+type MetricsRow = ReturnType<typeof getMetrics>;
+
+/**
+ * Many events in one transaction (replay tick, jump): the metrics row and each touched cell's
+ * hex_stats row are updated in memory per event and written once by flushBatch, which then
+ * recomputes every touched cell once.
+ */
+export interface IngestBatch {
+  metrics: MetricsRow;
+  stats: Map<string, StatsRow>;
+}
+
+export function newBatch(ctx: Ctx): IngestBatch {
+  return { metrics: getMetrics(ctx), stats: new Map() };
+}
+
+export function flushBatch(ctx: Ctx, batch: IngestBatch) {
+  for (const s of batch.stats.values()) ctx.db.hexStats.hex.update(s);
+  batch.metrics.updatedAt = ctx.timestamp;
+  ctx.db.metrics.id.update(batch.metrics);
+  if (batch.stats.size > 0) recomputeCells(ctx, [...batch.stats.keys()]);
+}
+
 /**
  * Insert one event, update counters incrementally, recompute the cell.
- * Pass `dirty` to defer the recompute (the caller must then call recomputeHex for each cell).
+ * With `batch`, counter rows stay in memory and the recompute is deferred to flushBatch.
  * Throws SenderError for an unknown household before writing anything.
  */
-export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, dirty?: Set<string>): string {
+export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: IngestBatch): string {
   const hh = ctx.db.household.id.find(ev.householdId);
   if (!hh) throw new SenderError(`unknown household ${ev.householdId}`);
-  const stats = ctx.db.hexStats.hex.find(hh.hex);
+  const stats = batch?.stats.get(hh.hex) ?? ctx.db.hexStats.hex.find(hh.hex);
   if (!stats) throw new SenderError(`unknown hex ${hh.hex}`);
-  const m = getMetrics(ctx);
+  const m = batch?.metrics ?? getMetrics(ctx);
   const base = {
     id: 0n,
     householdId: hh.id,
@@ -103,7 +137,13 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, dirty?: Set<s
         stats.smsReplies += 1;
         m.smsReplies += 1;
       }
-      ctx.db.smsReply.insert({ ...base, safety: ev.safety, damage: ev.damage });
+      ctx.db.smsReply.insert({
+        ...base,
+        safety: ev.safety,
+        damage: ev.damage,
+        text: ev.text || undefined,
+        language: ev.language || undefined,
+      });
       if (ev.damage >= 2) stats.severeReplies += 1;
       if (ev.safety === 'needs_help') {
         stats.helpReplies += 1;
@@ -143,13 +183,15 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, dirty?: Set<s
   }
 
   stats.replyRate = stats.smsSent > 0 ? stats.smsReplies / stats.smsSent : 0;
-  ctx.db.hexStats.hex.update(stats);
   m.verifiedCoverage = m.households > 0 ? m.verifiedHouseholds / m.households : 0;
+  if (batch) {
+    batch.stats.set(hh.hex, stats);
+    return hh.hex;
+  }
+  ctx.db.hexStats.hex.update(stats);
   m.updatedAt = ctx.timestamp;
   ctx.db.metrics.id.update(m);
-
-  if (dirty) dirty.add(hh.hex);
-  else recomputeHex(ctx, hh.hex);
+  recomputeHex(ctx, hh.hex);
   return hh.hex;
 }
 
@@ -297,8 +339,7 @@ export function rebuildAll(ctx: Ctx) {
   m.updatedAt = ctx.timestamp;
   ctx.db.metrics.id.update(m);
 
-  const prep = prepareRecompute(ctx);
-  for (const hexId of byHex.keys()) recomputeHex(ctx, hexId, prep);
+  recomputeCells(ctx, [...byHex.keys()]);
   recountPriorities(ctx);
   refreshHoldoutMetrics(ctx);
 }
@@ -355,6 +396,7 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.fieldReport.clear();
   ctx.db.assignment.clear();
   ctx.db.householdEstimate.clear();
+  ctx.db.inspectionCandidate.clear();
   ctx.db.replayTick.clear();
 
   const rs = getReplay(ctx);
@@ -363,6 +405,8 @@ export function clearDemoState(ctx: Ctx) {
   rs.nextSeq = 0;
   rs.totalStaged = Number(ctx.db.stagedEvent.count());
   rs.lastTickAt = ctx.timestamp;
+  rs.lastFullRecomputeMin = 0;
+  rs.maxMinutes = worldCtxOf(ctx).horizonMinutes;
   ctx.db.replayState.id.update(rs);
 
   // Trust learning restarts from the model's calibrated values (or defaults).

@@ -30,6 +30,8 @@ export default __t.row({
   silence: __t.f64(),
   expectedSevere: __t.f64().name("expected_severe"),
   maxPNeedsHelp: __t.f64().name("max_p_needs_help"),
+  hazard: __t.f64(),
+  silenceCause: __t.string().name("silence_cause"),
   reason: __t.string(),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),

@@ -12,7 +12,7 @@
 //  - Source trust weights how much each signal moves the estimate.
 // =============================================================================
 import type { Damage, HexCell, Priority, Verification } from './contract';
-import type { CellEstimator, CellInput, CellOutput, HouseholdOutput, HouseholdSignals } from './types';
+import type { CellEstimator, CellInput, CellOutput, HouseholdOutput, HouseholdSignals, PreparedCell } from './types';
 
 const REPLY_GRACE_MIN = 180; // a text sent less than this long ago is not "due" a reply yet
 const NORMAL_SIGNAL_RATE = 0.6; // share of texted households we would hear from with working networks
@@ -29,12 +29,16 @@ const entropy = (p: number) => {
   return -(q * Math.log2(q) + (1 - q) * Math.log2(1 - q));
 };
 
+const hasIndex = (cell: HexCell) => typeof cell.hazardIndex === 'number' && Number.isFinite(cell.hazardIndex);
+
 export function isHighHazard(cell: HexCell): boolean {
+  if (hasIndex(cell)) return (cell.hazardIndex as number) >= 0.5;
   return cell.windMph >= HIGH_WIND_MPH || cell.floodDepthFt >= HIGH_FLOOD_FT;
 }
 
-/** Hazard-only log-odds of damage >= 2 for a household in this cell. */
+/** Hazard-only log-odds of damage >= 2 for a household in this cell (hazardIndex when present). */
 export function hazardLogit(cell: HexCell): number {
+  if (hasIndex(cell)) return 6 * ((cell.hazardIndex as number) - 0.55) + 0.35 * (cell.analystZone - 1);
   const w = (cell.windMph - 60) / 26;
   const f = cell.floodDepthFt / 2.7;
   const hz = Math.max(w, f) + 0.25 * Math.min(Math.max(w, 0), Math.max(f, 0));
@@ -140,7 +144,7 @@ export function estimateCellStub(input: CellInput): CellOutput {
   const high = isHighHazard(cell);
   const heavyOutage = cell.towerOutagePct >= HEAVY_OUTAGE_PCT;
   const lowReply = due > 0 ? dueReplied / due < LOW_REPLY_RATE : true; // nothing due yet = no evidence of safety
-  const suspectedSilent = high && heavyOutage && lowReply && verifiedFrac < 0.25;
+  const suspectedSilent = high && (heavyOutage || hasIndex(cell)) && lowReply && verifiedFrac < 0.25;
 
   const reasons: string[] = [];
   let priority: Priority;
@@ -185,9 +189,16 @@ export function estimateCellStub(input: CellInput): CellOutput {
       verification,
       silence,
       counts: { smsSent: texted, smsReplies: replies, claims, fieldReports },
+      hazard: hasIndex(cell) ? (cell.hazardIndex as number) : sigmoid(hazardLogit(cell)),
+      reason: `TEMPORARY rules (no model loaded): ${reasons.join('; ')}`,
     },
-    reason: reasons.join('; '),
   };
 }
 
-export const stubEstimator: CellEstimator = { name: 'stub', needsRefs: false, estimateCell: estimateCellStub };
+export const stubEstimator: CellEstimator = {
+  name: 'stub',
+  needsRefs: false,
+  prepare: (input: CellInput): PreparedCell => ({ input }),
+  refsCounters: () => null,
+  estimate: (p: PreparedCell) => estimateCellStub(p.input),
+};

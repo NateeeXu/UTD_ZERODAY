@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import { DbConnection } from '../bindings/index.ts';
 import type { Identity } from 'spacetimedb';
 
-export const HOST = process.env.SPACETIME_HOST ?? 'ws://127.0.0.1:3000';
-export const DB = process.env.SPACETIME_DB ?? 'triage-loop';
+const argv = process.argv.slice(2);
+const argOf = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
+
+// Target: --host / --db flags, else SPACETIME_HOST / SPACETIME_DB, else the local server and `triage-loop`.
+export const HOST = argOf('--host') ?? process.env.SPACETIME_HOST ?? 'ws://127.0.0.1:3000';
+export const DB = argOf('--db') ?? process.env.SPACETIME_DB ?? 'triage-loop';
 
 // Demo passcodes. The repo is public, so the defaults are public too: set your own via env for Maincloud.
 export const STAFF_PASSCODE = process.env.STAFF_PASSCODE ?? 'triage-staff';

@@ -10,7 +10,7 @@ export default spacetimedb;
 export const init = spacetimedb.init(ctx => {
   // The publisher becomes the module owner: only it may seed data.
   if (!ctx.db.config.id.find(SINGLETON))
-    ctx.db.config.insert({ id: SINGLETON, owner: ctx.sender, staffPasscode: '', replyPasscode: '' });
+    ctx.db.config.insert({ id: SINGLETON, owner: ctx.sender, staffPasscode: '', replyPasscode: '', worldStamp: 0n });
   ensureSingletons(ctx);
 });
 

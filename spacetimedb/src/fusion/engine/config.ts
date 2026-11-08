@@ -35,6 +35,42 @@ export interface TriageConfig {
     lowOutageRefPct: number;
     /** Attenuates silence while few signals are expected yet (1 expected signal -> 63%, 3 -> 95%). */
     expectedHeardScale: number;
+    /** Data-driven multipliers that condition the expected baselines (shrunk toward 1 with pseudo-observations, then clamped). */
+    factors: {
+      /** Pseudo SMS sends at the base rate when estimating the limited-English / away reply factors. */
+      pseudoSends: number;
+      minReplyFactor: number;
+      maxReplyFactor: number;
+      /** Pseudo exposure units at the owner rate when estimating the renter claim factor. */
+      pseudoExposure: number;
+      minClaimFactor: number;
+      maxClaimFactor: number;
+    };
+  };
+  /** Which silent households are counted as 'away' / 'trapped' and when a cause is assigned. */
+  silenceCause: {
+    /** Below this silence no cause is assigned (field left undefined). */
+    minSilence: number;
+    /** Tower outage at or above this share explains the silence by itself. */
+    outageExplains: number;
+    /** A group (away / vulnerable) must be at least this share of the silent households ... */
+    dominantShare: number;
+    /** ... and over-represented among them by this factor relative to the whole cell. */
+    overRepresentation: number;
+  };
+  /** Insurance coverage conditioning for the expected-claims baseline. */
+  coverage: {
+    /** Claims multiplier for a peril the household is not insured for (flood w/o flood policy, quake w/o endorsement). */
+    uninsuredClaimFactor: number;
+  };
+  /** Event time of day (local hours, weekday only). */
+  daytime: {
+    /** awayDaytime households are away when the event falls in [workStartHour, workEndHour). */
+    workStartHour: number;
+    workEndHour: number;
+    /** School-age children are at school when the event falls in [schoolStartHour, schoolEndHour]. */
+    schoolStartHour: number;
+    schoolEndHour: number;
   };
   /** Cell confidence. */
   confidence: {
@@ -81,7 +117,7 @@ export interface TriageConfig {
     /** ... or (hazard >= highHazard AND silence >= highSilence). */
     highHazard: number;
     highSilence: number;
-    /** A high-hazard silent cell is never left at P2: it is raised to at least this tier. */
+    /** A high-hazard silent cell is raised to at least this tier ("suspected P0") and always needs verification. */
     silentHighHazardFloor: Priority;
   };
   /** Global source-trust learning loop. */
@@ -139,6 +175,29 @@ export const DEFAULT_CONFIG: TriageConfig = {
   silence: {
     lowOutageRefPct: 20,
     expectedHeardScale: 1,
+    factors: {
+      pseudoSends: 20,
+      minReplyFactor: 0.2,
+      maxReplyFactor: 1.5,
+      pseudoExposure: 20,
+      minClaimFactor: 0.1,
+      maxClaimFactor: 1.5,
+    },
+  },
+  silenceCause: {
+    minSilence: 0.2,
+    outageExplains: 0.5,
+    dominantShare: 0.5,
+    overRepresentation: 1.2,
+  },
+  coverage: {
+    uninsuredClaimFactor: 0.1,
+  },
+  daytime: {
+    workStartHour: 8,
+    workEndHour: 18,
+    schoolStartHour: 8,
+    schoolEndHour: 15,
   },
   confidence: {
     minRequiredCoverage: 0.15,
@@ -162,7 +221,7 @@ export const DEFAULT_CONFIG: TriageConfig = {
     confidence: 0.5,
     highHazard: 0.5,
     highSilence: 0.5,
-    silentHighHazardFloor: 'P1',
+    silentHighHazardFloor: 'P0',
   },
   trust: {
     batchSize: 10,

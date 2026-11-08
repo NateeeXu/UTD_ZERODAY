@@ -19,4 +19,6 @@ export default __t.row({
   totalStaged: __t.u32().name("total_staged"),
   maxMinutes: __t.u32().name("max_minutes"),
   lastTickAt: __t.timestamp().name("last_tick_at"),
+  fullRecomputeEveryMin: __t.u32().name("full_recompute_every_min"),
+  lastFullRecomputeMin: __t.f64().name("last_full_recompute_min"),
 });

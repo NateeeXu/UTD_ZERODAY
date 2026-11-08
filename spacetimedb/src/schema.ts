@@ -14,6 +14,7 @@ export const config = table(
     owner: t.identity(),
     staffPasscode: t.string(), // join_as('manager' | 'adjuster')
     replyPasscode: t.string(), // join_as('policyholder_demo') and submit_sms_reply without a role
+    worldStamp: t.u64(), // micros of the last write to hex / household / facility (static-data cache key)
   }
 );
 
@@ -24,7 +25,7 @@ export const simTruth = table(
     householdId: t.string().primaryKey(),
     damage: t.u8(),
     safety: t.string(), // 'safe' | 'needs_help'
-    peril: t.string(), // 'wind' | 'flood' | 'none'
+    peril: t.string(), // 'wind' | 'flood' | 'earthquake' | 'none'
   }
 );
 
@@ -41,6 +42,36 @@ export const stagedEvent = table(
     peril: t.string(), // claim peril, '' otherwise
     reportedDamage: t.u8(), // claim reportedDamage
     adjusterId: t.string(), // field_report adjusterId, '' otherwise
+    text: t.string(), // sms_reply free text ('' when none)
+    language: t.string(), // sms_reply language code ('' when none)
+  }
+);
+
+/**
+ * PRIVATE: per-cell aggregate counters that the engine's world reference rates (computeRefs) need.
+ * Written by every recompute of the cell; a cell's aggregate only changes with its own events, so
+ * the table is always exact. Read in full (one row per cell) whenever world refs are needed.
+ */
+export const cellAgg = table(
+  { name: 'cell_agg' },
+  {
+    hex: t.string().primaryKey(),
+    outage: t.f64(),
+    daytime: t.bool(),
+    smsSent: t.u32(),
+    replied: t.u32(),
+    sentEnHome: t.u32(),
+    repliedEnHome: t.u32(),
+    sentLeHome: t.u32(),
+    repliedLeHome: t.u32(),
+    sentEnAway: t.u32(),
+    repliedEnAway: t.u32(),
+    sentLeAway: t.u32(),
+    repliedLeAway: t.u32(),
+    exposureOwner: t.f64(),
+    exposureRenter: t.f64(),
+    claimsOwner: t.u32(),
+    claimsRenter: t.u32(),
   }
 );
 
@@ -67,6 +98,35 @@ export const world = table(
     landfallIso: t.string(),
     centerLat: t.f64(),
     centerLng: t.f64(),
+    // v2 world fields (as in the bundle)
+    region: t.option(t.string()), // 'tx-corpus-christi' | 'ca-bay-area' | undefined (Harbor Bend)
+    hazardType: t.string(), // 'hurricane' | 'earthquake' (missing in the bundle = hurricane)
+    horizonMinutes: t.u32(), // event length, default 4320
+    eventLocalHour: t.option(t.u8()),
+    eventWeekday: t.option(t.bool()),
+    dataSourcesJson: t.string(), // JSON array of source/licence strings ('[]' when none)
+    // engine WorldContext derived at seed time (engine worldContext())
+    localHour: t.u8(),
+    weekday: t.bool(),
+    daytime: t.bool(), // weekday working hours: awayDaytime households are not home
+    schoolHours: t.bool(), // weekday school hours: school-age children are at school
+    timeSource: t.string(), // 'world' | 'landfallIso'
+  }
+);
+
+/** Real facilities (schools, universities, hospitals, shelters, fire stations, masts). */
+export const facility = table(
+  { name: 'facility', public: true },
+  {
+    id: t.string().primaryKey(),
+    kind: t.string(), // 'school' | 'university' | 'hospital' | 'shelter' | 'fire_station' | 'mast'
+    name: t.string(),
+    lat: t.f64(),
+    lng: t.f64(),
+    hex: t.string().index('btree'),
+    enrollment: t.option(t.u32()),
+    capacity: t.option(t.u32()),
+    source: t.string(),
   }
 );
 
@@ -82,6 +142,15 @@ export const hex = table(
     floodDepthFt: t.f64(),
     towerOutagePct: t.f64(),
     analystZone: t.u8(),
+    // v2 optional fields (real-geography worlds)
+    hazardIndex: t.option(t.f64()), // 0-1, hazard-agnostic intensity; the engine prefers it
+    shakingMmi: t.option(t.f64()),
+    liquefaction: t.option(t.f64()),
+    tractGeoid: t.option(t.string()),
+    daytimeWorkers: t.option(t.f64()),
+    residentWorkers: t.option(t.f64()),
+    k12Enrollment: t.option(t.f64()),
+    collegeEnrollment: t.option(t.f64()),
   }
 );
 
@@ -101,6 +170,20 @@ export const household = table(
     earthquakeEndorsement: t.bool(),
     phoneOnFile: t.bool(),
     holdout: t.bool().index('btree'),
+    // v2 optional fields (CMIST, tenure, students); undefined when the bundle has no value
+    tractGeoid: t.option(t.string()),
+    childrenUnder18: t.option(t.bool()),
+    awayDaytime: t.option(t.bool()),
+    age75: t.option(t.bool()),
+    disability: t.option(t.bool()),
+    noVehicle: t.option(t.bool()),
+    limitedEnglish: t.option(t.bool()),
+    primaryLanguage: t.option(t.string()),
+    mobileHome: t.option(t.bool()),
+    policyType: t.option(t.string()), // 'homeowners' | 'renters' | 'condo'
+    schoolAgeChildren: t.option(t.u8()),
+    collegeStudent: t.option(t.bool()),
+    nearestSchoolId: t.option(t.string()),
   }
 );
 
@@ -126,6 +209,8 @@ export const smsReply = table(
     ...eventColumns,
     safety: t.string(), // 'safe' | 'needs_help'
     damage: t.u8(), // 0..3
+    text: t.option(t.string()), // free-text reply (may be non-English); safety/damage are its parsed values
+    language: t.option(t.string()), // language code of the reply, e.g. 'es', 'zh'
   }
 );
 
@@ -163,8 +248,10 @@ export const replayState = table(
     speed: t.f64(), // sim minutes per real second
     nextSeq: t.u32(), // next staged event to release
     totalStaged: t.u32(),
-    maxMinutes: t.u32(), // 4320 = 72 h
+    maxMinutes: t.u32(), // world.horizonMinutes (4320 = 72 h)
     lastTickAt: t.timestamp(),
+    fullRecomputeEveryMin: t.u32(), // full recompute + holdout scoring cadence in sim minutes (0 = only on jump/pause/end)
+    lastFullRecomputeMin: t.f64(),
   }
 );
 
@@ -193,7 +280,9 @@ export const hexStats = table(
     silence: t.f64(),
     expectedSevere: t.f64(),
     maxPNeedsHelp: t.f64(),
-    reason: t.string(), // short human-readable explanation of the priority
+    hazard: t.f64(), // 0-1 hazard score used by the verification rule (hazardIndex when present)
+    silenceCause: t.string(), // 'away' | 'trapped' | 'outage' | 'unknown' | '' (not silent)
+    reason: t.string(), // engine's one-line explanation of priority / verification
     updatedAt: t.timestamp(),
     updatedSimMinutes: t.f64(),
   }
@@ -211,6 +300,27 @@ export const householdEstimate = table(
     verified: t.bool(),
     inspectScore: t.f64(), // 0..1, higher = send an adjuster here first (severity x uncertainty)
     updatedAt: t.timestamp(),
+  }
+);
+
+/**
+ * Active-inspection shortlist: the top unverified households of every cell by inspectScore
+ * (at most INSPECT_PER_CELL per cell, the engine's perCellCap). Sorting this small table by
+ * inspectScore gives the engine's recommendInspections() order without subscribing to every
+ * household_estimate row (30,000 in the Bay Area world).
+ */
+export const inspectionCandidate = table(
+  { name: 'inspection_candidate', public: true },
+  {
+    householdId: t.string().primaryKey(),
+    hex: t.string().index('btree'),
+    rank: t.u8(), // 1 = best in its cell
+    inspectScore: t.f64(),
+    pSevere: t.f64(),
+    pNeedsHelp: t.f64(),
+    uncertainty: t.f64(),
+    cellPriority: t.string(),
+    cellVerification: t.string(),
   }
 );
 
@@ -309,6 +419,20 @@ export const assignment = table(
 // Reducer argument types (not tables)
 // ---------------------------------------------------------------------------
 
+export const WorldInput = t.object('WorldInput', {
+  eventId: t.string(),
+  name: t.string(),
+  landfallIso: t.string(),
+  centerLat: t.f64(),
+  centerLng: t.f64(),
+  region: t.option(t.string()),
+  hazardType: t.option(t.string()),
+  horizonMinutes: t.option(t.u32()),
+  eventLocalHour: t.option(t.u8()),
+  eventWeekday: t.option(t.bool()),
+  dataSources: t.array(t.string()),
+});
+
 export const HexInput = t.object('HexInput', {
   hex: t.string(),
   displayOrder: t.u32(),
@@ -318,6 +442,26 @@ export const HexInput = t.object('HexInput', {
   floodDepthFt: t.f64(),
   towerOutagePct: t.f64(),
   analystZone: t.u8(),
+  hazardIndex: t.option(t.f64()),
+  shakingMmi: t.option(t.f64()),
+  liquefaction: t.option(t.f64()),
+  tractGeoid: t.option(t.string()),
+  daytimeWorkers: t.option(t.f64()),
+  residentWorkers: t.option(t.f64()),
+  k12Enrollment: t.option(t.f64()),
+  collegeEnrollment: t.option(t.f64()),
+});
+
+export const FacilityInput = t.object('FacilityInput', {
+  id: t.string(),
+  kind: t.string(),
+  name: t.string(),
+  lat: t.f64(),
+  lng: t.f64(),
+  hex: t.string(),
+  enrollment: t.option(t.u32()),
+  capacity: t.option(t.u32()),
+  source: t.string(),
 });
 
 export const HouseholdInput = t.object('HouseholdInput', {
@@ -333,6 +477,19 @@ export const HouseholdInput = t.object('HouseholdInput', {
   earthquakeEndorsement: t.bool(),
   phoneOnFile: t.bool(),
   holdout: t.bool(),
+  tractGeoid: t.option(t.string()),
+  childrenUnder18: t.option(t.bool()),
+  awayDaytime: t.option(t.bool()),
+  age75: t.option(t.bool()),
+  disability: t.option(t.bool()),
+  noVehicle: t.option(t.bool()),
+  limitedEnglish: t.option(t.bool()),
+  primaryLanguage: t.option(t.string()),
+  mobileHome: t.option(t.bool()),
+  policyType: t.option(t.string()),
+  schoolAgeChildren: t.option(t.u8()),
+  collegeStudent: t.option(t.bool()),
+  nearestSchoolId: t.option(t.string()),
 });
 
 export const TruthInput = t.object('TruthInput', {
@@ -352,14 +509,18 @@ export const StagedEventInput = t.object('StagedEventInput', {
   peril: t.string(),
   reportedDamage: t.u8(),
   adjusterId: t.string(),
+  text: t.string(),
+  language: t.string(),
 });
 
 const spacetimedb = schema({
   config,
   simTruth,
   stagedEvent,
+  cellAgg,
   replayTick,
   world,
+  facility,
   hex,
   household,
   smsSent,
@@ -369,6 +530,7 @@ const spacetimedb = schema({
   replayState,
   hexStats,
   householdEstimate,
+  inspectionCandidate,
   metrics,
   modelState,
   member,

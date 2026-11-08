@@ -19,4 +19,12 @@ export default __t.row({
   floodDepthFt: __t.f64().name("flood_depth_ft"),
   towerOutagePct: __t.f64().name("tower_outage_pct"),
   analystZone: __t.u8().name("analyst_zone"),
+  hazardIndex: __t.option(__t.f64()).name("hazard_index"),
+  shakingMmi: __t.option(__t.f64()).name("shaking_mmi"),
+  liquefaction: __t.option(__t.f64()),
+  tractGeoid: __t.option(__t.string()).name("tract_geoid"),
+  daytimeWorkers: __t.option(__t.f64()).name("daytime_workers"),
+  residentWorkers: __t.option(__t.f64()).name("resident_workers"),
+  k12Enrollment: __t.option(__t.f64()).name("k_12_enrollment"),
+  collegeEnrollment: __t.option(__t.f64()).name("college_enrollment"),
 });

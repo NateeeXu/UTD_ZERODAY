@@ -25,7 +25,7 @@ import { clamp } from './config.ts';
 import type { HouseholdSignals, Snapshot } from './features.ts';
 import { aggregateCellCounts, applyEventToSignals, fillExpected } from './features.ts';
 import type { ResolvedModels, SourceTrust } from './infer.ts';
-import { classifyCell, estimateCellHouseholds } from './infer.ts';
+import { attachInspectScores, cellContext, classifyCell, estimateCellHouseholds } from './infer.ts';
 
 export type FieldReportEvent = Extract<SimEvent, { kind: 'field_report' }>;
 
@@ -205,7 +205,7 @@ export function applyFieldReportToSnapshot(snap: Snapshot, report: FieldReportEv
   const signals = new Map(snap.signals);
   signals.set(h.id, updated);
   const cell = snap.cellById.get(h.hex)!;
-  const agg = aggregateCellCounts(cell, snap.householdsByHex.get(h.hex)!, signals, snap.cfg);
+  const agg = aggregateCellCounts(cell, snap.householdsByHex.get(h.hex)!, signals, snap.cfg, snap.ctx);
   fillExpected(agg, snap.refs);
   const cells = new Map(snap.cells);
   cells.set(h.hex, agg);
@@ -225,10 +225,10 @@ export function reestimateCell(
   const agg = snap.cells.get(hex);
   if (!members || !agg) throw new Error(`reestimateCell: unknown hex ${hex}`);
   const cellMembers = estimateCellHouseholds(members, snap, models, cfg);
+  const newHex = classifyCell(agg, cellMembers, cfg, cellContext(snap, hex));
   const fresh = new Map<string, HouseholdEstimate>();
-  for (const e of cellMembers) fresh.set(e.householdId, e);
+  for (const e of attachInspectScores(cellMembers, newHex, cfg)) fresh.set(e.householdId, e);
   const outHouseholds = households.map((e) => fresh.get(e.householdId) ?? e);
-  const newHex = classifyCell(agg, cellMembers, cfg);
   let replaced = false;
   const outHexes = hexes.map((x) => {
     if (x.hex !== hex) return x;

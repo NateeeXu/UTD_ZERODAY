@@ -10,10 +10,12 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+import {
+  WorldInput,
+} from "./types.ts";
+
 export default {
-  eventId: __t.string(),
-  name: __t.string(),
-  landfallIso: __t.string(),
-  centerLat: __t.f64(),
-  centerLng: __t.f64(),
+  get world() {
+    return WorldInput;
+  },
 };

@@ -1,8 +1,9 @@
 // Adapter for the real fusion engine (copied from engine/src into ./engine by scripts/sync-engine.ts).
-// For one cell it builds the engine's Snapshot (only that cell + world reference rates), then calls
-// the engine's own estimateHousehold / classifyCell, so results match engine/scripts replay.
-import type { HexCell, ModelParams } from './contract';
-import type { CellEstimator, CellInput, CellOutput, HouseholdSignals, SourceTrust, WorldRefs } from './types';
+// For one cell it builds the engine's Snapshot (that cell + world reference rates + world context +
+// the cell's facilities) and calls the engine's own aggregateCellCounts / estimateCellHouseholds /
+// classifyCell / attachInspectScores, so results match the engine's whole-world estimateAll.
+import type { ModelParams } from './contract';
+import type { CellEstimator, CellInput, CellOutput, HouseholdSignals, PreparedCell, RefsCounters, SourceTrust } from './types';
 import { DEFAULT_CONFIG } from './engine/config.ts';
 import {
   aggregateCellCounts,
@@ -12,12 +13,22 @@ import {
   type CellAggregate,
   type HouseholdSignals as EngineSignals,
   type Snapshot,
+  type WorldContext,
+  type WorldRefs,
 } from './engine/features.ts';
-import { classifyCell, estimateCellHouseholds, resolveModels, validateParams, type ResolvedModels } from './engine/infer.ts';
+import {
+  attachInspectScores,
+  classifyCell,
+  estimateCellHouseholds,
+  resolveModels,
+  validateParams,
+  type ResolvedModels,
+} from './engine/infer.ts';
 
 export type EngineEstimator = CellEstimator & { supports(params: ModelParams): boolean };
 
 const cfg = DEFAULT_CONFIG;
+export const INSPECT_PER_CELL = cfg.active.perCellCap;
 
 // ----- caches (derived data only; safe across reducer calls) ------------------
 
@@ -47,47 +58,68 @@ function toEngineSignals(s: HouseholdSignals): EngineSignals {
   };
 }
 
-/** World reference rates from per-cell distinct-household counters (same formula as engine computeRefs). */
-export function engineWorldRefs(
-  cells: Iterable<{ cell: HexCell; households: number; smsSent: number; replied: number; claimed: number }>
-): WorldRefs {
+const REFS_KEYS = [
+  'smsSent',
+  'replied',
+  'sentEnHome',
+  'repliedEnHome',
+  'sentLeHome',
+  'repliedLeHome',
+  'sentEnAway',
+  'repliedEnAway',
+  'sentLeAway',
+  'repliedLeAway',
+  'exposureOwner',
+  'exposureRenter',
+  'claimsOwner',
+  'claimsRenter',
+] as const;
+
+/** World reference rates from the persisted per-cell counters (engine computeRefs). */
+export function engineWorldRefs(rows: Iterable<RefsCounters>, world: WorldContext): WorldRefs {
   const aggs: CellAggregate[] = [];
-  for (const c of cells) {
-    const agg = newAggregate(c.cell, cfg);
-    agg.households = c.households;
-    agg.smsSent = c.smsSent;
-    agg.replied = c.replied;
-    agg.claimed = c.claimed;
+  for (const r of rows) {
+    // computeRefs only reads the counters below plus outage/daytime; the rest stays zero.
+    const agg = newAggregate(
+      { hex: r.hex, lat: 0, lng: 0, windMph: 0, floodDepthFt: 0, towerOutagePct: 0, analystZone: 0 },
+      cfg,
+      world
+    );
+    agg.outage = r.outage;
+    agg.daytime = r.daytime;
+    for (const k of REFS_KEYS) agg[k] = r[k];
     aggs.push(agg);
   }
   return computeRefs(aggs, cfg);
 }
 
-const pct = (x: number) => `${Math.round(x * 100)}%`;
-
-function describe(cell: HexCell, agg: CellAggregate, out: CellOutput['hex']): string {
-  const th = cfg.thresholds;
-  const parts: string[] = [];
-  if (agg.fieldHelp > 0) parts.push(`${agg.fieldHelp} field report(s) say needs help`);
-  if (agg.helpReplies > 0) parts.push(`${agg.helpReplies} help repl${agg.helpReplies === 1 ? 'y' : 'ies'}`);
-  if (out.maxPNeedsHelp >= th.p1HelpProb) parts.push(`max P(needs help) ${pct(out.maxPNeedsHelp)}`);
-  parts.push(`~${out.expectedSevere.toFixed(1)} of ${out.households} likely severe`);
-  if (out.silence >= 0.3)
-    parts.push(`silence ${pct(out.silence)}: ${agg.replied}/${agg.smsSent} replied, outage ${Math.round(cell.towerOutagePct)}%`);
-  if (agg.fieldReported > 0) parts.push(`${agg.fieldReported}/${out.households} field-verified`);
-  if (out.verification === 'needs_verification') parts.push(`confidence ${pct(out.confidence)}`);
-  return parts.join('; ');
-}
-
 // ----- estimator ---------------------------------------------------------------
 
-function estimateCellEngine(input: CellInput): CellOutput {
-  if (!input.params) throw new Error('engine estimator needs ModelParams');
-  const { cell } = input;
+interface EnginePrepared extends PreparedCell {
+  members: CellInput['households'][number]['household'][];
+  signals: Map<string, EngineSignals>;
+  agg: CellAggregate;
+}
+
+function prepare(input: CellInput): EnginePrepared {
   const members = input.households.map(s => s.household);
   const signals = new Map(input.households.map(s => [s.household.id, toEngineSignals(s)] as const));
-  const refs = input.refs ?? { refReplyRate: 0, claimRatePerHazard: 0 };
-  const agg = aggregateCellCounts(cell, members, signals, cfg);
+  const agg = aggregateCellCounts(input.cell, members, signals, cfg, input.world);
+  return { input, members, signals, agg };
+}
+
+function refsCounters(p: PreparedCell): RefsCounters {
+  const { agg } = p as EnginePrepared;
+  const out = { hex: agg.hex, outage: agg.outage, daytime: agg.daytime } as RefsCounters;
+  for (const k of REFS_KEYS) out[k] = agg[k];
+  return out;
+}
+
+function estimate(p: PreparedCell, refs: WorldRefs | null): CellOutput {
+  const { input, members, signals, agg } = p as EnginePrepared;
+  if (!input.params) throw new Error('engine estimator needs ModelParams');
+  if (!refs) throw new Error('engine estimator needs world refs');
+  const { cell } = input;
   fillExpected(agg, refs);
   const snap: Snapshot = {
     t: input.nowMin,
@@ -99,37 +131,24 @@ function estimateCellEngine(input: CellInput): CellOutput {
       hexes: [cell],
       households: members,
     },
+    ctx: input.world,
     cellById: new Map([[cell.hex, cell]]),
     householdById: new Map(members.map(h => [h.id, h] as const)),
     householdsByHex: new Map([[cell.hex, members]]),
     signals,
     cells: new Map([[cell.hex, agg]]),
     refs,
+    facilitiesByHex: new Map([[cell.hex, input.facilities]]),
     cfg,
   };
   const m = models(input.params, input.trust);
-  const ests = estimateCellHouseholds(members, snap, m, cfg); // includes the engine's neighbour update
-  const hex = classifyCell(agg, ests, cfg);
-
-  // Active inspection score (engine active.ts formula), normalised to 0..1.
-  const w = cfg.active;
-  const wSum = w.wSevere + w.wHelp + w.wUncertainty + w.wSilence + w.wNeedsVerification;
-  const nv = hex.verification === 'needs_verification' ? 1 : 0;
-  const households = ests.map(e => ({
-    ...e,
-    inspectScore: e.verified
-      ? 0
-      : (w.wSevere * e.pSevere +
-          w.wHelp * e.pNeedsHelp +
-          w.wUncertainty * e.uncertainty +
-          w.wSilence * hex.silence +
-          w.wNeedsVerification * nv) /
-        wSum,
-  }));
-  return { households, hex, reason: describe(cell, agg, hex) };
+  const raw = estimateCellHouseholds(members, snap, m, cfg); // includes the neighbour update
+  const hex = classifyCell(agg, raw, cfg, { cell, facilities: input.facilities, schoolHours: input.world.schoolHours });
+  const households = attachInspectScores(raw, hex, cfg).map(e => ({ ...e, inspectScore: e.inspectScore ?? 0 }));
+  return { households, hex };
 }
 
-export const engineEstimator: EngineEstimator | null = {
+export const engineEstimator: EngineEstimator = {
   name: 'engine',
   needsRefs: true,
   supports(params: ModelParams) {
@@ -147,5 +166,7 @@ export const engineEstimator: EngineEstimator | null = {
     }
     return ok;
   },
-  estimateCell: estimateCellEngine,
+  prepare,
+  refsCounters,
+  estimate,
 };
