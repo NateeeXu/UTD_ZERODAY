@@ -45,16 +45,20 @@ import RecomputeAllReducer from "./recompute_all_reducer.ts";
 import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
 import RemoveMemberReducer from "./remove_member_reducer.ts";
 import ResetDemoReducer from "./reset_demo_reducer.ts";
+import SeedFacilitiesReducer from "./seed_facilities_reducer.ts";
 import SeedHexesReducer from "./seed_hexes_reducer.ts";
 import SeedHouseholdsReducer from "./seed_households_reducer.ts";
 import SeedStagedEventsReducer from "./seed_staged_events_reducer.ts";
 import SeedTruthReducer from "./seed_truth_reducer.ts";
 import SeedWorldReducer from "./seed_world_reducer.ts";
 import SetPasscodesReducer from "./set_passcodes_reducer.ts";
+import SetRecomputeCadenceReducer from "./set_recompute_cadence_reducer.ts";
 import SetSpeedReducer from "./set_speed_reducer.ts";
 import StartReplayReducer from "./start_replay_reducer.ts";
+import StepReplayReducer from "./step_replay_reducer.ts";
 import SubmitFieldReportReducer from "./submit_field_report_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
+import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
 import WipeWorldReducer from "./wipe_world_reducer.ts";
 
@@ -63,11 +67,13 @@ import WipeWorldReducer from "./wipe_world_reducer.ts";
 // Import all table schema definitions
 import AssignmentRow from "./assignment_table.ts";
 import ClaimRow from "./claim_table.ts";
+import FacilityRow from "./facility_table.ts";
 import FieldReportRow from "./field_report_table.ts";
 import HexRow from "./hex_table.ts";
 import HexStatsRow from "./hex_stats_table.ts";
 import HouseholdRow from "./household_table.ts";
 import HouseholdEstimateRow from "./household_estimate_table.ts";
+import InspectionCandidateRow from "./inspection_candidate_table.ts";
 import MemberRow from "./member_table.ts";
 import MetricsRow from "./metrics_table.ts";
 import ModelStateRow from "./model_state_table.ts";
@@ -77,41 +83,11 @@ import ReplayStateRow from "./replay_state_table.ts";
 import SmsReplyRow from "./sms_reply_table.ts";
 import SmsSentRow from "./sms_sent_table.ts";
 import WorldRow from "./world_table.ts";
-import FacilityRow from "./facility_table.ts";
-import InspectionCandidateRow from "./inspection_candidate_table.ts";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
-  facility: __table({
-    name: 'facility',
-    indexes: [
-      { accessor: 'hex', name: 'facility_hex_idx_btree', algorithm: 'btree', columns: [
-        'hex',
-      ] },
-      { accessor: 'id', name: 'facility_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-    ],
-    constraints: [
-      { name: 'facility_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, FacilityRow),
-  inspectionCandidate: __table({
-    name: 'inspection_candidate',
-    indexes: [
-      { accessor: 'hex', name: 'inspection_candidate_hex_idx_btree', algorithm: 'btree', columns: [
-        'hex',
-      ] },
-      { accessor: 'householdId', name: 'inspection_candidate_household_id_idx_btree', algorithm: 'btree', columns: [
-        'householdId',
-      ] },
-    ],
-    constraints: [
-      { name: 'inspection_candidate_household_id_key', constraint: 'unique', columns: ['householdId'] },
-    ],
-  }, InspectionCandidateRow),
   assignment: __table({
     name: 'assignment',
     indexes: [
@@ -146,6 +122,20 @@ const tablesSchema = __schema({
       { name: 'claim_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ClaimRow),
+  facility: __table({
+    name: 'facility',
+    indexes: [
+      { accessor: 'hex', name: 'facility_hex_idx_btree', algorithm: 'btree', columns: [
+        'hex',
+      ] },
+      { accessor: 'id', name: 'facility_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'facility_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, FacilityRow),
   fieldReport: __table({
     name: 'field_report',
     indexes: [
@@ -216,6 +206,20 @@ const tablesSchema = __schema({
       { name: 'household_estimate_household_id_key', constraint: 'unique', columns: ['householdId'] },
     ],
   }, HouseholdEstimateRow),
+  inspectionCandidate: __table({
+    name: 'inspection_candidate',
+    indexes: [
+      { accessor: 'hex', name: 'inspection_candidate_hex_idx_btree', algorithm: 'btree', columns: [
+        'hex',
+      ] },
+      { accessor: 'householdId', name: 'inspection_candidate_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+    ],
+    constraints: [
+      { name: 'inspection_candidate_household_id_key', constraint: 'unique', columns: ['householdId'] },
+    ],
+  }, InspectionCandidateRow),
   member: __table({
     name: 'member',
     indexes: [
@@ -334,16 +338,20 @@ const reducersSchema = __reducers(
   __reducerSchema("refresh_metrics", RefreshMetricsReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),
+  __reducerSchema("seed_facilities", SeedFacilitiesReducer),
   __reducerSchema("seed_hexes", SeedHexesReducer),
   __reducerSchema("seed_households", SeedHouseholdsReducer),
   __reducerSchema("seed_staged_events", SeedStagedEventsReducer),
   __reducerSchema("seed_truth", SeedTruthReducer),
   __reducerSchema("seed_world", SeedWorldReducer),
   __reducerSchema("set_passcodes", SetPasscodesReducer),
+  __reducerSchema("set_recompute_cadence", SetRecomputeCadenceReducer),
   __reducerSchema("set_speed", SetSpeedReducer),
   __reducerSchema("start_replay", StartReplayReducer),
+  __reducerSchema("step_replay", StepReplayReducer),
   __reducerSchema("submit_field_report", SubmitFieldReportReducer),
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
+  __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),
   __reducerSchema("wipe_world", WipeWorldReducer),
 );
