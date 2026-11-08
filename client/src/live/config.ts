@@ -53,8 +53,10 @@ export const tokenKey = (screen: Screen, db: string) => `triage-token-${screen}-
 
 export const REPLAY_SPEED = 30; // sim minutes per real second (72 h in 2.4 min)
 export const SPEED_MULTIPLIERS = [1, 1.2, 1.5, 2, 3]; // × REPLAY_SPEED (3× = 72 h in 48 s)
-export const JUMPS = [
-  { label: '2 h', minutes: 120 },
-  { label: '6 h', minutes: 360 },
-  { label: '24 h', minutes: 1440 },
+// Fast-forward with repeated step_replay(240) calls (docs/SPACETIME_API.md: a Bay Area jump_to(1440)
+// takes ~4 s in one transaction; 4-hour steps take ~1 s each and the UI updates between them).
+export const STEP_MIN = 240;
+export const FAST_FORWARD = [
+  { label: '+4 h', steps: 1 },
+  { label: '+24 h', steps: 6 },
 ];

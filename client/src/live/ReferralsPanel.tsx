@@ -1,7 +1,8 @@
-// "Needs help" list: life-safety referrals from needs-help replies, adjuster findings and
-// missing-member reports (docs/SPACETIME_API.md 0b). One button per row, from
-// household_followup.referralStatus: '' → "Refer to 911 / agency" → "Agency acknowledged" → "Resolved".
-// escalation = referral_overdue (not referred in 30 min / not acknowledged in 60 min) shows in red.
+// Requests (docs/SPACETIME_API.md 0b, "People vs property"):
+//   ReferralList  life safety only: escalation emergency_referral / referral_*. One button per row from
+//                 household_followup.referralStatus: '' → refer → acknowledged → resolved. Overdue in red.
+//                 State Farm refers to 911 / the local agency; the agency responds.
+//   RequestList   'assistance' (customer care) and 'inspection_request' (adjuster queue), kept separate.
 import { useMemo, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
@@ -10,6 +11,8 @@ import { fmtHM, riskFlags } from './accounting';
 import type { Labeler } from './labels';
 import { homeLabel } from '../format';
 import type { Priority } from './mapModel';
+import type { SmsReplyRow } from './rows';
+import { needsText } from './household';
 
 const REFERRAL_STEPS = ['emergency_referral', 'referral_pending', 'referral_acknowledged', 'referral_overdue'];
 const referralRows = tables.householdEstimate.where((r) =>
@@ -17,13 +20,17 @@ const referralRows = tables.householdEstimate.where((r) =>
 );
 
 const NEXT: Record<string, { status: 'referred' | 'acknowledged' | 'resolved'; label: string }> = {
-  '': { status: 'referred', label: 'Refer to 911' },
-  referred: { status: 'acknowledged', label: 'Acknowledged' },
+  '': { status: 'referred', label: 'Refer to 911 / agency' },
+  referred: { status: 'acknowledged', label: 'Agency acknowledged' },
   acknowledged: { status: 'resolved', label: 'Resolved' },
 };
-const STATUS_TEXT: Record<string, string> = { '': 'Not referred yet', referred: 'Referred · waiting for agency', acknowledged: 'Agency on it' };
+const STATUS_TEXT: Record<string, string> = {
+  '': 'Not referred yet',
+  referred: 'Referred to 911 / local agency · awaiting acknowledgement',
+  acknowledged: 'Agency acknowledged',
+};
 
-export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional, canAct, onNeedJoin, onSelectHex }: {
+export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional, canAct, onNeedJoin, onOpen }: {
   rankOf: (p: string) => number; // the P0/P1/P2 "show first" switch
   cellPrio: (hex: string) => Priority;
   simMinutes: number;
@@ -31,7 +38,7 @@ export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional,
   fictional: boolean;
   canAct: boolean;
   onNeedJoin: () => void;
-  onSelectHex: (hex: string) => void;
+  onOpen: (householdId: string, hex: string) => void;
 }) {
   const [rows] = useTable(referralRows);
   const [followups] = useTable(tables.householdFollowup);
@@ -77,10 +84,10 @@ export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional,
           return (
             <li key={e.householdId} className={`p2-row${late ? ' late' : ''}`}>
               <span className={`chip chip-${cellPrio(e.hex)}`}>{cellPrio(e.hex)}</span>
-              <button className="p2-main" onClick={() => onSelectHex(e.hex)}>
+              <button className="p2-main" onClick={() => onOpen(e.householdId, e.hex)}>
                 <b>{homeLabel(e.householdId, fictional)} <span className="muted small">· {labeler.cell(e.hex)}</span></b>
                 <span className="small">
-                  <span className={f?.memberMissing ? 'danger-text' : ''}>{f?.memberMissing ? 'Household member missing' : 'Asked for help'}</span>
+                  <span className={f?.memberMissing ? 'danger-text' : ''}>{f?.memberMissing ? 'Household member missing' : 'Life-safety report'}</span>
                   {since != null && since >= 0 && <span className="muted"> · {fmtHM(since)} ago</span>}
                 </span>
                 <span className={`small ${late ? 'danger-text' : 'muted'}`}>{late ? 'Overdue · ' : ''}{STATUS_TEXT[status] ?? status}</span>
@@ -94,8 +101,65 @@ export function ReferralList({ rankOf, cellPrio, simMinutes, labeler, fictional,
             </li>
           );
         })}
-        {!list.length && <li className="muted empty">Nobody has asked for help yet. HELP replies and missing-member reports appear here.</li>}
+        {!list.length && <li className="muted empty">No life-safety reports. Danger replies, adjuster findings and missing-member reports appear here.</li>}
       </ul>
     </>
+  );
+}
+
+// Customer care ('assistance') and inspection requests ('inspection_request').
+const assistanceRows = tables.householdEstimate.where((r) => r.escalation.eq('assistance'));
+const inspectionRows = tables.householdEstimate.where((r) => r.escalation.eq('inspection_request'));
+
+export function RequestList({ kind, rankOf, cellPrio, simMinutes, labeler, fictional, latestReply, sentTo, canAssign, onAssign, onOpen }: {
+  kind: 'assistance' | 'inspection_request';
+  rankOf: (p: string) => number;
+  cellPrio: (hex: string) => Priority;
+  simMinutes: number;
+  labeler: Labeler;
+  fictional: boolean;
+  latestReply: Map<string, SmsReplyRow>;
+  sentTo: Map<string, string>;
+  canAssign: boolean;
+  onAssign: (householdId: string) => void;
+  onOpen: (householdId: string, hex: string) => void;
+}) {
+  const [rows] = useTable(kind === 'assistance' ? assistanceRows : inspectionRows);
+  const list = useMemo(() => [...rows]
+    .map((e) => ({ e, r: latestReply.get(e.householdId) }))
+    .sort((a, b) => rankOf(cellPrio(a.e.hex)) - rankOf(cellPrio(b.e.hex)) || (a.r?.t ?? 0) - (b.r?.t ?? 0))
+    .slice(0, 40), [rows, latestReply, rankOf, cellPrio]);
+  const householdBy = useHouseholdsById(useMemo(() => list.map((x) => x.e.householdId), [list]));
+
+  return (
+    <ul className="p2-list">
+      <li className="p2-note small muted">
+        {kind === 'assistance'
+          ? 'Customer care follows up (shelter, medication, water, a ride). Not emergencies.'
+          : 'Residents who asked for an adjuster to look at the home.'}
+      </li>
+      {list.map(({ e, r }) => {
+        const flags = riskFlags(householdBy.get(e.householdId));
+        const sent = sentTo.get(e.householdId);
+        const asked = r?.needs ? needsText(r.needs.split(',').filter((n) => kind === 'assistance' ? n !== 'inspection' : true).join(',')) : '';
+        return (
+          <li key={e.householdId} className="p2-row">
+            <span className={`chip chip-${cellPrio(e.hex)}`}>{cellPrio(e.hex)}</span>
+            <button className="p2-main" onClick={() => onOpen(e.householdId, e.hex)}>
+              <b>{homeLabel(e.householdId, fictional)} <span className="muted small">· {labeler.cell(e.hex)}</span></b>
+              <span className="small">
+                {kind === 'assistance' ? (asked ? `Asked for ${asked}` : 'Asked for help (not an emergency)') : 'Asked for an inspection'}
+                {r && <span className="muted"> · {fmtHM(simMinutes - r.t)} ago</span>}
+              </span>
+              {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
+            </button>
+            {kind === 'inspection_request' && (sent
+              ? <span className="esc esc-green">Sent · {sent}</span>
+              : canAssign && <button className="btn primary small-btn" onClick={() => onAssign(e.householdId)}>Send adjuster</button>)}
+          </li>
+        );
+      })}
+      {!list.length && <li className="muted empty">{kind === 'assistance' ? 'No customer-care requests yet.' : 'No inspection requests yet.'}</li>}
+    </ul>
   );
 }

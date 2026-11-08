@@ -16,6 +16,9 @@ import type AssignmentRowDef from '../module_bindings/assignment_table.ts';
 import type SmsReplyRowDef from '../module_bindings/sms_reply_table.ts';
 import type ClaimRowDef from '../module_bindings/claim_table.ts';
 import type FieldReportRowDef from '../module_bindings/field_report_table.ts';
+import type HouseholdFollowupRowDef from '../module_bindings/household_followup_table.ts';
+import type StaffSimRowDef from '../module_bindings/staff_sim_table.ts';
+import type UnaccountedQueueRowDef from '../module_bindings/unaccounted_queue_table.ts';
 
 export type HexRow = Infer<typeof HexRowDef>;
 export type HexStatsRow = Infer<typeof HexStatsRowDef>;
@@ -31,3 +34,6 @@ export type AssignmentRow = Infer<typeof AssignmentRowDef>;
 export type SmsReplyRow = Infer<typeof SmsReplyRowDef>;
 export type ClaimRow = Infer<typeof ClaimRowDef>;
 export type FieldReportRow = Infer<typeof FieldReportRowDef>;
+export type HouseholdFollowupRow = Infer<typeof HouseholdFollowupRowDef>;
+export type StaffSimRow = Infer<typeof StaffSimRowDef>;
+export type UnaccountedQueueRow = Infer<typeof UnaccountedQueueRowDef>;

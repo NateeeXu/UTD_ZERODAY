@@ -7,13 +7,15 @@ import { LiveMap } from './LiveMap';
 import { JoinDialog } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
-import { useHouseholdsById, useHouseholdsInCell } from './hooks';
+import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, RANK, prio, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import { CAUSE, COLOR, RANK, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
-import type { HexStatsRow, HouseholdRow, MetricsRow } from './rows';
+import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
+import { HouseholdPanel, useLogContact, type Outcome } from './household';
+import { SevereCard } from './SevereCard';
 import { homeLabel, pct } from '../format';
 
 export function ManagerLive() {
@@ -80,7 +82,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const recent = (at: { toDate(): Date }) => Date.now() - at.toDate().getTime() < 20_000;
 
   const [smsReplies] = useTable(tables.smsReply, {
-    onInsert: (r) => r.source === 'live' && recent(r.ingestedAt) && onLiveEvent(r.hex, r.safety === 'needs_help' ? 'HELP reply' : 'SMS reply', `damage ${r.damage}`),
+    onInsert: (r) => r.source === 'live' && recent(r.ingestedAt) && onLiveEvent(r.hex, r.lifeSafety ? 'Life-safety reply' : r.safety === 'needs_help' ? 'Help request' : 'Reply', r.damageKnown ? `damage ${r.damage}` : 'damage unknown'),
   });
   const [claims] = useTable(tables.claim);
   const [fieldReports] = useTable(tables.fieldReport, {
@@ -103,6 +105,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [joining, setJoining] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>('priority');
   const [selected, setSelected] = useState<MapUnit | null>(null);
+  const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
   const [showFacilities, setShowFacilities] = useState(false);
   const [res, setRes] = useState<7 | 8>(7);
 
@@ -136,11 +139,21 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   const feed = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
-    for (const r of smsReplies) items.push({ key: `s${r.id}`, kind: 'sms_reply', t: r.t, at: r.ingestedAt.toDate().getTime(), hex: r.hex, householdId: r.householdId, live: r.source === 'live', text: `${r.safety === 'needs_help' ? 'HELP' : 'SAFE'} reply · damage ${r.damage}`, help: r.safety === 'needs_help' });
+    for (const r of smsReplies) items.push({ key: `s${r.id}`, kind: 'sms_reply', t: r.t, at: r.ingestedAt.toDate().getTime(), hex: r.hex, householdId: r.householdId, live: r.source === 'live', text: replyText(r), help: r.lifeSafety });
     for (const c of claims) items.push({ key: `c${c.id}`, kind: 'claim', t: c.t, at: c.ingestedAt.toDate().getTime(), hex: c.hex, householdId: c.householdId, live: c.source === 'live', text: `Claim · ${c.peril} · damage ${c.reportedDamage}`, help: false });
-    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, text: `Field report (${f.adjusterId}) · ${f.safety.replace('_', ' ')} · damage ${f.damage}`, help: f.safety === 'needs_help' });
+    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, text: `Visit (${f.adjusterId}) · ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · damage ${f.damage}`, help: f.safety === 'needs_help' });
     return items.sort((a, b) => b.t - a.t || b.at - a.at).slice(0, 50);
   }, [smsReplies, claims, fieldReports]);
+
+  // Newest reply per household (request lists, household panel).
+  const latestReply = useMemo(() => {
+    const m = new Map<string, SmsReplyRow>();
+    for (const r of smsReplies) {
+      const prev = m.get(r.householdId);
+      if (!prev || r.t >= prev.t) m.set(r.householdId, r);
+    }
+    return m;
+  }, [smsReplies]);
 
   const kidsNote = useMemo(() => makeKidsNote(facilities, cellBy, !!world?.schoolHours), [facilities, cellBy, world?.schoolHours]);
 
@@ -185,8 +198,31 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const counts = metrics ? { P0: metrics.p0Cells, P1: metrics.p1Cells, P2: metrics.p2Cells } : { P0: 0, P1: 0, P2: 0 };
   const selectFromHex = (hex: string) => {
     const c = cellBy.get(hex);
+    setFocus(null);
     if (c) setSelected(unitFromCell(c));
   };
+  const selectUnit = (u: MapUnit) => {
+    setFocus(null);
+    setSelected(u);
+  };
+  const openHousehold = (id: string, hex: string) => {
+    setSelected(null);
+    setFocus({ id, hex });
+  };
+
+  // A manager records a contact made outside the text system (submit_parsed_reply).
+  const logContact = useLogContact((label) => notify('Contact logged', label), (err) => notify('Could not log contact', err));
+  const onLog = (id: string, o: Outcome, how: string) => (isManager ? void logContact(id, o, how) : setJoining(true));
+
+  // Household panel data: the manager already subscribes to every reply / claim / field report.
+  const focusIds = useMemo(() => (focus ? [focus.id] : []), [focus]);
+  const focusHousehold = useHouseholdsById(focusIds).get(focus?.id ?? '');
+  const focusEst = useEstimatesById(focusIds).get(focus?.id ?? '');
+  const focusSignals = useMemo(() => ({
+    replies: focus ? smsReplies.filter((r) => r.householdId === focus.id) : [],
+    reports: focus ? fieldReports.filter((r) => r.householdId === focus.id) : [],
+    claims: focus ? claims.filter((r) => r.householdId === focus.id) : [],
+  }), [focus, smsReplies, fieldReports, claims]);
   const simMinutes = replay?.simMinutes ?? 0;
 
   return (
@@ -208,8 +244,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           facilities={facilities}
           showFacilities={showFacilities}
           labelFor={labelFor}
-          selected={sel?.id ?? null}
-          onSelect={setSelected}
+          selected={focus?.hex ?? sel?.id ?? null}
+          onSelect={selectUnit}
           flash={flash}
           fitKey={region.id}
           padLeft={420}
@@ -226,8 +262,11 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             labeler={labeler}
             fictional={fictional}
             feed={feed}
+            latestReply={latestReply}
             kidsNote={kidsNote}
             onSelectHex={selectFromHex}
+            onOpen={openHousehold}
+            onLog={onLog}
             onAssignHousehold={doAssignHousehold}
             sentTo={sentTo}
             adjusterUrl={adjusterUrl}
@@ -272,7 +311,33 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           </span>
         </div>
 
-        {sel && (
+        {focus && (
+          <div className="right-rail">
+            <HouseholdPanel
+              householdId={focus.id}
+              household={focusHousehold}
+              est={focusEst}
+              {...focusSignals}
+              label={labeler.cell(focus.hex)}
+              fictional={fictional}
+              sentTo={sentTo.get(focus.id)}
+              canAssign={adjusters.length > 0}
+              adjusterUrl={adjusterUrl}
+              onAssign={doAssignHousehold}
+              onLog={onLog}
+              onClose={() => setFocus(null)}
+              noteFor={kidsNote}
+            />
+          </div>
+        )}
+
+        {!focus && !sel && (
+          <div className="right-top">
+            <SevereCard metrics={metrics} simMinutes={simMinutes} maxMinutes={replay?.maxMinutes || 4320} />
+          </div>
+        )}
+
+        {!focus && sel && (
           <div className="right-rail">
             <CellDetail
               unit={sel}
@@ -386,12 +451,12 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
       <div className="detail-body">
         {unit.r && <p className="reason">{unit.res === 7 && <b>Most urgent neighborhood: </b>}{unit.r}</p>}
         <div className="readout">
-          <span><b>~{unit.ex.toFixed(1)}</b>likely severe</span>
+          <span title={`Point estimate ${unit.ex.toFixed(1)}; 90% range`}><b>{severeRange(unit)}</b>homes severely damaged</span>
           <span><b>{unit.rep}/{unit.sent}</b>SMS replied</span>
           <span><b>{unit.cl}</b>claims</span>
         </div>
-        {unit.si >= 0.2 && (
-          <p className="small silence-line">Silence {pct(unit.si)} · {CAUSE[unit.sc] ?? (unit.sc || 'cause unclear')}</p>
+        {unit.sc && (
+          <p className="small silence-line">Silent area ({pct(unit.si)} of expected replies missing) · {CAUSE[unit.sc] ?? unit.sc}</p>
         )}
         {!readOnly && <>
         <h3 className="eyebrow divider">Inspect first</h3>
@@ -418,4 +483,10 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
       </div>}
     </aside>
   );
+}
+
+function replyText(r: SmsReplyRow): string {
+  const who = r.channel === 'call' ? 'Call' : 'Text';
+  const state = r.lifeSafety ? 'DANGER' : r.safety === 'needs_help' ? 'needs help' : 'safe';
+  return `${who} · ${state}${r.notHome ? ' · not home' : ''} · ${r.damageKnown ? `damage ${r.damage}` : 'damage unknown'}`;
 }

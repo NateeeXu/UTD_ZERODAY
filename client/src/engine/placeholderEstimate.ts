@@ -72,7 +72,8 @@ export function estimate(world: World, events: SimEvent[], t: number, model: Mod
     let uncertainty = 1; // hazard alone never counts as verified
     const r = reply.get(hh.id);
     if (r) {
-      pSevere = pSevere * (1 - trust.sms) + (r.damage >= 2 ? 0.9 : 0.1) * trust.sms;
+      // v3 data: damage is null when the reply did not describe the home (sender not there).
+      if (r.damage != null) pSevere = pSevere * (1 - trust.sms) + (r.damage >= 2 ? 0.9 : 0.1) * trust.sms;
       pHelp = r.safety === 'needs_help' ? Math.max(pHelp, 0.85) : pHelp * 0.3;
       uncertainty = Math.min(uncertainty, 1 - trust.sms * 0.8);
     }

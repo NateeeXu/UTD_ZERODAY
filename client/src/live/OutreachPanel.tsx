@@ -1,20 +1,23 @@
-// P2: collapsible tab panel under the unaccounted card.
-//   Not heard from — unaccounted_queue, ranked across cells by risk × waiting time
-//   Needs help     — people who asked for help / reported a missing member (referrals)
-//   Feed           — latest SMS replies, claims, field reports
+// P2: collapsible tab panel under the KPI card.
+//   Not heard from — unaccounted_queue, ranked across cells by score = weight × (1 + hours waited / 6)
+//                    (docs/SPACETIME_API.md 0b); one button per row from its escalation step.
+//   Requests       — 911 / local agency referrals (life safety only), customer care, inspection requests.
+//   Feed           — latest replies, claims, field reports.
 // The P0 / P1 / P2 switch puts that priority's rows first, on every tab.
 import { useCallback, useMemo, useState } from 'react';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../module_bindings/index.ts';
 import { useHouseholdsById } from './hooks';
-import { ReferralList } from './ReferralsPanel';
-import { EscalationChip, fmtHM, riskFlags } from './accounting';
+import { ReferralList, RequestList } from './ReferralsPanel';
+import { ESCALATION, fmtHM, riskFlags } from './accounting';
+import { ContactActions, type Outcome } from './household';
 import { prio, type Priority } from './mapModel';
-import type { HexStatsRow, HouseholdRow, MemberRow, MetricsRow } from './rows';
+import type { HexStatsRow, HouseholdRow, MemberRow, MetricsRow, SmsReplyRow } from './rows';
 import type { Labeler } from './labels';
 import { fmtT, homeLabel } from '../format';
 
-export type OutreachTab = 'unacc' | 'help' | 'feed';
+export type OutreachTab = 'unacc' | 'requests' | 'feed';
+type RequestTab = 'referral' | 'assistance' | 'inspection_request';
 
 export interface FeedItem {
   key: string;
@@ -34,9 +37,12 @@ interface Props {
   labeler: Labeler;
   fictional: boolean;
   feed: FeedItem[];
+  latestReply: Map<string, SmsReplyRow>;
   kidsNote: (h: HouseholdRow | undefined) => string | null;
   onSelectHex: (hex: string) => void;
+  onOpen: (householdId: string, hex: string) => void;
   onAssignHousehold: (householdId: string) => void;
+  onLog: (householdId: string, o: Outcome, how: string) => void;
   sentTo: Map<string, string>;          // householdId → adjuster name (open assignment)
   adjusterUrl: string;
   adjusters: readonly MemberRow[];
@@ -49,15 +55,28 @@ interface Props {
 
 const TABS: { id: OutreachTab; label: string }[] = [
   { id: 'unacc', label: 'Not heard from' },
-  { id: 'help', label: 'Needs help' },
+  { id: 'requests', label: 'Requests' },
   { id: 'feed', label: 'Feed' },
 ];
 const ORDER: Priority[] = ['P0', 'P1', 'P2'];
 
+// One button per escalation step. Texts, calls and emergency-contact calls happen outside this app,
+// so their button records the result; a visit is sent from here.
+const STEP_ACTION: Record<string, { label: string; how: string; prompt: string; visit?: boolean }> = {
+  sms_sent: { label: 'Text sent', how: 'contact', prompt: 'Check-in text sent. Log a contact made another way:' },
+  sms_resend: { label: 'Resend text', how: 'resent text', prompt: 'No reply yet. Resend the text, then log the result:' },
+  agent_call: { label: 'Call', how: 'agent call', prompt: 'Log the result of the agent call:' },
+  field_visit: { label: 'Send adjuster', how: 'visit', prompt: 'A visit is due:', visit: true },
+  recheck: { label: 'Re-check', how: 'welfare check', prompt: 'Daily welfare check (last contact over 24 h ago). Log the result:' },
+  locate: { label: 'Locate', how: 'emergency-contact call', prompt: 'House inspected, nobody seen. Log the emergency-contact call:' },
+};
+
 export function OutreachPanel(p: Props) {
   const [open, setOpen] = useState(false); // collapsed by default
   const [tab, setTab] = useState<OutreachTab>('unacc');
+  const [reqTab, setReqTab] = useState<RequestTab>('referral');
   const [first, setFirst] = useState<Priority>('P0');
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [queue] = useTable(tables.unaccountedQueue);
 
   // Rank of a priority given the chosen "first" priority: chosen first, then the usual P0 > P1 > P2.
@@ -65,6 +84,7 @@ export function OutreachPanel(p: Props) {
     const order = [first, ...ORDER.filter((x) => x !== first)];
     return (x: string) => order.indexOf(prio(x));
   }, [first]);
+  const cellPrio = useCallback((hex: string) => prio(p.cellBy.get(hex)?.priority ?? 'P2'), [p.cellBy]);
 
   // Nate's score: weight × (1 + hours waited / 6), compared across cells.
   const queueRows = useMemo(() => {
@@ -75,7 +95,6 @@ export function OutreachPanel(p: Props) {
   }, [queue, p.simMinutes, rankOf]);
 
   // Feed: chosen priority first, newest first within it (sort is stable).
-  const cellPrio = useCallback((hex: string) => prio(p.cellBy.get(hex)?.priority ?? 'P2'), [p.cellBy]);
   const feedRows = useMemo(
     () => [...p.feed].sort((a, b) => rankOf(cellPrio(a.hex)) - rankOf(cellPrio(b.hex))),
     [p.feed, cellPrio, rankOf],
@@ -94,6 +113,14 @@ export function OutreachPanel(p: Props) {
       setOpen(true);
     }
   };
+  const act = (fn: () => void) => () => (p.canAct ? fn() : p.onNeedJoin());
+  const m = p.metrics;
+  const reqCounts: Record<RequestTab, number> = {
+    referral: m?.openReferrals ?? 0,
+    assistance: m?.assistanceRequests ?? 0,
+    inspection_request: m?.inspectionRequests ?? 0,
+  };
+  const overdue = (m?.overdueReferrals ?? 0) > 0;
 
   return (
     <section className={`glass p2${open ? ' open' : ''}`}>
@@ -102,8 +129,8 @@ export function OutreachPanel(p: Props) {
           {TABS.map((t) => (
             <button key={t.id} role="tab" aria-selected={open && tab === t.id} className={open && tab === t.id ? 'on' : tab === t.id ? 'soft' : ''} onClick={() => pick(t.id)}>
               {t.label}
-              {t.id === 'help' && (p.metrics?.openReferrals ?? 0) > 0 && (
-                <span className={`tab-badge${(p.metrics?.overdueReferrals ?? 0) > 0 ? ' red' : ''}`}>{p.metrics?.openReferrals}</span>
+              {t.id === 'requests' && reqCounts.referral > 0 && (
+                <span className={`tab-badge${overdue ? ' red' : ''}`} title="Open 911 / agency referrals">{reqCounts.referral}</span>
               )}
             </button>
           ))}
@@ -136,30 +163,60 @@ export function OutreachPanel(p: Props) {
               <a className="link small" href={p.adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
             </div>
           ))}
-          {tab === 'help' && (
-            <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onSelectHex={p.onSelectHex} />
+
+          {tab === 'requests' && (
+            <>
+              <div className="gseg req-tabs" role="tablist" aria-label="Request type">
+                {([['referral', '911 / agency'], ['assistance', 'Customer care'], ['inspection_request', 'Inspection']] as [RequestTab, string][]).map(([id, label]) => (
+                  <button key={id} role="tab" aria-selected={reqTab === id} className={reqTab === id ? 'on' : ''} onClick={() => setReqTab(id)}>
+                    {label} <span className={`tab-badge${id === 'referral' && overdue ? ' red' : ''}`}>{reqCounts[id].toLocaleString()}</span>
+                  </button>
+                ))}
+              </div>
+              {reqTab === 'referral'
+                ? <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onOpen={p.onOpen} />
+                : <RequestList kind={reqTab} rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional}
+                    latestReply={p.latestReply} sentTo={p.sentTo} canAssign={p.adjusters.length > 0}
+                    onAssign={(id) => act(() => p.onAssignHousehold(id))()} onOpen={p.onOpen} />}
+            </>
           )}
-          {tab !== 'help' && <ul className="p2-list">
+
+          {tab !== 'requests' && <ul className="p2-list">
             {tab === 'unacc' && queueRows.map((q) => {
               const hh = householdBy.get(q.householdId);
               const flags = riskFlags(hh);
               const kids = p.kidsNote(hh);
-              const action = q.escalation === 'field_visit' ? 'Send adjuster' : q.escalation === 'recheck' ? 'Recheck visit' : null;
               const sent = p.sentTo.get(q.householdId);
+              const a = STEP_ACTION[q.escalation];
+              const isOpen = expanded === q.householdId;
+              const direct = !!a?.visit && p.adjusters.length > 0; // a visit with an adjuster online: one click
+              const onButton = act(() => {
+                if (direct) p.onAssignHousehold(q.householdId);
+                else setExpanded(isOpen ? null : q.householdId);
+              });
               return (
-                <li key={q.householdId} className="p2-row">
-                  <span className={`chip chip-${prio(q.cellPriority)}`}>{prio(q.cellPriority)}</span>
-                  <button className="p2-main" onClick={() => p.onSelectHex(q.hex)}>
-                    <b>{homeLabel(q.householdId, p.fictional)} <span className="muted small">· {p.labeler.cell(q.hex)}</span></b>
-                    <span className="small muted">waiting {fmtHM(p.simMinutes - q.waitSinceMin)}{q.vulnerable ? ' · vulnerable' : ''}</span>
-                    {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
-                    {kids && <span className="kids small">{kids}</span>}
-                  </button>
-                  {sent
-                    ? <span className="esc esc-green">Sent · {sent}</span>
-                    : action && p.adjusters.length > 0
-                      ? <button className="btn primary small-btn" onClick={() => p.onAssignHousehold(q.householdId)}>{action}</button>
-                      : <EscalationChip step={q.escalation} />}
+                <li key={q.householdId} className={`p2-item${isOpen ? ' open' : ''}`}>
+                  <div className="p2-row">
+                    <span className={`chip chip-${prio(q.cellPriority)}`}>{prio(q.cellPriority)}</span>
+                    <button className="p2-main" onClick={() => p.onOpen(q.householdId, q.hex)}>
+                      <b>{homeLabel(q.householdId, p.fictional)} <span className="muted small">· {p.labeler.cell(q.hex)}</span></b>
+                      <span className="small muted">{ESCALATION[q.escalation]?.label ?? q.escalation} · waiting {fmtHM(p.simMinutes - q.waitSinceMin)}{q.vulnerable ? ' · vulnerable' : ''}</span>
+                      {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
+                      {kids && <span className="kids small">{kids}</span>}
+                    </button>
+                    {sent
+                      ? <span className="esc esc-green">Sent · {sent}</span>
+                      : a && (
+                        <button className={`btn small-btn step-btn${a.visit ? ' primary' : ''}`} aria-expanded={direct ? undefined : isOpen} onClick={onButton}>
+                          {a.label}{!direct && <i className="caret" aria-hidden="true" />}
+                        </button>
+                      )}
+                  </div>
+                  {isOpen && a && (
+                    <ContactActions householdId={q.householdId} how={a.how} prompt={a.prompt} canAssign={p.adjusters.length > 0} adjusterUrl={p.adjusterUrl}
+                      onAssign={(id) => { setExpanded(null); p.onAssignHousehold(id); }}
+                      onLog={(id, o, how) => { setExpanded(null); p.onLog(id, o, how); }} />
+                  )}
                 </li>
               );
             })}

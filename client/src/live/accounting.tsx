@@ -8,6 +8,8 @@ export const fmtHM = (minutes: number) => {
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 };
 
+// P1 card: people first. Hero = unaccounted (goal 0) with both accounted rates beside it, then the
+// people stats, then the three request queues (911 referrals, customer care, inspection).
 export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined }) {
   const unaccounted = metrics?.unaccounted ?? 0;
   const rate = metrics?.accountedRate ?? 0;
@@ -15,39 +17,45 @@ export function AccountingCard({ metrics }: { metrics: MetricsRow | undefined })
   // Lagging = vulnerable households are being heard from more slowly than everyone else.
   const lagging = !!metrics && metrics.accounted > 0 && vRate < rate - 0.005;
   const overdue = metrics?.overdueReferrals ?? 0;
+  const n = (v: number | undefined) => (metrics ? (v ?? 0).toLocaleString() : '—');
   return (
     <section className="glass p1" aria-label={`Unaccounted: ${unaccounted} households`}>
       <span className="p1-label">Unaccounted</span>
-      <div className="p1-line">
-        <span className="p1-num">{unaccounted.toLocaleString()}</span>
-        <span className="p1-unit">households · goal 0</span>
-      </div>
-      <div className="p1-track">
-        <div className="p1-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(rate * 100)}>
-          <div style={{ width: `${Math.min(100, rate * 100)}%` }} />
+      <div className="p1-hero">
+        <div className="p1-line">
+          <span className="p1-num">{n(unaccounted)}</span>
+          <span className="p1-unit">households · goal 0</span>
         </div>
-        <span>{pct(rate)} accounted for</span>
+        <div className="p1-equity">
+          <Rate label="Everyone" value={rate} />
+          <Rate label="Vulnerable" value={vRate} warn={lagging} />
+        </div>
       </div>
+      {lagging && <span className="p1-lag">Vulnerable residents lagging · they go first in the queue</span>}
 
       <div className="p1-stats">
+        <Stat label="High-risk unaccounted" value={n(metrics?.highRiskUnaccounted)} />
         <Stat label="Longest wait · high-risk" value={metrics ? fmtHM(metrics.longestWaitMin) : '—'} />
-        <Stat label="High-risk unaccounted" value={(metrics?.highRiskUnaccounted ?? 0).toLocaleString()} />
-        <Stat label="Recheck due" value={(metrics?.recheckDue ?? 0).toLocaleString()} />
-        <Stat label="Overdue referrals" value={overdue.toLocaleString()} danger={overdue > 0} />
+        <Stat label="To locate" title="House inspected, nobody seen: emergency contact next" value={n(metrics?.locateDue)} />
+        <Stat label="Recheck due" title="Vulnerable, last contact over 24 h ago" value={n(metrics?.recheckDue)} />
       </div>
-
-      <div className="p1-equity">
-        <Rate label="Everyone" value={rate} />
-        <Rate label="Vulnerable" value={vRate} warn={lagging} />
+      <div className="p1-requests">
+        <Stat
+          label={overdue > 0 ? `911 / agency · ${overdue} overdue` : '911 / agency referrals'}
+          title="Life-safety reports referred to 911 / the local agency (State Farm refers, the agency responds)"
+          value={n(metrics?.openReferrals)}
+          danger={overdue > 0}
+        />
+        <Stat label="Customer care" title="Asked for shelter, medication, water or a ride" value={n(metrics?.assistanceRequests)} />
+        <Stat label="Inspection requests" title="Asked for an adjuster to look at the home" value={n(metrics?.inspectionRequests)} />
       </div>
-      {lagging && <span className="p1-lag">Lagging · vulnerable residents go first</span>}
     </section>
   );
 }
 
-function Stat({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
+function Stat({ label, value, danger = false, title }: { label: string; value: string; danger?: boolean; title?: string }) {
   return (
-    <div className={`p1-stat${danger ? ' danger' : ''}`}>
+    <div className={`p1-stat${danger ? ' danger' : ''}`} title={title}>
       <b>{value}</b>
       <span>{label}</span>
     </div>
@@ -67,13 +75,16 @@ function Rate({ label, value, warn = false }: { label: string; value: number; wa
 export const ESCALATION: Record<string, { label: string; tone: 'muted' | 'amber' | 'blue' | 'red' | 'green' }> = {
   sms_sent: { label: 'Text sent', tone: 'muted' },
   sms_resend: { label: 'Resend text', tone: 'amber' },
-  agent_call: { label: 'Agent to call', tone: 'blue' },
-  field_visit: { label: 'Send adjuster', tone: 'muted' },
+  agent_call: { label: 'Agent call', tone: 'blue' },
+  field_visit: { label: 'Visit', tone: 'muted' },
+  locate: { label: 'Locate', tone: 'amber' },
   recheck: { label: 'Recheck', tone: 'amber' },
   emergency_referral: { label: 'Refer to 911', tone: 'red' },
   referral_pending: { label: 'Referred', tone: 'amber' },
   referral_acknowledged: { label: 'Acknowledged', tone: 'blue' },
   referral_overdue: { label: 'Overdue', tone: 'red' },
+  assistance: { label: 'Customer care', tone: 'blue' },
+  inspection_request: { label: 'Inspection requested', tone: 'blue' },
   accounted: { label: 'Accounted', tone: 'green' },
   verified: { label: 'Verified', tone: 'green' },
   closed: { label: 'Closed', tone: 'muted' },

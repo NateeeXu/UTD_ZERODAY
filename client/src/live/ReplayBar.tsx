@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
-import type { ReplayStateRow } from './rows';
-import { JUMPS, REPLAY_SPEED, SPEED_MULTIPLIERS } from './config';
+import type { ReplayStateRow, StaffSimRow } from './rows';
+import { FAST_FORWARD, REPLAY_SPEED, SPEED_MULTIPLIERS, STEP_MIN } from './config';
 import { fmtT } from '../format';
 
 // The database ticks about once a second and moves the clock by speed × elapsed seconds, so the raw
@@ -59,7 +59,7 @@ function useSmoothMinutes(replay: ReplayStateRow | undefined): number {
 export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplayStateRow | undefined; canControl: boolean; onNeedJoin: () => void }) {
   const start = useReducer(reducers.startReplay);
   const pause = useReducer(reducers.pauseReplay);
-  const jump = useReducer(reducers.jumpTo);
+  const step = useReducer(reducers.stepReplay);
   const reset = useReducer(reducers.resetDemo);
   const setSpeed = useReducer(reducers.setSpeed);
   const setStaffSim = useReducer(reducers.setStaffSim);
@@ -68,6 +68,9 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   const [mult, setMult] = useState<number | null>(null); // null = follow the database
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ff, setFf] = useState<{ done: number; total: number } | null>(null);
+  const replayRef = useRef(replay);
+  replayRef.current = replay;
 
   // Current multiplier: the database's speed while running, else the local pick.
   const dbMult = replay ? Math.round((replay.speed / REPLAY_SPEED) * 10) / 10 : 1;
@@ -95,6 +98,21 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
   };
   const ticks = [0, 12, 24, 36, 48, 60, 72].filter((h) => h * 60 <= max);
 
+  // Fast-forward in 4-hour steps (one transaction each) instead of one long jump_to.
+  const fastForward = (steps: number) => run(async () => {
+    setFf({ done: 0, total: steps });
+    try {
+      for (let i = 0; i < steps; i++) {
+        const r = replayRef.current;
+        if (r && r.simMinutes >= r.maxMinutes - 0.5) break;
+        await step({ minutes: STEP_MIN });
+        setFf({ done: i + 1, total: steps });
+      }
+    } finally {
+      setFf(null);
+    }
+  });
+
   return (
     <footer className="timeline live">
       {replay?.running ? (
@@ -116,9 +134,7 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
       <div className="timeline-track">
         <div className="progress" aria-hidden>
           <div className="progress-fill" style={{ width: `${Math.min(100, (shownT / max) * 100)}%`, transition: 'none' }} />
-          {JUMPS.map((j) => (
-            <i key={j.minutes} className="progress-mark" style={{ left: `${(j.minutes / max) * 100}%` }} />
-          ))}
+
         </div>
         <div className="ticks">
           {ticks.map((h) => <span key={h}>{h === 0 ? 'Landfall' : `+${h}h`}</span>)}
@@ -134,9 +150,12 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
           </button>
         ))}
       </div>
-      <div className="jumps" role="group" aria-label="Jump to">
-        {JUMPS.map((j) => (
-          <button key={j.minutes} className="btn" onClick={run(() => jump({ minutes: j.minutes }))} disabled={busy}>{j.label}</button>
+      <div className="jumps" role="group" aria-label="Fast-forward">
+        {FAST_FORWARD.map((f) => (
+          <button key={f.label} className="btn" onClick={fastForward(f.steps)} disabled={busy || atEnd}
+            title={`Advance ${f.steps * STEP_MIN / 60} sim hours in ${STEP_MIN / 60}-hour steps`}>
+            {ff && ff.total === f.steps ? `${ff.done * STEP_MIN / 60}/${f.steps * STEP_MIN / 60} h…` : f.label}
+          </button>
         ))}
       </div>
       <button
@@ -144,15 +163,47 @@ export function ReplayBar({ replay, canControl, onNeedJoin }: { replay: ReplaySt
         role="switch"
         aria-checked={!!staff?.enabled}
         disabled={busy || !staff}
-        title="Simulated agents call and adjusters visit the top of the outreach queue every 30 sim-minutes. Turn off to show the silent map with no staff."
-        onClick={run(() => setStaffSim({ enabled: !staff?.enabled, callsPerHour: staff?.callsPerHour ?? 0, visitsPerHour: staff?.visitsPerHour ?? 0 }))}
+        title="Simulated agents call, adjusters visit and inspect, and the referral desk refers to 911 / local agencies every 30 sim-minutes (default staffing). Turn off to compare with no staff."
+        onClick={run(() => setStaffSim({ enabled: !staff?.enabled, callsPerHour: 0, visitsPerHour: 0, inspectionsPerHour: 0 }))}
       >
         <i aria-hidden="true" />
         Simulated staff {staff?.enabled ? 'on' : 'off'}
       </button>
+      <StaffActivity staff={staff} />
       <button className="btn ghost" onClick={run(() => reset())} disabled={busy}>Reset</button>
       {error && <span className="form-error small">{error}</span>}
       {replay?.running && <span className="muted small energy">Running uses Maincloud energy — pause when not demoing</span>}
     </footer>
+  );
+}
+
+// Simulated staff counters (staff_sim), behind one small button so the bar stays short.
+function StaffActivity({ staff }: { staff: StaffSimRow | undefined }) {
+  const [open, setOpen] = useState(false);
+  if (!staff) return null;
+  const rows: [string, number][] = [
+    ['Calls made', staff.callsMade],
+    ['Calls answered', staff.callsReached],
+    ['Visits', staff.visitsMade],
+    ['Visits · nobody home', staff.visitsNobodyHome],
+    ['Property inspections', staff.inspectionsMade],
+    ['Referred to 911 / local agency', staff.referralsMade],
+    ['People found needing help', staff.helpFound],
+  ];
+  return (
+    <div className="staff-activity">
+      <button className="btn ghost" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        Staff work · {staff.callsMade.toLocaleString()} calls
+      </button>
+      {open && (
+        <div className="glass staff-pop" role="dialog" aria-label="Simulated staff activity">
+          <b>Simulated staff so far</b>
+          <dl>
+            {rows.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v.toLocaleString()}</dd></div>))}
+          </dl>
+          <span className="small muted">Simulation results. State Farm refers life-safety cases; 911 / local agencies respond.</span>
+        </div>
+      )}
+    </div>
   );
 }

@@ -73,13 +73,13 @@ function ReplyThread({ householdId, code }: { householdId: string; code: string 
       <header className="phone-top"><strong>State Farm Alerts</strong><span className="muted small">demo · synthetic</span></header>
       <div className="thread">
         {ready && !known && <p className="form-error small">This link doesn't match a household in the current demo.</p>}
-        <Bubble from="them">{hazard} check-in for your insured home. Are you safe? Reply SAFE or HELP.</Bubble>
-        {safety && <Bubble from="me">{missing ? MISSING_TEXT : safety === 'safe' ? 'SAFE' : 'HELP'}</Bubble>}
+        <Bubble from="them">State Farm check-in after the {hazard.toLowerCase()}. Are you and your household safe?</Bubble>
+        {safety && <Bubble from="me">{missing ? MISSING_TEXT : safety === 'safe' ? "I'm safe" : 'I need help'}</Bubble>}
         {safety === 'needs_help' && (
           <Bubble from="them">
             {missing
-              ? "We've opened an urgent referral and will help locate them. If anyone is in immediate danger, call 911."
-              : "We've flagged your address for priority follow-up. If you are in immediate danger, call 911."}
+              ? 'We will refer this to 911 / local emergency services. If anyone is in immediate danger, call 911 now.'
+              : 'We will refer this to 911 / local emergency services. If you are in immediate danger, call 911 now.'}
           </Bubble>
         )}
         {step !== 'safety' && !missing && <Bubble from="them">How bad is the damage? Reply 0 (none), 1 (minor), 2 (severe), 3 (can't stay there).</Bubble>}
@@ -90,9 +90,10 @@ function ReplyThread({ householdId, code }: { householdId: string; code: string 
       <div className="reply-bar">
         {step === 'safety' && (
           <div className="reply-choices">
-            <button className="btn primary" onClick={() => { setSafety('safe'); setStep('damage'); }}>SAFE</button>
-            <button className="btn danger" onClick={() => { setSafety('needs_help'); setStep('damage'); }}>HELP</button>
+            <button className="btn primary" onClick={() => { setSafety('safe'); setStep('damage'); }}>I'm safe</button>
+            <button className="btn danger" onClick={() => { setSafety('needs_help'); setStep('damage'); }}>I need help</button>
             <button className="btn wide" onClick={answerMissing}>Someone in my household is unaccounted for</button>
+            <FreeTextReply />
           </div>
         )}
         {step === 'damage' && [0, 1, 2, 3].map((d) => <button key={d} className="btn" onClick={() => answerDamage(d)}>{d}</button>)}
@@ -105,4 +106,30 @@ function ReplyThread({ householdId, code }: { householdId: string; code: string 
 
 function Bubble({ from, children }: { from: 'me' | 'them'; children: ReactNode }) {
   return <div className={`bubble ${from}`}>{children}</div>;
+}
+
+// Free-text reply (any language). Reserved for the Claude parser: the parsed result goes to
+// submit_parsed_reply(householdId, safety, damage (255 = unknown), lifeSafety, needs, notHome, text,
+// language, passcode), see docs/CLAUDE_PARSER.md. Until `onSend` is wired, Send stays disabled.
+function FreeTextReply({ onSend }: { onSend?: (text: string) => Promise<void> }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ready = !!onSend;
+  return (
+    <form className="free-text" onSubmit={async (e) => {
+      e.preventDefault();
+      if (!onSend || !text.trim()) return;
+      setBusy(true);
+      try {
+        await onSend(text.trim());
+        setText('');
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={1000}
+        placeholder="Or write a message, in any language" aria-label="Write a message" />
+      <button className="btn" disabled={!ready || busy || !text.trim()} title={ready ? undefined : 'Text replies are not connected yet'}>Send</button>
+    </form>
+  );
 }

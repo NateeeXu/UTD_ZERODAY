@@ -39,6 +39,8 @@ export interface MapUnit {
   c: number;           // confidence 0–1 (household-weighted for districts)
   n: number;           // households
   ex: number;          // expected severe
+  lo: number;          // 90% range for severely damaged homes (districts: summed cell bounds)
+  hi: number;
   rep: number;
   sent: number;
   cl: number;
@@ -69,7 +71,7 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
   if (res === 8) {
     return cells.map((c) => ({
       id: c.hex, res, kids: [c], p: prio(c.priority), v: c.verification === 'verified' ? 'verified' : 'needs_verification',
-      c: c.confidence, n: c.households, ex: c.expectedSevere, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: c.fieldReports,
+      c: c.confidence, n: c.households, ex: c.expectedSevere, lo: c.severeLo, hi: c.severeHi, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: c.fieldReports,
       si: c.silence, sc: c.silenceCause, r: c.reason, un: c.unaccounted, uv: c.unaccountedVulnerable,
       ...cachedGeom(c.hex, () => ({ shape: [cellToBoundary(c.hex) as [number, number][]], center: cellToLatLng(c.hex) as [number, number] })),
     }));
@@ -102,6 +104,8 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
       v: needs ? 'needs_verification' : 'verified',
       c: kids.reduce((s, k) => s + w(k) * k.confidence, 0),
       ex: Math.round(kids.reduce((s, k) => s + k.expectedSevere, 0) * 10) / 10,
+      lo: kids.reduce((s, k) => s + k.severeLo, 0),
+      hi: kids.reduce((s, k) => s + k.severeHi, 0),
       rep: kids.reduce((s, k) => s + k.smsReplies, 0),
       sent: kids.reduce((s, k) => s + k.smsSent, 0),
       cl: kids.reduce((s, k) => s + k.claims, 0),
@@ -139,13 +143,23 @@ export function driverLine(u: MapUnit): string {
   return `Heavy damage expected (~${Math.round(share * 100)}% of homes)`;
 }
 
+// "6–11" from the cell's 90% range; "~8" when a source has no range (preview snapshot).
+export function severeRange(u: Pick<MapUnit, 'lo' | 'hi' | 'ex'>): string {
+  if (Number.isFinite(u.lo) && Number.isFinite(u.hi)) {
+    const lo = Math.round(u.lo);
+    const hi = Math.round(u.hi);
+    return lo === hi ? lo.toLocaleString() : `${lo.toLocaleString()}–${hi.toLocaleString()}`;
+  }
+  return `~${Math.round(u.ex).toLocaleString()}`;
+}
+
 export function tooltipHtml(u: MapUnit, label: string): string {
   const status = u.fr > 0 ? 'field-verified' : u.v === 'verified' ? 'verified' : 'unverified';
   return (
     `<div class="tip-title"><i style="background:${COLOR[u.p]}"></i>${esc(label)} · ${u.p}` +
     `<span class="tip-status ${u.v === 'verified' ? 'ok' : ''}">${status}</span></div>` +
     `<div class="tip-why">${esc(driverLine(u))}</div>` +
-    `<div class="tip-meta">${u.n.toLocaleString()} homes · ~${Math.round(u.ex).toLocaleString()} likely severe · ${Math.round(u.c * 100)}% confident</div>` +
+    `<div class="tip-meta">${u.n.toLocaleString()} homes · ${severeRange(u)} severely damaged · ${Math.round(u.c * 100)}% confident</div>` +
     (Number.isFinite(u.un)
       ? `<div class="tip-unacc${u.un > 0 ? '' : ' done'}">Unaccounted ${u.un.toLocaleString()} of ${u.n.toLocaleString()} · vulnerable unaccounted ${u.uv.toLocaleString()}</div>`
       : '')

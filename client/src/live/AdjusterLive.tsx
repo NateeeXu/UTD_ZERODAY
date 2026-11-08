@@ -9,6 +9,7 @@ import { useEstimatesById, useHouseholdsById } from './hooks';
 import { makeKidsNote } from './accounting';
 import { prio, RANK } from './mapModel';
 import type { HouseholdRow } from './rows';
+import { CLOSURES, DAMAGE, PeopleProperty, contactHistory } from './household';
 import { fmtT, homeLabel, pct } from '../format';
 
 export function AdjusterLive() {
@@ -21,13 +22,7 @@ export function AdjusterLive() {
 }
 
 type Safety = 'safe' | 'needs_help' | 'unsure';
-const DAMAGE = ['None', 'Minor', 'Severe', 'Uninhabitable'] as const;
-// close_household reasons; unreachable_after_visit requires an assignment first (backend rule).
-const CLOSURES = [
-  { value: 'vacant', label: 'Vacant' },
-  { value: 'not_in_area', label: 'Not in area' },
-  { value: 'unreachable_after_visit', label: 'Unreachable after visit' },
-];
+// close_household reasons (CLOSURES): unreachable_after_visit requires an assignment first (backend rule).
 
 function AdjusterScreen() {
   const [myMember] = useTable(tables.myMember);
@@ -143,6 +138,8 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
   const closeHousehold = useReducer(reducers.closeHousehold);
   const [followRows] = useTable(tables.householdFollowup.where((r) => r.householdId.eq(hh.id)));
   const closure = followRows[0]?.closureReason ?? '';
+  const est = useEstimatesById(useMemo(() => [hh.id], [hh.id])).get(hh.id);
+  const signals = { est, replies, reports, claims, followup: followRows[0] };
   const [closeError, setCloseError] = useState<string | null>(null);
   const [safety, setSafety] = useState<Safety | null>(null);
   const [damage, setDamage] = useState<number | null>(null);
@@ -150,11 +147,7 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const history = [
-    ...replies.map((r) => ({ t: r.t, text: `SMS reply: ${r.safety === 'needs_help' ? 'HELP' : 'SAFE'} · damage ${r.damage}${r.text ? ` · “${r.text}”` : ''}` })),
-    ...claims.map((c) => ({ t: c.t, text: `Claim: ${c.peril} · damage ${c.reportedDamage}` })),
-    ...reports.map((f) => ({ t: f.t, text: `Field report (${f.adjusterId}): ${f.safety.replace('_', ' ')} · ${DAMAGE[f.damage] ?? f.damage}` })),
-  ].sort((a, b) => a.t - b.t);
+  const history = contactHistory(signals);
 
   const send = async () => {
     if (safety == null || damage == null) return;
@@ -178,6 +171,7 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
         <h2>{homeLabel(hh.id, fictional)}</h2>
         <p className="muted small">{area}</p>
         {kids && <p className="kids-banner">{kids}</p>}
+        <PeopleProperty {...signals} />
         <div className="tags">
           <Tag on={hh.windCovered}>Wind</Tag>
           <Tag on={hh.floodPolicy}>Flood policy</Tag>
@@ -199,16 +193,17 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
           <p className="muted small">{hh.phoneOnFile ? 'Texted, no reply yet.' : 'No phone on file.'}</p>
         )}
 
-        <h3>1 · Life safety</h3>
+        <h3>1 · People</h3>
+        <p className="small muted">"Nobody seen" = house inspected, people not found. They stay unaccounted and move to locate (emergency contact).</p>
         <div className="seg">
           {(['safe', 'needs_help', 'unsure'] as Safety[]).map((v) => (
             <button key={v} className={safety === v ? 'on' : ''} aria-pressed={safety === v} onClick={() => setSafety(v)}>
-              {v === 'safe' ? 'Safe' : v === 'needs_help' ? 'Needs help' : 'Unsure'}
+              {v === 'safe' ? 'Safe' : v === 'needs_help' ? 'Needs help' : 'Nobody seen'}
             </button>
           ))}
         </div>
 
-        <h3>2 · Home damage</h3>
+        <h3>2 · Home</h3>
         <div className="seg">
           {DAMAGE.map((label, d) => (
             <button key={d} className={damage === d ? 'on' : ''} aria-pressed={damage === d} onClick={() => setDamage(d)}>{label}</button>
