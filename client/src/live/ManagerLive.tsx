@@ -126,6 +126,13 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     for (const a of assignments) if (a.status === 'assigned') m.set(a.hex, (m.get(a.hex) ?? 0) + 1);
     return m;
   }, [assignments]);
+  // Household → name of the adjuster it is assigned to (open assignments only).
+  const sentTo = useMemo(() => {
+    const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
+    const m = new Map<string, string>();
+    for (const a of assignments) if (a.status === 'assigned') m.set(a.householdId, names.get(a.adjuster.toHexString()) ?? 'adjuster');
+    return m;
+  }, [assignments, members]);
 
   const feed = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
@@ -154,18 +161,26 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const qrCell = useHouseholdsInCell(qrHex);
   const qrHousehold = useMemo(() => qrCell.find((h) => h.phoneOnFile) ?? qrCell[0] ?? null, [qrCell]);
 
+  // Assignments need an adjuster who has joined (backend rule). Feedback goes to the toast so it is
+  // visible wherever the button was (list or area panel).
+  const adjusterUrl = `${window.location.pathname}?region=${region.id}#/adjuster`;
   const assignHex = useReducer(reducers.assignHex);
-  const [assignError, setAssignError] = useState<string | null>(null);
-  const doAssign = async (hex: string) => {
+  const assignOne = useReducer(reducers.assign);
+  const notify = (title: string, detail: string) => setToast({ key: Date.now(), title, detail });
+  const sendAdjuster = async (what: string, call: (adjusterIdentityHex: string) => Promise<unknown>) => {
     if (!isManager) return setJoining(true);
-    if (!pickedAdjuster) return setAssignError('No adjuster has joined yet. Open the adjuster screen on a phone and join first.');
-    setAssignError(null);
+    if (!pickedAdjuster) return notify('No adjuster online', 'open the adjuster screen and join as adjuster first');
     try {
-      await assignHex({ hex, adjusterIdentityHex: pickedAdjuster.identity.toHexString(), count: 3 });
+      await call(pickedAdjuster.identity.toHexString());
+      notify('Adjuster sent', `${what} → ${pickedAdjuster.name}`);
     } catch (e) {
-      setAssignError(e instanceof Error ? e.message : String(e));
+      notify('Could not send adjuster', e instanceof Error ? e.message : String(e));
     }
   };
+  const doAssign = (hex: string) =>
+    sendAdjuster(`up to 3 homes in ${labeler.cell(hex)}`, (adjusterIdentityHex) => assignHex({ hex, adjusterIdentityHex, count: 3 }));
+  const doAssignHousehold = (householdId: string) =>
+    sendAdjuster(homeLabel(householdId, fictional), (adjusterIdentityHex) => assignOne({ householdId, adjusterIdentityHex }));
 
   const counts = metrics ? { P0: metrics.p0Cells, P1: metrics.p1Cells, P2: metrics.p2Cells } : { P0: 0, P1: 0, P2: 0 };
   const selectFromHex = (hex: string) => {
@@ -213,11 +228,12 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             feed={feed}
             kidsNote={kidsNote}
             onSelectHex={selectFromHex}
-            onAssign={doAssign}
+            onAssignHousehold={doAssignHousehold}
+            sentTo={sentTo}
+            adjusterUrl={adjusterUrl}
             adjusters={adjusters}
             pickedAdjuster={pickedAdjuster}
             onPickAdjuster={setAdjusterHex}
-            assignError={assignError}
             metrics={metrics}
             canAct={isManager}
             onNeedJoin={() => setJoining(true)}
@@ -268,6 +284,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               onClose={() => setSelected(null)}
               canAssign={isManager}
               adjusterName={pickedAdjuster?.name}
+              adjusterUrl={adjusterUrl}
               fictional={fictional}
               noteFor={kidsNote}
             />
@@ -329,7 +346,7 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   );
 }
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, readOnly = false, fictional = false, noteFor }: {
+export function CellDetail({ unit, label, households, candidates, openAssignments, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
@@ -339,6 +356,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   onClose: () => void;
   canAssign: boolean;
   adjusterName: string | undefined;
+  adjusterUrl?: string;
   readOnly?: boolean;
   fictional?: boolean;
   noteFor?: (h: HouseholdRow | undefined) => string | null;
@@ -393,8 +411,10 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
         </>}
       </div>
       {!readOnly && <div className="detail-actions">
-        <span className="assigned small">{assigned ? `${assigned} inspection${assigned > 1 ? 's' : ''} assigned` : canAssign ? (adjusterName ? `To ${adjusterName}` : 'No adjuster joined yet') : 'Join as manager to assign'}</span>
-        <button className="btn primary" onClick={() => onAssign(target.hex)}>Assign 3 inspections</button>
+        <span className="assigned small">{assigned ? `${assigned} inspection${assigned > 1 ? 's' : ''} assigned` : canAssign ? (adjusterName ? `To ${adjusterName}` : 'No adjuster online') : 'Join as manager to assign'}</span>
+        {canAssign && !adjusterName && adjusterUrl
+          ? <a className="btn" href={adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
+          : <button className="btn primary" onClick={() => onAssign(target.hex)}>Assign 3 inspections</button>}
       </div>}
     </aside>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary, cellToLatLng } from 'h3-js';
@@ -22,10 +22,81 @@ interface Props {
   mode?: MapMode;
 }
 
+// Leaflet internals used for smooth wheel zoom (same calls its own pinch-zoom handler makes).
+type MapInternals = L.Map & {
+  _move(center: L.LatLng, zoom: number): void;
+  _moveStart(zoomChanged: boolean, noMoveStart: boolean): void;
+  _moveEnd(zoomChanged: boolean): void;
+  _stop(): void;
+};
+
+// Smooth wheel / trackpad zoom. Leaflet's built-in wheel zoom jumps in steps; this eases the zoom
+// toward a goal every frame and keeps the point under the cursor still.
+function smoothWheelZoom(m: L.Map): () => void {
+  const map = m as MapInternals;
+  const box = map.getContainer();
+  let goal = 0;
+  let raf = 0;
+  let timer = 0;
+  let active = false;
+  let finishing = false;
+  let pt = L.point(0, 0);
+  let at = L.latLng(0, 0);
+
+  const finish = () => {
+    active = false;
+    finishing = false;
+    map._moveEnd(true);
+  };
+  const frame = () => {
+    const z = map.getZoom();
+    const next = Math.abs(goal - z) < 0.003 ? goal : z + (goal - z) * 0.28;
+    const offset = pt.subtract(map.getSize().divideBy(2));
+    map._move(map.unproject(map.project(at, next).subtract(offset), next), next);
+    if (next !== goal) raf = requestAnimationFrame(frame);
+    else {
+      raf = 0;
+      if (finishing) finish();
+    }
+  };
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    if (!px) return;
+    if (!active) {
+      map._stop();
+      active = true;
+      goal = map.getZoom();
+      map._moveStart(true, false);
+    }
+    finishing = false;
+    pt = map.mouseEventToContainerPoint(e);
+    at = map.containerPointToLatLng(pt);
+    // Pinch on a trackpad arrives as ctrl+wheel with small deltas.
+    goal = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), goal - px * (e.ctrlKey ? 0.01 : 0.004)));
+    if (!raf) raf = requestAnimationFrame(frame);
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (raf) finishing = true;
+      else if (active) finish();
+    }, 160);
+  };
+  box.addEventListener('wheel', onWheel, { passive: false });
+  return () => {
+    box.removeEventListener('wheel', onWheel);
+    cancelAnimationFrame(raf);
+    clearTimeout(timer);
+  };
+}
+
 export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority' }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup } | null>(null);
+  // Polygons are kept and restyled in place; rebuilt only when the level of detail changes.
+  const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; kids: number }> } | null>(null);
+  const unitById = useRef(new Map<string, MapUnit>());
+  const ringKey = useRef('');
   const fitted = useRef<string | null>(null);
   const [zoom, setZoom] = useState(0);
   const cb = useRef({ onSelect, labelFor, onResChange });
@@ -33,28 +104,33 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
 
   useEffect(() => {
     if (!el.current) return;
-    const m = L.map(el.current, { zoomControl: false, zoomSnap: 0.25 });
+    const m = L.map(el.current, { zoomControl: false, zoomSnap: 0.25, scrollWheelZoom: false });
     L.control.zoom({ position: 'bottomleft' }).addTo(m);
     L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
       attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors',
       maxZoom: 16,
+      keepBuffer: 4,
     }).addTo(m);
     m.createPane('labels');
     m.getPane('labels')!.style.zIndex = '450';
     m.getPane('labels')!.style.pointerEvents = 'none';
-    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: 'labels' }).addTo(m);
+    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: 'labels', keepBuffer: 4 }).addTo(m);
     groups.current = {
       cells: L.layerGroup().addTo(m),
       rings: L.layerGroup().addTo(m),
       sel: L.layerGroup().addTo(m),
       fac: L.layerGroup(),
     };
+    const stopWheel = smoothWheelZoom(m);
     m.on('zoomend', () => setZoom(m.getZoom()));
     map.current = m;
     return () => {
+      stopWheel();
       m.remove();
       map.current = null;
       fitted.current = null;
+      polys.current = null;
+      ringKey.current = '';
     };
   }, []);
 
@@ -69,39 +145,89 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     setZoom(m.getZoom());
   }, [cells, fitKey, padRight, padLeft]);
 
+  const ready = zoom > 0;
   const res: 7 | 8 = zoom < LOD_ZOOM ? 7 : 8;
   useEffect(() => cb.current.onResChange?.(res), [res]);
+  const units = useMemo(() => (ready ? unitsFor(cells, res) : []), [cells, res, ready]);
 
-  // Cells / districts, colored by priority, opacity by confidence (style A), pulse rings (style C).
+  // Cells / districts, colored by priority, opacity by confidence (style A). Restyled in place on
+  // every data tick (no redraw), so zooming and the running replay stay smooth.
   useEffect(() => {
     const g = groups.current;
-    if (!g || !zoom) return;
-    g.cells.clearLayers();
-    g.rings.clearLayers();
-    g.sel.clearLayers();
-    const topKids = pulsingCells(cells);
-    for (const u of unitsFor(cells, res)) {
+    if (!g || !ready) return;
+    let cur = polys.current;
+    if (!cur || cur.res !== res) {
+      g.cells.clearLayers();
+      cur = polys.current = { res, byId: new Map() };
+    }
+    unitById.current = new Map(units.map((u) => [u.id, u]));
+    for (const u of units) {
       const color = COLOR[u.p];
       const k = intensity(u, mode);
-      const poly = L.polygon(u.shape as L.LatLngExpression[][], {
-        color,
-        weight: res === 7 ? 1 : 0.6,
-        opacity: 0.35 + 0.5 * k,
-        fillColor: color,
-        fillOpacity: 0.12 + 0.73 * k,
-      });
-      poly.bindTooltip(tooltipHtml(u, cb.current.labelFor(u)), { sticky: true, className: 'tip' });
-      poly.on('click', () => cb.current.onSelect(u));
-      poly.addTo(g.cells);
-      if (u.kids.some((k) => topKids.has(k.hex))) {
-        L.polygon(u.shape as L.LatLngExpression[][], { color: COLOR.P0, weight: 2.5, fill: false, interactive: false, className: 'pulse-ring' }).addTo(g.rings);
-        L.polygon(u.shape as L.LatLngExpression[][], { color: '#7a1714', weight: 1.6, fill: false, interactive: false }).addTo(g.rings);
+      const style = { color, weight: res === 7 ? 1 : 0.6, opacity: 0.35 + 0.5 * k, fillColor: color, fillOpacity: 0.12 + 0.73 * k };
+      const have = cur.byId.get(u.id);
+      if (!have) {
+        const id = u.id;
+        const poly = L.polygon(u.shape as L.LatLngExpression[][], style);
+        // Tooltip text is built when it opens, from the latest data.
+        poly.bindTooltip(() => {
+          const now = unitById.current.get(id);
+          return now ? tooltipHtml(now, cb.current.labelFor(now)) : '';
+        }, { sticky: true, className: 'tip' });
+        poly.on('click', () => {
+          const now = unitById.current.get(id);
+          if (now) cb.current.onSelect(now);
+        });
+        poly.addTo(g.cells);
+        cur.byId.set(id, { poly, kids: u.kids.length });
+        continue;
       }
-      if (selected && (u.id === selected || u.kids.some((k) => k.hex === selected))) {
-        L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 2.5, fill: false, interactive: false }).addTo(g.sel);
+      if (have.kids !== u.kids.length) {
+        have.poly.setLatLngs(u.shape as L.LatLngExpression[][]);
+        have.kids = u.kids.length;
+      }
+      have.poly.setStyle(style);
+      const tip = have.poly.getTooltip();
+      if (tip?.isOpen()) tip.update();
+    }
+    for (const [id, have] of cur.byId) {
+      if (!unitById.current.has(id)) {
+        have.poly.remove();
+        cur.byId.delete(id);
       }
     }
-  }, [cells, res, zoom, selected, labelFor, mode]); // labelFor: rebuild tooltips when names change (e.g. world row arrives)
+  }, [units, res, mode, ready]);
+
+  // Pulse rings (style C) on the most urgent silent cells; rebuilt only when that set changes so
+  // the animation does not restart every tick.
+  useEffect(() => {
+    const g = groups.current;
+    if (!g || !ready) return;
+    const top = pulsingCells(cells);
+    const ringed = units.filter((u) => u.kids.some((k) => top.has(k.hex)));
+    const key = `${res}|${ringed.map((u) => u.id).sort().join(',')}`;
+    if (key === ringKey.current) return;
+    ringKey.current = key;
+    g.rings.clearLayers();
+    for (const u of ringed) {
+      L.polygon(u.shape as L.LatLngExpression[][], { color: COLOR.P0, weight: 2.5, fill: false, interactive: false, className: 'pulse-ring' }).addTo(g.rings);
+      L.polygon(u.shape as L.LatLngExpression[][], { color: '#7a1714', weight: 1.6, fill: false, interactive: false }).addTo(g.rings);
+    }
+  }, [units, cells, res, ready]);
+
+  // Selection outline.
+  const selUnit = useMemo(
+    () => (selected ? units.find((u) => u.id === selected || u.kids.some((k) => k.hex === selected)) ?? null : null),
+    [units, selected],
+  );
+  const selId = selUnit?.id ?? null;
+  useEffect(() => {
+    const g = groups.current;
+    if (!g) return;
+    g.sel.clearLayers();
+    const u = selId ? unitById.current.get(selId) : null;
+    if (u) L.polygon(u.shape as L.LatLngExpression[][], { color: '#111111', weight: 2.5, fill: false, interactive: false }).addTo(g.sel);
+  }, [selId, res]);
 
   // Schools / universities / hospitals.
   useEffect(() => {

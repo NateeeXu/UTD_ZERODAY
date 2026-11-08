@@ -36,11 +36,12 @@ interface Props {
   feed: FeedItem[];
   kidsNote: (h: HouseholdRow | undefined) => string | null;
   onSelectHex: (hex: string) => void;
-  onAssign: (hex: string) => void;
+  onAssignHousehold: (householdId: string) => void;
+  sentTo: Map<string, string>;          // householdId → adjuster name (open assignment)
+  adjusterUrl: string;
   adjusters: readonly MemberRow[];
   pickedAdjuster: MemberRow | undefined;
   onPickAdjuster: (hex: string) => void;
-  assignError: string | null;
   metrics: MetricsRow | undefined;
   canAct: boolean;
   onNeedJoin: () => void;
@@ -122,15 +123,19 @@ export function OutreachPanel(p: Props) {
 
       {open && (
         <div className="p2-body">
-          {tab === 'unacc' && p.adjusters.length > 0 && (
+          {tab === 'unacc' && (p.adjusters.length > 0 ? (
             <div className="p2-assign">
               <span className="small muted">Send adjusters as</span>
               <select value={p.pickedAdjuster?.identity.toHexString() ?? ''} onChange={(e) => p.onPickAdjuster(e.target.value)}>
                 {p.adjusters.map((a) => <option key={a.identity.toHexString()} value={a.identity.toHexString()}>{a.name}</option>)}
               </select>
             </div>
-          )}
-          {p.assignError && <p className="form-error small p2-pad">{p.assignError}</p>}
+          ) : (
+            <div className="p2-assign">
+              <span className="small muted">No adjuster online, so visits can't be sent yet.</span>
+              <a className="link small" href={p.adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
+            </div>
+          ))}
           {tab === 'help' && (
             <ReferralList rankOf={rankOf} cellPrio={cellPrio} simMinutes={p.simMinutes} labeler={p.labeler} fictional={p.fictional} canAct={p.canAct} onNeedJoin={p.onNeedJoin} onSelectHex={p.onSelectHex} />
           )}
@@ -140,6 +145,7 @@ export function OutreachPanel(p: Props) {
               const flags = riskFlags(hh);
               const kids = p.kidsNote(hh);
               const action = q.escalation === 'field_visit' ? 'Send adjuster' : q.escalation === 'recheck' ? 'Recheck visit' : null;
+              const sent = p.sentTo.get(q.householdId);
               return (
                 <li key={q.householdId} className="p2-row">
                   <span className={`chip chip-${prio(q.cellPriority)}`}>{prio(q.cellPriority)}</span>
@@ -149,9 +155,11 @@ export function OutreachPanel(p: Props) {
                     {flags.length > 0 && <span className="risk small">{flags.join(' · ')}</span>}
                     {kids && <span className="kids small">{kids}</span>}
                   </button>
-                  {action
-                    ? <button className="btn primary small-btn" onClick={() => p.onAssign(q.hex)}>{action}</button>
-                    : <EscalationChip step={q.escalation} />}
+                  {sent
+                    ? <span className="esc esc-green">Sent · {sent}</span>
+                    : action && p.adjusters.length > 0
+                      ? <button className="btn primary small-btn" onClick={() => p.onAssignHousehold(q.householdId)}>{action}</button>
+                      : <EscalationChip step={q.escalation} />}
                 </li>
               );
             })}

@@ -52,13 +52,26 @@ export interface MapUnit {
   center: [number, number];
 }
 
+// Geometry never changes for a given set of cells, so cache it: the replay recomputes units every
+// second and cellsToMultiPolygon over every district is the expensive part.
+const shapeCache = new Map<string, { shape: MapUnit['shape']; center: [number, number] }>();
+function cachedGeom(key: string, make: () => { shape: MapUnit['shape']; center: [number, number] }) {
+  let g = shapeCache.get(key);
+  if (!g) {
+    if (shapeCache.size > 20000) shapeCache.clear();
+    g = make();
+    shapeCache.set(key, g);
+  }
+  return g;
+}
+
 export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
   if (res === 8) {
     return cells.map((c) => ({
       id: c.hex, res, kids: [c], p: prio(c.priority), v: c.verification === 'verified' ? 'verified' : 'needs_verification',
       c: c.confidence, n: c.households, ex: c.expectedSevere, rep: c.smsReplies, sent: c.smsSent, cl: c.claims, fr: c.fieldReports,
       si: c.silence, sc: c.silenceCause, r: c.reason, un: c.unaccounted, uv: c.unaccountedVulnerable,
-      shape: [cellToBoundary(c.hex) as [number, number][]], center: cellToLatLng(c.hex) as [number, number],
+      ...cachedGeom(c.hex, () => ({ shape: [cellToBoundary(c.hex) as [number, number][]], center: cellToLatLng(c.hex) as [number, number] })),
     }));
   }
   const groups = new Map<string, HexStatsRow[]>();
@@ -76,7 +89,13 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
       RANK[prio(b.priority)] < RANK[prio(a.priority)] || (b.priority === a.priority && b.severity > a.severity) ? b : a);
     const needs = kids.some((k) => k.verification === 'needs_verification' && k.priority === top.priority);
     const silentKid = kids.reduce((a, b) => (b.silence * b.hazard > a.silence * a.hazard ? b : a));
-    const centers = kids.map((k) => cellToLatLng(k.hex));
+    const geom = cachedGeom(`${id}:${kids.length}`, () => {
+      const centers = kids.map((k) => cellToLatLng(k.hex));
+      return {
+        shape: cellsToMultiPolygon(kids.map((k) => k.hex)) as [number, number][][][],
+        center: [centers.reduce((s, c) => s + c[0], 0) / centers.length, centers.reduce((s, c) => s + c[1], 0) / centers.length] as [number, number],
+      };
+    });
     out.push({
       id, res, kids, n,
       p: prio(top.priority),
@@ -91,8 +110,7 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
       r: top.reason,
       un: kids.reduce((s, k) => s + k.unaccounted, 0),
       uv: kids.reduce((s, k) => s + k.unaccountedVulnerable, 0),
-      shape: cellsToMultiPolygon(kids.map((k) => k.hex)) as [number, number][][][],
-      center: [centers.reduce((s, c) => s + c[0], 0) / centers.length, centers.reduce((s, c) => s + c[1], 0) / centers.length],
+      ...geom,
     });
   }
   return out;

@@ -510,3 +510,4 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .qr-card.large .qr-ph { width: 280px; height: 280px; }
 .qr-card.large img { border-radius: 12px; background: #fff; padding: 10px; }
 .chip.mini { width: 24px; height: 16px; line-height: 16px; font-size: 10px; margin-right: 6px; vertical-align: 1px; }
+.p2-assign .link { margin-left: auto; white-space: nowrap; }
