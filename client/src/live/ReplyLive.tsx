@@ -20,7 +20,7 @@ import './reply/reply.css';
 
 const CODE_KEY = 'triage-reply-code'; // same key as the QR card on the dashboard
 const MAX_TEXT = 500; // submit_raw_reply accepts 1..500 characters
-const PLACE: Record<RegionId, string> = { tx: 'Corpus Christi', ca: 'the Bay Area', harbor: 'Harbor Bend' };
+const PLACE: Record<RegionId, string> = { tx: 'Corpus Christi', ca: 'the Bay Area', harbor: 'your area' };
 const BAD_LINK = "This link doesn't match a household in the current demo.";
 
 type ChipId = 'ok' | 'help' | 'away';

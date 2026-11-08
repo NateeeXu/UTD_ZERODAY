@@ -1,0 +1,17 @@
+/* "New random disaster" (dev sandbox): sits right of the Saviu brand in the top bar. */
+.rd-wrap { position: relative; display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-btn { white-space: nowrap; }
+.rd-btn:disabled { opacity: 0.7; cursor: default; }
+.rd-cancel { white-space: nowrap; }
+.rd-note { color: var(--muted); max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-note.ok { color: #0b5c40; }
+.rd-note.bad { color: #b42d29; }
+.rd-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 1200; min-width: 240px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; border-radius: 14px;
+}
+.rd-menu button {
+  min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent;
+  font: inherit; font-size: 14px; text-align: left; color: #111; cursor: pointer;
+}
+.rd-menu button:hover, .rd-menu button:focus-visible { background: rgba(120, 120, 128, 0.12); }

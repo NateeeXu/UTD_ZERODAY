@@ -16,7 +16,7 @@ export interface RegionConfig {
 export const REGIONS: RegionConfig[] = [
   { id: 'tx', label: 'Corpus Christi', db: import.meta.env.VITE_SPACETIME_DB_TX ?? 'triage-loop-nateeexu-tx', preview: 'tx' },
   { id: 'ca', label: 'Bay Area', db: import.meta.env.VITE_SPACETIME_DB_CA ?? 'triage-loop-nateeexu-ca', preview: 'ca' },
-  { id: 'harbor', label: 'Harbor Bend (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null, dev: true },
+  { id: 'harbor', label: 'Sandbox (dev)', db: import.meta.env.VITE_SPACETIME_DB ?? 'triage-loop-nateeexu-dev', preview: null, dev: true },
 ];
 
 const REGION_KEY = 'triage-region';

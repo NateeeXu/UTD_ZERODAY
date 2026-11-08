@@ -8,6 +8,7 @@ import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
+import { RandomDisasterButton } from './RandomDisasterButton';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
@@ -38,18 +39,18 @@ export function ManagerLive() {
   );
 }
 
-// Shared top bar: product label, current scenario (world.name, which changes when a new disaster is
-// loaded), right-hand slot, then the region switcher pinned to the right edge (topbar.css) so it
-// stays put when the scenario name changes length.
-export function RegionHeader({ region, onRegion, scenario, children }: {
-  region: RegionConfig; onRegion: (r: RegionConfig) => void; scenario?: string; children?: ReactNode;
+// Shared top bar: product label (plus, in the dev sandbox, the new-disaster button), right-hand slot,
+// then the region switcher pinned to the right edge (topbar.css).
+export function RegionHeader({ region, onRegion, brandExtra, children }: {
+  region: RegionConfig; onRegion: (r: RegionConfig) => void; brandExtra?: ReactNode; children?: ReactNode;
 }) {
   return (
     <header className="topbar region-bar">
       <div className="brand stacked">
         <div className="brand-line">
           <strong>Saviu</strong>
-          {scenario && <span className="scenario" title={scenario}>{scenario}</span>}
+          {/* The generated scenario name is no longer shown here; the dev sandbox puts its disaster button here. */}
+          {brandExtra}
         </div>
       </div>
       <div className="topbar-right">{children}</div>
@@ -284,7 +285,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
   return (
     <div className="manager live">
-      <RegionHeader region={region} onRegion={onRegion} scenario={world?.name}>
+      <RegionHeader region={region} onRegion={onRegion}
+        brandExtra={region.dev ? <RandomDisasterButton canControl={isManager} onNeedJoin={() => setJoining(true)} /> : undefined}>
         <QrButton household={qrHousehold} region={region.id} db={region.db!} members={members} managerName={me?.name} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
