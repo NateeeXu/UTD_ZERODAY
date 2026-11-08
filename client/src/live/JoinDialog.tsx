@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useReducer, useSpacetimeDB } from 'spacetimedb/react';
-import { reducers } from '../module_bindings/index.ts';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
+import { reducers, tables } from '../module_bindings/index.ts';
 
 // Self-assigned demo role. The passcode is typed here and sent to `join_as`. It is never in the code,
 // env or bundle. With "Remember on this device" (on by default) it is kept in this browser's
@@ -50,6 +50,35 @@ function writeSaved(role: Role, saved: Saved | null) {
 
 const defaultName = (role: Role) => (role === 'manager' ? 'Manager' : 'Adjuster');
 
+// Names must be unique per database so the manager's adjuster picker and the screen headers never show
+// two people as "Nate" (after a rebuild every remembered device rejoins with its saved name).
+const MAX_NAME = 40; // join_as accepts 1..40 characters after trimming
+const nameKey = (s: string) => s.trim().toLowerCase();
+
+/** The first of "Nate", "Nate 2", "Nate 3", … that no other member of this database uses (any role). */
+export function freeName(base: string, taken: ReadonlySet<string>): string {
+  const b = base.trim().slice(0, MAX_NAME);
+  if (!b || !taken.has(nameKey(b))) return b;
+  for (let i = 2; i < 1000; i++) {
+    const suffix = ` ${i}`;
+    const n = `${b.slice(0, MAX_NAME - suffix.length).trimEnd()}${suffix}`;
+    if (!taken.has(nameKey(n))) return n;
+  }
+  return b;
+}
+
+// Names used by the other identities in this database (`member` is public and small).
+function useTakenNames(): { taken: ReadonlySet<string>; ready: boolean } {
+  const [members, ready] = useTable(tables.member);
+  const { identity } = useSpacetimeDB();
+  const me = identity?.toHexString();
+  const taken = useMemo(
+    () => new Set(members.filter((m) => m.identity.toHexString() !== me).map((m) => nameKey(m.name))),
+    [members, me],
+  );
+  return { taken, ready };
+}
+
 // Rejoin with the saved passcode when this identity is not a member of the database (after a rebuild,
 // or the first visit to another region). One attempt per connection: a wrong passcode forgets the saved
 // one (the dialog then asks again); any other error waits for the next reconnect.
@@ -58,6 +87,7 @@ const defaultName = (role: Role) => (role === 'manager' ? 'Manager' : 'Adjuster'
 export function useAutoRejoin(role: Role, db: string | undefined, isMember: boolean, ready: boolean): boolean {
   const joinAs = useReducer(reducers.joinAs);
   const { isActive } = useSpacetimeDB();
+  const { taken, ready: membersReady } = useTakenNames();
   const tried = useRef(false);
   const [failed, setFailed] = useState(false);
 
@@ -70,19 +100,24 @@ export function useAutoRejoin(role: Role, db: string | undefined, isMember: bool
   }, [isMember, isActive]);
 
   useEffect(() => {
-    if (!db || !ready || !isActive || isMember || tried.current) return;
+    // Wait for the member list too, or a taken name would look free.
+    if (!db || !ready || !membersReady || !isActive || isMember || tried.current) return;
     const saved = readSaved(role);
     if (!saved) return;
     tried.current = true;
-    const name = saved.name || rememberedName(db, role) || defaultName(role);
+    const name = freeName(saved.name || rememberedName(db, role) || defaultName(role), taken);
     joinAs({ role, name, passcode: saved.passcode })
-      .then(() => rememberName(db, role, name))
+      .then(() => {
+        rememberName(db, role, name);
+        // Keep the adjusted name ("Nate 2") so this device stays the same person across rebuilds.
+        if (name !== saved.name) writeSaved(role, { ...saved, name });
+      })
       .catch((err) => {
         if (/wrong passcode/i.test(String(err instanceof Error ? err.message : err))) writeSaved(role, null);
         console.warn('Automatic rejoin failed', err);
         setFailed(true);
       });
-  }, [db, ready, isActive, isMember, role, joinAs]);
+  }, [db, ready, membersReady, isActive, isMember, role, joinAs, taken]);
 
   return !!db && !isMember && !failed && readSaved(role) !== null;
 }
@@ -95,13 +130,15 @@ export function JoinDialog({ role, db, onDone, onCancel }: { role: Role; db?: st
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { taken } = useTakenNames();
+  const typed = name.trim() || defaultName(role);
+  const shown = freeName(typed, taken); // same rule as the automatic rejoin
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const shown = name.trim() || defaultName(role);
       await joinAs({ role, name: shown, passcode });
       writeSaved(role, remember ? { name: shown, passcode } : null);
       setPasscode('');
@@ -131,6 +168,9 @@ export function JoinDialog({ role, db, onDone, onCancel }: { role: Role; db?: st
           <span>Your name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder={role === 'manager' ? 'Dana' : 'J. Ortiz'} autoFocus />
         </label>
+        {shown !== typed.slice(0, 40) && (
+          <p className="small muted">“{typed}” is already used here, so you'll join as “{shown}”.</p>
+        )}
         <label className="field">
           <span>Staff passcode</span>
           <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} autoComplete="off" required />
