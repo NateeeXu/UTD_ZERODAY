@@ -249,10 +249,12 @@ function Field({ meName }: { meName: string }) {
   useEffect(() => {
     if (onTasks && conn.isActive && hasStartRef.current) refreshRef.current().catch(() => undefined);
   }, [onTasks, conn.isActive]);
-  // Save the default start once, so "Next best" can rank from it (update_my_location rebuilds the list).
+  // Save the default start when there is no position, so "Next best" can rank from it (update_my_location
+  // rebuilds the list). Reset Demo deletes the row, and the next save brings the list back.
   const seeded = useRef(false);
   useEffect(() => {
-    if (seeded.current || !conn.isActive || !locReady || myLoc || !staging) return;
+    if (myLoc) { seeded.current = false; return; }
+    if (seeded.current || !conn.isActive || !locReady || !staging) return;
     seeded.current = true;
     updateLocation({ lat: staging[0], lng: staging[1], source: 'demo' }).catch(() => undefined);
   }, [conn.isActive, locReady, myLoc, staging, updateLocation]);
