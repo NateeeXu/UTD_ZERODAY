@@ -198,8 +198,14 @@ export function AdjusterQr({ db, region, members, managerName }: { db: string; r
           <span className="muted small">Anyone who scans this code acts as that adjuster. Demo only.</span>
           {local && <span className="warn-text">Open via the Network URL so phones can reach it.</span>}
           {error && <span className="form-error small" role="alert">{error}</span>}
-          <button className="link muted small" disabled={busy || !known} onClick={() => known && void create(known)}
-            title={known ? 'Remove this adjuster and show a new code' : 'Reload and enter the staff passcode to make a new code'}>
+          {/* No usable passcode (never typed, or the remembered one was refused): ask for it here too. */}
+          {!known && (
+            <span className="qr-input">
+              <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} aria-label="Staff passcode" placeholder="Staff passcode for a new code" autoComplete="off" />
+            </span>
+          )}
+          <button className="link muted small" disabled={busy || !(known ?? pass.trim())} onClick={() => { const p = known ?? pass.trim(); if (p) void create(p); }}
+            title="Remove this adjuster and show a new code">
             {busy ? 'Making a new code…' : 'New code (the old one stops working)'}
           </button>
         </div>
