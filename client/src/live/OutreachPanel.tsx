@@ -273,11 +273,16 @@ export function OutreachPanel(p: Props) {
                   const pr = cellPrio(f.hex);
                   return (
                     <li key={f.key}>
-                      <button type="button" className={`feed-row tone-${f.tone}`} onClick={() => p.onSelectHex(f.hex)}>
+                      {/* A Feed row is one household's event: open that household (and its own decision trace),
+                          like a Requests row. Selecting the cell would show the cell's latest reply instead. */}
+                      <button type="button" className={`feed-row tone-${f.tone}`} onClick={() => p.onOpen(f.householdId, f.hex)}>
                         <span className="feed-icon" aria-hidden="true"><FeedIcon channel={f.channel} /></span>
                         <span className="feed-body">
                           <span className="feed-top">
-                            <span className="feed-title">{f.title}</span>
+                            <span className="feed-head">
+                              <span className="feed-title">{f.title}</span>
+                              <span className="feed-home">{homeLabel(f.householdId, p.fictional)}</span>
+                            </span>
                             <span className="feed-time">{shortT(f.t)}</span>
                           </span>
                           <span className="feed-sub">
