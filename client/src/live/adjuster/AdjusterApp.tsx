@@ -753,7 +753,9 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
       el.style.transition = 'height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)';
       el.style.height = `${to}px`;
       let finished = false;
-      const done = () => {
+      const done = (e?: TransitionEvent) => {
+        // transitionend bubbles up from children (the list's own animation): only the sheet's height counts.
+        if (e && (e.target !== el || e.propertyName !== 'height')) return;
         if (finished) return;
         finished = true;
         el.removeEventListener('transitionend', done);
@@ -761,7 +763,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
         lastH.current = el.offsetHeight;
       };
       el.addEventListener('transitionend', done);
-      setTimeout(done, 450);
+      setTimeout(() => done(), 450);
       lastH.current = to;
     } else if (!el.style.height) {
       lastH.current = el.offsetHeight;
