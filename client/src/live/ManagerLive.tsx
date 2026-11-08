@@ -17,6 +17,7 @@ import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
 import { HouseholdPanel, reportDamage } from './household';
 import { SevereCard } from './SevereCard';
+import { DecisionTrace, useReplyCellCapture } from './DecisionTrace';
 import { homeLabel, pct } from '../format';
 import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
 
@@ -142,7 +143,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const sel = useMemo(() => {
     if (!selected) return null;
     const kids = selected.kids.map((k) => cellBy.get(k.hex)).filter((k): k is HexStatsRow => !!k);
-    return kids.length ? { ...selected, kids } : null;
+    // Rebuild the unit from the live rows so the header (priority, status, reason, range) follows updates.
+    return kids.length ? unitsFor(kids, selected.res)[0] ?? null : null;
   }, [selected, cellBy]);
 
   const openAssignments = useMemo(() => {
@@ -242,6 +244,10 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     claims: focus ? claims.filter((r) => r.householdId === focus.id) : [],
   }), [focus, smsReplies, fieldReports, claims]);
   const simMinutes = replay?.simMinutes ?? 0;
+  // Decision trace: a cell's before → after is captured from the update that carried each reply, so it
+  // has to listen while the page is open, not only while the panel is.
+  const replyCellCapture = useReplyCellCapture();
+  const selHexes = useMemo(() => sel?.kids.map((k) => k.hex) ?? [], [sel]);
 
   // A new disaster is being loaded: the world row is gone (wiped) or present but not counted yet
   // (metrics.households is recounted by reset_demo, the last seeding step).
@@ -256,7 +262,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   return (
     <div className="manager live">
       <RegionHeader region={region} onRegion={onRegion} fictional={fictional} scenario={world?.name}>
-        <QrButton household={qrHousehold} />
+        <QrButton household={qrHousehold} region={region.id} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
         {me ? (
@@ -386,6 +392,14 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               onClose={() => setFocus(null)}
               noteFor={kidsNote}
             />
+            <DecisionTrace
+              householdId={focus.id}
+              latestReply={latestReply}
+              cellBy={cellBy}
+              capture={replyCellCapture}
+              labelCell={labeler.cell}
+              fictional={fictional}
+            />
           </div>
         )}
 
@@ -410,6 +424,16 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               adjusterUrl={adjusterUrl}
               fictional={fictional}
               noteFor={kidsNote}
+            />
+            <DecisionTrace
+              key={sel.id}
+              cellHexes={selHexes}
+              latestReply={latestReply}
+              cellBy={cellBy}
+              capture={replyCellCapture}
+              labelCell={labeler.cell}
+              fictional={fictional}
+              onOpenHousehold={openHousehold}
             />
           </div>
         )}

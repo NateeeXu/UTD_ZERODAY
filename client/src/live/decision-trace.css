@@ -1,0 +1,124 @@
+/* Decision trace (DecisionTrace.tsx). Black and white like the rest of the app; the only color is the
+   priority chip. Outlined = Claude reads, filled = rules decide (lanes and step dots). */
+
+/* Shares the right rail with the household / area card; a little more of the height, since it is the part that moves. */
+.right-rail .dt { flex: 1.35 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.right-rail .dt.dt-collapsed, .right-rail .dt.dt-empty { flex: none; }
+
+.dt-head { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 9px; flex: none; }
+.dt-collapsed .dt-head { border-bottom: 0; }
+.dt-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dt-title h2 { font-size: 16px; line-height: 22px; font-weight: 700; white-space: nowrap; }
+.dt-sub { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-home { color: var(--text); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: #c9c9c9; }
+.dt-home:hover { text-decoration-color: currentColor; }
+.dt-x { flex: none; width: 26px; height: 26px; border: none; border-radius: 50%; background: var(--soft); cursor: pointer; display: grid; place-items: center; }
+.dt-x:hover { background: #ececec; }
+.dt-caret { width: 7px; height: 7px; border-left: 1.5px solid var(--text); border-top: 1.5px solid var(--text); transform: translateY(2px) rotate(45deg); }
+.dt-caret.down { transform: translateY(-2px) rotate(225deg); }
+
+.dt-area { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.dt-newer { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.dt-newer:hover { text-decoration: underline; }
+
+.dt-controls { display: flex; align-items: center; gap: 6px; }
+.dt-controls .btn { height: 30px; padding: 0 12px; font-size: 13px; }
+.dt-controls .btn.primary { min-width: 64px; }
+.dt-controls .btn.ghost { padding: 0 8px; }
+.dt-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* thin segmented progress bar, one segment per step (clickable; 10 px hit area) */
+.dt-track { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin: -3px 0 -4px; }
+.dt-track button { position: relative; height: 10px; border: none; background: none; padding: 0; cursor: pointer; }
+.dt-track button::before { content: ""; position: absolute; top: 3px; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--line); transition: background .25s; }
+.dt-track button.done::before, .dt-track button.on::before { background: var(--text); }
+.dt-track button:hover:not(:disabled)::before { background: #9a9a9a; }
+.dt-track button.done:hover::before, .dt-track button.on:hover::before { background: var(--text); }
+.dt-track button:disabled { cursor: default; }
+
+.dt-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 12px; }
+.dt-none { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+/* lanes */
+.dt-lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dt-lane { border-radius: 10px; padding: 5px 9px 6px; background: var(--soft); border: 1px solid transparent; transition: background .2s, border-color .2s, color .2s; }
+.dt-lane b { display: block; font-size: 13px; line-height: 17px; font-weight: 700; }
+.dt-lane span { display: block; font-size: 11.5px; line-height: 15px; color: var(--muted); transition: color .2s; }
+.dt-lane.c.on { background: var(--bg); border-color: var(--text); }
+.dt-lane.r.on { background: var(--text); border-color: var(--text); color: #fff; }
+.dt-lane.r.on span { color: rgba(255, 255, 255, .72); }
+
+/* path */
+.dt-path { list-style: none; margin: 0; padding: 0; }
+.dt-step { position: relative; padding-left: 20px; min-width: 0; }
+.dt-step::before { content: ""; position: absolute; left: 3px; top: 9.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--text); box-sizing: border-box; }
+.dt-step.claude::before { background: var(--bg); border: 2px solid var(--text); }
+.dt-step::after { content: ""; position: absolute; left: 7px; top: 22px; bottom: -4px; width: 1.5px; background: #d4d4d4; }
+.dt-step:last-child::after { display: none; }
+.dt-step.todo::before { background: var(--bg); border: 1.5px solid #cfcfcf; }
+.dt-step.todo::after { background: var(--line); }
+.dt-step.cur::before { box-shadow: 0 0 0 3px rgba(17, 17, 17, .12); }
+.dt-step-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 28px; padding: 2px 0; border: none; background: none; text-align: left; cursor: pointer; }
+.dt-step-h b { font-size: 13.5px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.dt-step-h:hover b { text-decoration: underline; text-underline-offset: 2px; }
+.dt-step.todo .dt-step-h b { color: var(--muted); font-weight: 500; }
+.dt-sum { min-width: 0; font-size: 12.5px; line-height: 20px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-src { flex: none; font-size: 11.5px; line-height: 18px; padding: 0 8px; border: 1px solid #d4d4d4; border-radius: 999px; color: var(--muted); white-space: nowrap; }
+.dt-src.mono, .dt-tag.mono, .dt-route code, .dt-esc code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.dt-step-b { display: grid; gap: 7px; padding: 2px 0 10px; min-width: 0; animation: dt-in .28s cubic-bezier(.2, .7, .2, 1) backwards; }
+@keyframes dt-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* step contents */
+.dt-msg { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 8px 11px; font-size: 14px; line-height: 21px; overflow-wrap: anywhere; }
+.dt-msg.sim { color: var(--muted); font-style: italic; }
+.dt-mono { margin: 0; font: 12.5px/18px ui-monospace, 'SF Mono', Menlo, monospace; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
+.dt-mono.dt-err { color: var(--text); background: var(--bg); }
+.dt-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.dt-tag { font-size: 12px; line-height: 19px; padding: 0 8px; border-radius: 999px; background: var(--soft); color: #444; white-space: nowrap; }
+.dt-tag.ink { background: var(--text); color: #fff; }
+.dt-tag-label { font-size: 12px; font-weight: 600; margin-right: 2px; }
+.dt-note { font-size: 12px; line-height: 17px; color: var(--muted); }
+.dt-status { font-size: 14px; font-weight: 600; }
+.dt-reading { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.dt-reading i { width: 8px; height: 8px; border-radius: 50%; background: var(--text); animation: dt-pulse 1.1s ease-in-out infinite; }
+@keyframes dt-pulse { 50% { opacity: .2; } }
+
+.dt-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.dt-field { background: var(--soft); border-radius: 9px; padding: 4px 9px 5px; min-width: 0; border: 1px solid transparent; }
+.dt-field.wide { grid-column: 1 / -1; }
+.dt-field.strong { background: var(--bg); border-color: var(--text); }
+.dt-field span { display: block; font-size: 11.5px; line-height: 16px; color: var(--muted); }
+.dt-field b { display: block; font-size: 13.5px; line-height: 19px; overflow-wrap: anywhere; }
+
+.dt-esc { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }
+.dt-esc code { font-size: 13px; font-weight: 600; }
+.dt-esc span { color: var(--muted); font-size: 12.5px; }
+.dt-route { display: grid; gap: 1px; font-size: 12.5px; line-height: 19px; }
+.dt-route div { display: flex; justify-content: space-between; gap: 10px; padding: 2px 9px; border-radius: 7px; color: var(--muted); }
+.dt-route code { font-size: 12px; }
+.dt-route .on { background: var(--text); color: #fff; font-weight: 600; }
+
+.dt-cellhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; }
+.dt-cellhead b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-cellhead span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.dt-ct { display: grid; grid-template-columns: minmax(0, 1fr) auto 14px auto; gap: 2px 7px; align-items: center; font-size: 13px; line-height: 22px; }
+.dt-ct .l, .dt-kv .l { color: var(--muted); white-space: nowrap; }
+.dt-ct .b { color: var(--muted); text-align: right; white-space: nowrap; }
+.dt-ct .ar { color: var(--muted); text-align: center; }
+.dt-ct .a { text-align: right; font-weight: 600; white-space: nowrap; }
+.dt-ct .a.same { font-weight: 400; color: var(--muted); }
+.dt-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; font-size: 13px; line-height: 22px; }
+.dt-kv .a { text-align: right; font-weight: 600; white-space: nowrap; }
+.dt-ct .chip, .dt-kv .chip { vertical-align: middle; }
+.dt-reason { display: grid; gap: 2px; font-size: 12.5px; line-height: 17px; padding: 6px 9px; border-radius: 9px; background: var(--soft); }
+.dt-reason .was { color: var(--muted); text-decoration: line-through; }
+
+.dt-action { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--text); font-size: 14px; font-weight: 600; }
+.dt-action.ref { background: var(--text); color: #fff; }
+.dt-action.none { border-color: var(--line); background: var(--soft); }
+.dt-911 { font-size: 14px; font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dt-step-b, .dt-reading i { animation: none; }
+  .dt-lane, .dt-lane span, .dt-track button::before { transition: none; }
+}

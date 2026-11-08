@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import type { RegionId } from './config';
 import type { HouseholdRow } from './rows';
 
 const CODE_KEY = 'triage-reply-code';
 
+// Policyholder SMS link. region= always goes in the query (before the #): the top-bar region
+// switch doesn't touch the URL, and without it the phone would open its own saved or default region.
+// Other query params are kept.
+export function replyLink(
+  loc: Pick<Location, 'origin' | 'pathname' | 'search'>, region: RegionId, householdId: string, code: string,
+): string {
+  const params = new URLSearchParams(loc.search);
+  params.set('region', region);
+  return `${loc.origin}${loc.pathname}?${params}#/reply?h=${encodeURIComponent(householdId)}&code=${encodeURIComponent(code)}`;
+}
+
 // QR for judges: opens the policyholder SMS page for one household. The reply passcode
 // may travel in this link (it only allows SMS replies); the staff passcode never does.
-export function LiveQrCard({ household, large = false }: { household: HouseholdRow | null; large?: boolean }) {
+export function LiveQrCard({ household, region, large = false }: { household: HouseholdRow | null; region: RegionId; large?: boolean }) {
   const [code, setCode] = useState(() => {
     try {
       return localStorage.getItem(CODE_KEY) ?? '';
@@ -17,9 +29,7 @@ export function LiveQrCard({ household, large = false }: { household: HouseholdR
   const [draft, setDraft] = useState('');
   const [src, setSrc] = useState<string | null>(null);
   const local = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-  const url = household && code
-    ? `${window.location.origin}${window.location.pathname}${window.location.search}#/reply?h=${encodeURIComponent(household.id)}&code=${encodeURIComponent(code)}`
-    : null;
+  const url = household && code ? replyLink(window.location, region, household.id, code) : null;
 
   useEffect(() => {
     if (!url) return setSrc(null);
@@ -65,7 +75,7 @@ export function LiveQrCard({ household, large = false }: { household: HouseholdR
 }
 
 // Header button → full-screen QR so judges can scan it from their seats.
-export function QrButton({ household }: { household: HouseholdRow | null }) {
+export function QrButton({ household, region }: { household: HouseholdRow | null; region: RegionId }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -73,7 +83,7 @@ export function QrButton({ household }: { household: HouseholdRow | null }) {
       {open && (
         <div className="modal-backdrop qr-backdrop" role="dialog" aria-modal="true" aria-label="Judge QR code" onClick={() => setOpen(false)}>
           <div className="glass qr-modal" onClick={(e) => e.stopPropagation()}>
-            <LiveQrCard household={household} large />
+            <LiveQrCard household={household} region={region} large />
             <button className="btn" onClick={() => setOpen(false)}>Close</button>
           </div>
         </div>
