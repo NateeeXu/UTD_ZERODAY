@@ -743,7 +743,7 @@ function NotifiedChips({ imessage }: { imessage: ImessageRow | undefined }) {
   const im = imessageState(imessage);
   return (
     <span className="adj-chips" aria-label="Customer notified by">
-      <span className="adj-tag ok">In-app sent</span>
+      <span className="adj-tag ok">In-app<span className="adj-tag-more"> sent</span></span>
       {im && <span className={`adj-tag ${im.tone}`}>{im.text}</span>}
     </span>
   );
@@ -831,7 +831,7 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
       <header className="adj-header adj-glass">
         <div className="adj-head-main">
           <strong>Field tasks</strong>
-          <span className="sub"><span className="who">{meName},</span><span className="clock">{fmtT(sim)}</span></span>
+          <span className="sub"><span className="who">{meName},</span><span className="adj-head-clock">{fmtT(sim)}</span></span>
         </div>
         <div className="adj-head-side">
           <span className="adj-demo">Demo areas</span>
