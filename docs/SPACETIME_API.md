@@ -6,6 +6,22 @@ running the backend. The module lives in `spacetimedb/`. Database name: `triage-
 > All data is synthetic (fictional Harbor Bend, TX). The `household` table is public for that
 > reason; with real customers it would sit behind per-role views.
 
+## 0. Shared dev database (use this for frontend work)
+
+| Setting | Value |
+|---|---|
+| Host (client `withUri`) | `wss://maincloud.spacetimedb.com` |
+| Database (client `withDatabaseName`) | `triage-loop-nateeexu-dev` |
+| Data | Harbor Bend (`data/live.json`, 3,000 households), model v1 |
+| Passcodes | **not in the repo**: ask the database owner; they are in the owner's `spacetimedb/.env` (see `spacetimedb/.env.example`) |
+
+- The default passcodes in this doc (`triage-staff` / `triage-reply`) work only on a local server. The dev database uses private passcodes.
+- Only the owner can seed or wipe it. Managers can `reset_demo`, `start_replay`, `pause_replay`, `jump_to`.
+- **Pause the replay when you are not testing**: a running replay ticks every second and uses Maincloud energy.
+- Client bindings: `spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path spacetimedb` (needs the CLI), or copy `spacetimedb/bindings/`.
+- `spacetime sql` run inside `spacetimedb/` targets the database in `spacetime.json` (`triage-loop`). To query the dev database, run it from another folder: `spacetime sql -s maincloud triage-loop-nateeexu-dev "SELECT * FROM metrics"`.
+- Separate demo databases for Corpus Christi and the Bay Area will be published after engine v2.
+
 ## 1. What runs inside Spacetime
 
 Everything below is a reducer or a table inside the database. The browser only subscribes and calls reducers.
