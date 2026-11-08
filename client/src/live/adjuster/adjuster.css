@@ -69,7 +69,7 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 /* Floating glass sheet (Tasks) */
 .adj-sheet {
   position: absolute; left: 8px; right: 8px; bottom: calc(8px + var(--bot)); z-index: 800; padding: 4px 12px 12px; border-radius: 30px;
-  display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 100px - var(--top)); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px; max-height: calc(100% - 100px - var(--top) - var(--bot)); overflow-y: auto;
   background: rgba(255, 255, 255, 0.76);
 }
 /* Children keep their size and the sheet scrolls; without this, a short phone screen squeezed the
@@ -141,14 +141,6 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 .adj-listsec.done .adj-listhead { color: var(--t2); }
 .adj-peekline .adj-peek-done { font-size: inherit; font-weight: 500; color: var(--t2); }
 .adj-sheet { transition: box-shadow 0.2s ease; }
-/* Demo start position prompt (replaces the demo label until a start is set) */
-.adj-pick {
-  position: absolute; left: 12px; right: 12px; top: calc(82px + var(--top)); z-index: 800; display: flex; align-items: center;
-  justify-content: space-between; gap: 10px; padding: 12px 16px; border-radius: 16px; background: #222; color: #fff;
-  font-size: 15px; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}
-.adj-pick .adj-link { color: #fff; }
-.adj-demo .adj-link { font-size: 12px; }
 /* "Next best" card (above Next up) */
 .adj-best { display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
 .adj-best-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -355,13 +347,13 @@ html:has(.adj) { overflow: hidden; overscroll-behavior: none; } /* the 100lvh ro
 /* The Tasks sheet sits above the tab bar */
 .adj.has-tabs .adj-sheet {
   bottom: calc(18px + var(--tabbar) + var(--bot));
-  max-height: min(var(--cap-next), calc(100dvh - 118px - var(--tabbar) - var(--top)));
+  max-height: min(var(--cap-next), calc(100% - 118px - var(--tabbar) - var(--top) - var(--bot)));
 }
 /* Open heights are capped so the map stays in view: 'next' at most 55% of the screen, 'all' at most 65%.
    The rest scrolls inside the sheet. While dragged or snapping (data-free) the height is set inline. */
 .adj-sheet { --cap-next: 55dvh; --cap-all: 65dvh; }
 .adj.has-tabs .adj-sheet.all:not([data-view]), .adj.has-tabs .adj-sheet[data-view="all"] {
-  max-height: min(var(--cap-all), calc(100dvh - 118px - var(--tabbar) - var(--top)));
+  max-height: min(var(--cap-all), calc(100% - 118px - var(--tabbar) - var(--top) - var(--bot)));
 }
 .adj-sheet[data-free], .adj.has-tabs .adj-sheet[data-free] { max-height: none; overflow: hidden; }
 
