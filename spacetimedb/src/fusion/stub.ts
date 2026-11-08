@@ -83,8 +83,8 @@ function estimateHousehold(s: HouseholdSignals, input: CellInput): HouseholdOutp
     (h.age65 && h.livesAlone ? 1.2 : 0) +
     (h.medicalDevice ? (cell.towerOutagePct > 60 ? 1.8 : 0.5) : 0) +
     (cell.floodDepthFt > 4 ? 0.6 : 0);
-  if (s.reply?.safety === 'needs_help') help += 3.0 * (0.4 + 0.8 * trust.sms);
-  else if (s.reply?.safety === 'safe') help -= 2.5 * (0.4 + 0.8 * trust.sms);
+  if (s.evidenceReply?.safety === 'needs_help') help += 3.0 * (0.4 + 0.8 * trust.sms);
+  else if (s.evidenceReply?.safety === 'safe') help -= 2.5 * (0.4 + 0.8 * trust.sms);
   else if (silentDue && cutOff) help += 0.4; // cannot reach them in a hard-hit, cut-off cell
   let pNeedsHelp = sigmoid(help);
   // People-only visit (house not assessed): the occupants were seen, the property stays unverified.
@@ -139,7 +139,7 @@ export function estimateCellStub(input: CellInput): CellOutput {
       if (s.reply || s.claim || s.field) dueHeard++;
     }
     if (s.field?.safety === 'needs_help') fieldHelp++;
-    else if (!s.field && s.reply?.safety === 'needs_help') helpReplies++;
+    else if (!s.field && s.evidenceReply?.safety === 'needs_help') helpReplies++;
   }
 
   const silence = due > 0 ? clamp01(1 - dueHeard / (NORMAL_SIGNAL_RATE * due)) : 0;

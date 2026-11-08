@@ -12,7 +12,8 @@
 //    memberMissing on a field report opens a referral; unreachable_after_visit needs an 'unsure' visit and a note,
 //    and closing marks open assignments done (reopening does not)
 // 8. raw reply inbox: submit_raw_reply (reply passcode, 1..500 chars) and mark_reply_parsed (manager)
-// 9. Next best: location validation, list caps and order, accept_recommendation, field report moving a demo location
+// 9. Accepting a task posts an in-app notice and queues an iMessage; chat permissions; mark_imessage
+// 10. Next best: location validation, list caps and order, accept_recommendation, field report moving a demo location
 // --keep leaves the replay state as is at the end (default: pause).
 import { connect, errText, ownerToken, REPLY_PASSCODE, sleep, STAFF_PASSCODE, subscribe } from './lib.ts';
 
@@ -185,6 +186,19 @@ async function main() {
     );
   }
 
+  // A reply that only asks for a call-back (coverage question, parser unsure) must not move the estimates.
+  const callback = [...db.household.iter()].find(h => h.hex !== target.hex && h.hex !== other?.hex && !h.holdout && h.phoneOnFile && stats(h.hex)?.priority !== 'P0');
+  if (callback) {
+    const cell0 = stats(callback.hex);
+    const help0 = est(callback.id)?.pNeedsHelp ?? 0;
+    await outsider.conn.reducers.submitParsedReply({ householdId: callback.id, safety: 'needs_help', damage: 255, lifeSafety: false, needs: '', notHome: false, text: 'does my policy cover a hotel?', language: 'en', passcode: REPLY_PASSCODE });
+    await sleep(300);
+    const cell1 = stats(callback.hex);
+    const e1 = est(callback.id);
+    check('call-back-only reply leaves the cell alone', cell1?.priority === cell0?.priority && cell1?.helpReplies === cell0?.helpReplies, `${cell0?.priority} -> ${cell1?.priority}, helpReplies ${cell0?.helpReplies} -> ${cell1?.helpReplies}`);
+    check('call-back-only reply goes to customer care without raising pNeedsHelp', e1?.escalation === 'assistance' && (e1?.pNeedsHelp ?? 1) <= help0 + 0.05, `${e1?.escalation}, pNeedsHelp ${help0.toFixed(3)} -> ${e1?.pNeedsHelp.toFixed(3)}`);
+  }
+
   // ----- field reports: house not assessed, missing member, documented closure -----
   const reported = new Set([...db.fieldReport.iter()].map(r => r.householdId));
   const spare = [...db.household.iter()]
@@ -318,6 +332,29 @@ async function main() {
     check("accept_recommendation creates an 'assigned' assignment for the adjuster", taken.length === 1 && taken[0].adjuster.isEqual(adjuster.identity), `household ${top.householdId}, ${top.kind}, ${taken.length} open`);
     const list1 = recs();
     check('accepted household leaves the list and ranks are renumbered', !list1.some(r => r.householdId === top.householdId) && list1.every((r, i) => r.rank === i + 1), `${list1.length} rows`);
+
+    // Accepting tells the policyholder in the app and by iMessage; the adjuster can then chat.
+    await subscribe(manager.conn, ['SELECT * FROM chat_message', 'SELECT * FROM imessage_outbox']);
+    const chat = () => [...db.chatMessage.iter()].filter(c => c.householdId === top.householdId);
+    const notices = () => [...db.imessageOutbox.iter()].filter(m => m.householdId === top.householdId);
+    const notice = notices()[0];
+    check('accept posts one in-app notice and queues one iMessage', chat().filter(c => c.sender === 'system').length === 1 && notices().length === 1 && notice.status === 'queued', `${chat().length} chat, ${notices().length} iMessage`);
+    check('notices name the adjuster, say call 911 and promise no arrival', [...chat(), ...notices()].every(m => m.text.includes('has been assigned') && m.text.includes('call 911') && !/on the way|arriv|minutes|soon/i.test(m.text)), notice?.text ?? '');
+    await adjuster.conn.reducers.sendChatMessage({ householdId: top.householdId, text: '  Checking in, is everyone OK?  ' });
+    await sleep(300);
+    check('assigned adjuster can chat (trimmed)', chat().some(c => c.sender === 'adjuster' && c.text === 'Checking in, is everyone OK?'));
+    await expectReject('outsider send_chat_message', outsider.conn.reducers.sendChatMessage({ householdId: top.householdId, text: 'hi' }));
+    await expectReject('send_chat_message for a household not assigned to this adjuster', adjuster.conn.reducers.sendChatMessage({ householdId: unlisted.id, text: 'hi' }));
+    await expectReject('send_chat_message with empty text', adjuster.conn.reducers.sendChatMessage({ householdId: top.householdId, text: '   ' }));
+    await outsider.conn.reducers.submitRawReply({ householdId: top.householdId, text: 'we are OK, thanks', passcode: REPLY_PASSCODE });
+    await sleep(300);
+    check('typed policyholder reply appears in the chat', chat().some(c => c.sender === 'policyholder' && c.text === 'we are OK, thanks'));
+    if (notice) {
+      await expectReject('outsider mark_imessage', outsider.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' }));
+      await manager.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' });
+      await sleep(300);
+      check('manager mark_imessage', notices()[0]?.status === 'sent');
+    }
 
     const locBefore = myLoc();
     await adjuster.conn.reducers.submitFieldReport({ householdId: top.householdId, safety: 'safe', damage: 1, note: 'smoke test: next best visit', memberMissing: false });

@@ -8,6 +8,7 @@ import type { Ctx } from './schema';
 import { freshLearning, getMetrics, getModelState, getReplay, worldCtxOf } from './state';
 import { gatherHouseholdSignals, recomputeCells, recomputeHex, toHexCell } from './fusion';
 import { resetStaffCounters } from './staff';
+import { isCallbackOnly } from './fusion/reply';
 import { batchScores, DEFAULT_TRUST, nextTrust, sourceOpinions, TRUST_BATCH } from './fusion/trust';
 import type { Damage, Peril, Safety } from './fusion/contract';
 /** Needs a reply can carry (the Claude parser and the simulator use the same list). */
@@ -190,7 +191,7 @@ export function onEvent(ctx: Ctx, ev: IngestEvent, source: Source, batch?: Inges
         channel,
       });
       if (ev.damage !== null && ev.damage >= 2) stats.severeReplies += 1;
-      if (ev.safety === 'needs_help') {
+      if (ev.safety === 'needs_help' && !isCallbackOnly(ev)) {
         stats.helpReplies += 1;
         m.helpReplies += 1;
       }
@@ -343,17 +344,18 @@ export function rebuildAll(ctx: Ctx) {
   let callContacts = 0;
   for (const e of ctx.db.smsReply.iter()) {
     const s = byHex.get(e.hex);
-    if (e.safety === 'needs_help') helpReplies++;
+    const help = e.safety === 'needs_help' && !isCallbackOnly(e);
+    if (help) helpReplies++;
     // Same rules as onEvent: agent calls are counted apart from SMS replies; unknown damage is not "severe".
     if (e.channel === 'call') {
       callContacts++;
       if (s) s.callContacts++;
-      if (s && e.safety === 'needs_help') s.helpReplies++;
+      if (s && help) s.helpReplies++;
       continue;
     }
     if (!s) continue;
     if (e.damageKnown && e.damage >= 2) s.severeReplies++;
-    if (e.safety === 'needs_help') s.helpReplies++;
+    if (help) s.helpReplies++;
     if (!repliedHH.has(e.householdId)) {
       repliedHH.add(e.householdId);
       s.smsReplies++;
@@ -473,6 +475,8 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.assignment.clear();
   ctx.db.adjusterLocation.clear();
   ctx.db.adjusterRecommendation.clear();
+  ctx.db.chatMessage.clear();
+  ctx.db.imessageOutbox.clear();
   ctx.db.householdEstimate.clear();
   ctx.db.inspectionCandidate.clear();
   ctx.db.householdFollowup.clear();

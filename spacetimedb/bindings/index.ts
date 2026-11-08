@@ -42,6 +42,7 @@ import JoinAsReducer from "./join_as_reducer.ts";
 import JumpToReducer from "./jump_to_reducer.ts";
 import LeaveReducer from "./leave_reducer.ts";
 import LoadModelReducer from "./load_model_reducer.ts";
+import MarkImessageReducer from "./mark_imessage_reducer.ts";
 import MarkReplyParsedReducer from "./mark_reply_parsed_reducer.ts";
 import PauseReplayReducer from "./pause_replay_reducer.ts";
 import RecomputeAllReducer from "./recompute_all_reducer.ts";
@@ -56,6 +57,7 @@ import SeedHouseholdsReducer from "./seed_households_reducer.ts";
 import SeedStagedEventsReducer from "./seed_staged_events_reducer.ts";
 import SeedTruthReducer from "./seed_truth_reducer.ts";
 import SeedWorldReducer from "./seed_world_reducer.ts";
+import SendChatMessageReducer from "./send_chat_message_reducer.ts";
 import SetPasscodesReducer from "./set_passcodes_reducer.ts";
 import SetRecomputeCadenceReducer from "./set_recompute_cadence_reducer.ts";
 import SetSpeedReducer from "./set_speed_reducer.ts";
@@ -78,6 +80,7 @@ import WipeWorldReducer from "./wipe_world_reducer.ts";
 import AdjusterLocationRow from "./adjuster_location_table.ts";
 import AdjusterRecommendationRow from "./adjuster_recommendation_table.ts";
 import AssignmentRow from "./assignment_table.ts";
+import ChatMessageRow from "./chat_message_table.ts";
 import ClaimRow from "./claim_table.ts";
 import FacilityRow from "./facility_table.ts";
 import FieldReportRow from "./field_report_table.ts";
@@ -86,6 +89,7 @@ import HexStatsRow from "./hex_stats_table.ts";
 import HouseholdRow from "./household_table.ts";
 import HouseholdEstimateRow from "./household_estimate_table.ts";
 import HouseholdFollowupRow from "./household_followup_table.ts";
+import ImessageOutboxRow from "./imessage_outbox_table.ts";
 import InspectionCandidateRow from "./inspection_candidate_table.ts";
 import MemberRow from "./member_table.ts";
 import MetricsRow from "./metrics_table.ts";
@@ -150,6 +154,20 @@ const tablesSchema = __schema({
       { name: 'assignment_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, AssignmentRow),
+  chatMessage: __table({
+    name: 'chat_message',
+    indexes: [
+      { accessor: 'householdId', name: 'chat_message_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+      { accessor: 'id', name: 'chat_message_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'chat_message_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ChatMessageRow),
   claim: __table({
     name: 'claim',
     indexes: [
@@ -268,6 +286,20 @@ const tablesSchema = __schema({
       { name: 'household_followup_household_id_key', constraint: 'unique', columns: ['householdId'] },
     ],
   }, HouseholdFollowupRow),
+  imessageOutbox: __table({
+    name: 'imessage_outbox',
+    indexes: [
+      { accessor: 'householdId', name: 'imessage_outbox_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+      { accessor: 'id', name: 'imessage_outbox_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'imessage_outbox_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ImessageOutboxRow),
   inspectionCandidate: __table({
     name: 'inspection_candidate',
     indexes: [
@@ -446,6 +478,7 @@ const reducersSchema = __reducers(
   __reducerSchema("jump_to", JumpToReducer),
   __reducerSchema("leave", LeaveReducer),
   __reducerSchema("load_model", LoadModelReducer),
+  __reducerSchema("mark_imessage", MarkImessageReducer),
   __reducerSchema("mark_reply_parsed", MarkReplyParsedReducer),
   __reducerSchema("pause_replay", PauseReplayReducer),
   __reducerSchema("recompute_all", RecomputeAllReducer),
@@ -460,6 +493,7 @@ const reducersSchema = __reducers(
   __reducerSchema("seed_staged_events", SeedStagedEventsReducer),
   __reducerSchema("seed_truth", SeedTruthReducer),
   __reducerSchema("seed_world", SeedWorldReducer),
+  __reducerSchema("send_chat_message", SendChatMessageReducer),
   __reducerSchema("set_passcodes", SetPasscodesReducer),
   __reducerSchema("set_recompute_cadence", SetRecomputeCadenceReducer),
   __reducerSchema("set_speed", SetSpeedReducer),
