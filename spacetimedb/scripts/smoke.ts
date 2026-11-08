@@ -12,6 +12,7 @@
 //    memberMissing on a field report opens a referral; unreachable_after_visit needs an 'unsure' visit and a note,
 //    and closing marks open assignments done (reopening does not)
 // 8. raw reply inbox: submit_raw_reply (reply passcode, 1..500 chars) and mark_reply_parsed (manager)
+// 9. Next best: location validation, list caps and order, accept_recommendation, field report moving a demo location
 // --keep leaves the replay state as is at the end (default: pause).
 import { connect, errText, ownerToken, REPLY_PASSCODE, sleep, STAFF_PASSCODE, subscribe } from './lib.ts';
 
@@ -276,6 +277,58 @@ async function main() {
     await sleep(200);
     const done = [...db.replyInbox.iter()].find(r => r.id === inbox.id);
     check('manager mark_reply_parsed', done?.status === 'failed' && done.error === 'smoke' && done.parsedAt !== undefined);
+  }
+
+  // ----- Next best: location-based task recommendations -----
+  await subscribe(manager.conn, ['SELECT * FROM adjuster_location']);
+  await subscribe(adjuster.conn, ['SELECT * FROM my_recommendations']);
+  const recs = () => [...adjuster.conn.db.myRecommendations.iter()].sort((a, b) => a.rank - b.rank);
+  const myLoc = () => [...db.adjusterLocation.iter()].find(l => l.identity.isEqual(adjuster.identity));
+  const tier = (p: string) => (p === 'P0' ? 0 : p === 'P1' ? 1 : p === 'P2' ? 2 : 3);
+
+  // Comes first: this adjuster has no location yet (reset_demo cleared the table, earlier reports must not create one).
+  await expectReject('refresh_recommendations before any location', adjuster.conn.reducers.refreshRecommendations({}));
+  await expectReject('outsider update_my_location', outsider.conn.reducers.updateMyLocation({ lat: hh.lat, lng: hh.lng, source: 'demo' }));
+  await expectReject('update_my_location with lat 91', adjuster.conn.reducers.updateMyLocation({ lat: 91, lng: hh.lng, source: 'demo' }));
+  await expectReject('update_my_location with NaN lat', adjuster.conn.reducers.updateMyLocation({ lat: Number.NaN, lng: hh.lng, source: 'demo' }));
+  await expectReject('update_my_location with an unknown source', adjuster.conn.reducers.updateMyLocation({ lat: hh.lat, lng: hh.lng, source: 'satellite' }));
+
+  await adjuster.conn.reducers.updateMyLocation({ lat: hh.lat, lng: hh.lng, source: 'demo' });
+  await sleep(300);
+  const list0 = recs();
+  check('update_my_location at a household yields recommendations', list0.length > 0, `${list0.length} rows`);
+  const perHex = new Map<string, number>();
+  for (const r of list0) perHex.set(r.hex, (perHex.get(r.hex) ?? 0) + 1);
+  check('at most 10 rows and 3 per cell', list0.length <= 10 && [...perHex.values()].every(n => n <= 3), `${list0.length} rows, per cell ${[...perHex.values()].join(',')}`);
+  check('cell tier never improves down the list', list0.every((r, i) => i === 0 || tier(list0[i - 1].priority) <= tier(r.priority)), list0.map(r => r.priority).join(','));
+  const openIds = new Set([...db.assignment.iter()].filter(a => a.status === 'assigned').map(a => a.householdId));
+  check('no listed household has an open assignment', list0.every(r => !openIds.has(r.householdId)), `${openIds.size} open assignment(s)`);
+
+  // Picked from the live list: the earlier steps already reported, assigned or closed some households.
+  const listed = new Set(list0.map(r => r.householdId));
+  const unlisted = [...db.household.iter()].find(h => !listed.has(h.id));
+  const top = list0[0];
+  const topHousehold = top && [...db.household.iter()].find(h => h.id === top.householdId);
+  if (unlisted && top && topHousehold) {
+    await expectReject('accept_recommendation for a household not in the list', adjuster.conn.reducers.acceptRecommendation({ householdId: unlisted.id }));
+
+    await adjuster.conn.reducers.acceptRecommendation({ householdId: top.householdId });
+    await sleep(300);
+    const taken = [...db.assignment.iter()].filter(a => a.householdId === top.householdId && a.status === 'assigned');
+    check("accept_recommendation creates an 'assigned' assignment for the adjuster", taken.length === 1 && taken[0].adjuster.isEqual(adjuster.identity), `household ${top.householdId}, ${top.kind}, ${taken.length} open`);
+    const list1 = recs();
+    check('accepted household leaves the list and ranks are renumbered', !list1.some(r => r.householdId === top.householdId) && list1.every((r, i) => r.rank === i + 1), `${list1.length} rows`);
+
+    const locBefore = myLoc();
+    await adjuster.conn.reducers.submitFieldReport({ householdId: top.householdId, safety: 'safe', damage: 1, note: 'smoke test: next best visit', memberMissing: false });
+    await sleep(300);
+    const locAfter = myLoc();
+    check(
+      'field report moves a demo location to the household',
+      locAfter?.source === 'demo' && locAfter.lat === topHousehold.lat && locAfter.lng === topHousehold.lng,
+      `${locBefore?.lat.toFixed(5)},${locBefore?.lng.toFixed(5)} -> ${locAfter?.lat.toFixed(5)},${locAfter?.lng.toFixed(5)}, source ${locAfter?.source}`
+    );
+    check('reported household is not back on the recomputed list', !recs().some(r => r.householdId === top.householdId), `${recs().length} rows`);
   }
 
   const mEnd = metrics();
