@@ -1,10 +1,16 @@
 // Targeted subscriptions for the adjuster phone: only rows for my assigned households (and their cells).
 // Each query is keyed on the sorted id set, so it re-subscribes only when my assignments change.
 import { useMemo } from 'react';
+import type { Infer } from 'spacetimedb';
 import { useTable } from 'spacetimedb/react';
 import { tables } from '../../module_bindings/index.ts';
+import type ChatMessageRowDef from '../../module_bindings/chat_message_table.ts';
+import type ImessageOutboxRowDef from '../../module_bindings/imessage_outbox_table.ts';
 import type { FieldReportRow, HexRow, HouseholdFollowupRow, SmsReplyRow } from '../rows';
 import type { SmsSentRow } from './derive';
+
+export type ChatRow = Infer<typeof ChatMessageRowDef>;
+export type ImessageRow = Infer<typeof ImessageOutboxRowDef>;
 
 const NONE = '__none__';
 const EMPTY: readonly never[] = [];
@@ -62,6 +68,32 @@ export function useSentFor(ids: readonly string[]): Map<string, SmsSentRow[]> {
   }, [key]);
   const [rows] = useTable(q, { enabled: key.length > 0 });
   return useMemo(() => group(key ? rows : EMPTY), [rows, key]);
+}
+
+/** Latest iMessage notice per household (the one sent when I accepted it). */
+export function useImessageFor(ids: readonly string[]): Map<string, ImessageRow> {
+  const key = idKey(ids);
+  const q = useMemo(() => {
+    const list = listOf(key);
+    return tables.imessageOutbox.where((r) => list.map((id) => r.householdId.eq(id)).reduce((a, b) => a.or(b)));
+  }, [key]);
+  const [rows] = useTable(q, { enabled: key.length > 0 });
+  return useMemo(() => {
+    const m = new Map<string, ImessageRow>();
+    for (const r of key ? rows : EMPTY) {
+      const cur = m.get(r.householdId);
+      if (!cur || r.id > cur.id) m.set(r.householdId, r);
+    }
+    return m;
+  }, [rows, key]);
+}
+
+/** One household's chat thread, oldest first. Subscribed only while the thread is open. */
+export function useChatThread(householdId: string | null): { rows: ChatRow[]; ready: boolean } {
+  const q = useMemo(() => tables.chatMessage.where((r) => r.householdId.eq(householdId ?? NONE)), [householdId]);
+  const [rows, ready] = useTable(q, { enabled: !!householdId });
+  const sorted = useMemo(() => (householdId ? [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) : []), [rows, householdId]);
+  return { rows: sorted, ready };
 }
 
 export function useHexRows(hexes: readonly string[]): Map<string, HexRow> {

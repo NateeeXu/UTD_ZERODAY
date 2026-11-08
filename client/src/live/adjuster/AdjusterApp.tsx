@@ -15,7 +15,8 @@ import type {
   AssignmentRow, FieldReportRow, HexRow, HexStatsRow, HouseholdEstimateRow, HouseholdFollowupRow, HouseholdRow, MemberRow, SmsReplyRow,
 } from '../rows';
 import * as D from './derive';
-import { useFollowupsFor, useHexRows, useRepliesFor, useReportsFor, useSentFor } from './data';
+import { useFollowupsFor, useHexRows, useImessageFor, useRepliesFor, useReportsFor, useSentFor, type ImessageRow } from './data';
+import { ChatScreen, NotifiedCard, NotifiedChips } from './Chat';
 import { useOutbox, type Draft, type ReportMode, type SentRecord } from './outbox';
 import { PhoneMap, type MapArea } from './PhoneMap';
 import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget } from './ReportFlow';
@@ -45,6 +46,8 @@ interface Task {
   silent: number | null;
   banner: D.Banner | null;
   unsent: boolean;
+  /** Latest iMessage notice for this household: present when I accepted it from Next best. */
+  notice?: ImessageRow;
 }
 
 type Route =
@@ -52,7 +55,8 @@ type Route =
   | { name: 'home'; id: string; close?: boolean }
   | { name: 'goto'; id: string }
   | { name: 'report'; id: string; mode: ReportMode; prefillOp?: string; opId?: string }
-  | { name: 'sent'; opId: string };
+  | { name: 'sent'; opId: string }
+  | { name: 'chat'; id: string; from: 'tasks' | 'home' };
 
 export function AdjusterApp() {
   const [myMember, memberReady] = useTable(tables.myMember);
@@ -100,7 +104,9 @@ function LiveBadge({ state, unsent, className = '' }: { state: LiveState; unsent
 }
 
 // "Next best" row (docs/ADJUSTER_APP.md section 2.7): the caller's own recommendations.
-export type NextBest = { householdId: string; rank: number; priority: string; distanceKm: number; reason: string };
+export type NextBest = { householdId: string; rank: number; priority: string; distanceKm: number; etaMin: number; reason: string };
+/** Next best distance: straight line, miles with one decimal. */
+const recMiles = (km: number) => `${(km * 0.621).toFixed(1)} mi`;
 
 function Field({ meName }: { meName: string }) {
   const conn = useSpacetimeDB();
@@ -202,7 +208,7 @@ function Field({ meName }: { meName: string }) {
   const nextBest: NextBest | null = useMemo(() => {
     if (!recRows.length) return null;
     const r = [...recRows].sort((a, b) => a.rank - b.rank)[0];
-    return { householdId: r.householdId, rank: r.rank, priority: r.priority, distanceKm: r.distanceKm, reason: r.reason };
+    return { householdId: r.householdId, rank: r.rank, priority: r.priority, distanceKm: r.distanceKm, etaMin: r.etaMin, reason: r.reason };
   }, [recRows]);
 
   const setStart = useCallback(async (lat: number, lng: number) => {
@@ -220,15 +226,24 @@ function Field({ meName }: { meName: string }) {
       showToast(e instanceof Error ? e.message : String(e));
     }
   }, [refreshRecs, showToast]);
+  // After Accept: "Customer notified" for that household, shown once its assignment arrives. A task that is
+  // no longer needed makes no assignment, so nothing shows and the card moves to the next row.
+  const [acceptedId, setAcceptedId] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState(false);
   const acceptBest = useCallback(async () => {
-    if (!nextBest) return;
+    if (!nextBest || accepting) return;
+    const hid = nextBest.householdId;
+    setAccepting(true);
     try {
-      await acceptRec({ householdId: nextBest.householdId });
-      showToast('Task added');
+      await acceptRec({ householdId: hid });
+      setAcceptedId(hid);
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAccepting(false);
     }
-  }, [acceptRec, nextBest, showToast]);
+  }, [acceptRec, nextBest, accepting, showToast]);
+  const imessageBy = useImessageFor(acceptedId ? [...ids, acceptedId] : ids);
 
   // Rebuild "Next best" when the Tasks page opens (and after a reconnect). Never on a timer.
   const onTasks = route.name === 'tasks';
@@ -265,6 +280,7 @@ function Field({ meName }: { meName: string }) {
         district: labeler.district(a.hex), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
         replies, reports, sent, followup, silent: D.silentHours(est, sim, replies, sent),
         banner: D.taskBanner({ a, replies, reports, followup, me: myId, type }), unsent: unsentIds.has(id),
+        notice: imessageBy.get(id),
       };
     });
     const openT = built.filter((t) => t.open).sort((x, y) =>
@@ -274,7 +290,7 @@ function Field({ meName }: { meName: string }) {
     openT.forEach((t, i) => { t.number = i + 1; });
     const doneT = built.filter((t) => !t.open).sort((x, y) => Number(y.a.updatedAt.microsSinceUnixEpoch - x.a.updatedAt.microsSinceUnixEpoch));
     return { open: openT, done: doneT };
-  }, [active, estimateBy, repliesBy, reportsBy, sentBy, followupBy, cellBy, householdBy, hexBy, labeler, mePos, sim, myId, unsentIds]);
+  }, [active, estimateBy, repliesBy, reportsBy, sentBy, followupBy, cellBy, householdBy, hexBy, labeler, mePos, sim, myId, unsentIds, imessageBy]);
   const byId = useMemo(() => new Map([...open, ...done].map((t) => [t.id, t])), [open, done]);
 
   // "New task assigned" (no address, no household details)
@@ -315,6 +331,21 @@ function Field({ meName }: { meName: string }) {
   const toastEl = toast && <div className="adj-toast" role="status">{toast}</div>;
 
   // ---- Routes ----
+  if (route.name === 'chat') {
+    const t = byId.get(route.id);
+    if (!t) return <Fallback onBack={() => setRoute({ name: 'tasks' })} />;
+    return (
+      <div className="adj">
+        <ChatScreen
+          householdId={t.id} label={t.label} meName={meName} canSend={live === 'live'}
+          live={<LiveBadge state={live} unsent={outbox.items.length} className="soft" />}
+          onBack={() => setRoute(route.from === 'home' ? { name: 'home', id: t.id } : { name: 'tasks' })}
+        />
+        {toastEl}
+      </div>
+    );
+  }
+
   if (route.name === 'report') {
     const t = byId.get(route.id);
     if (!t) return <Fallback onBack={() => setRoute({ name: 'tasks' })} />;
@@ -408,6 +439,7 @@ function Field({ meName }: { meName: string }) {
           onBack={() => setRoute({ name: 'tasks' })}
           onGo={() => setRoute({ name: 'goto', id: t.id })}
           onReport={() => setRoute({ name: 'report', id: t.id, mode: 'new' })}
+          onMessage={() => setRoute({ name: 'chat', id: t.id, from: 'home' })}
           onClose={() => setRoute({ name: 'home', id: t.id, close: true })}
           onDismiss={() => b && dismiss(`${t.a.id}:${b.key}`)}
           onSkip={() => void skipTask(t)}
@@ -434,11 +466,14 @@ function Field({ meName }: { meName: string }) {
     );
   }
 
+  const accepted = acceptedId ? byId.get(acceptedId) : undefined;
   return (
     <div className="adj">
       <TasksView
         open={open} done={done} me={mePos} hasStart={hasStart} isDefaultStart={isDefaultStart} regionCenter={regionCenter} meName={whoAmI} sim={sim} badge={badge}
-        nextBest={nextBest} onSetStart={setStart} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
+        nextBest={nextBest} accepting={accepting} onSetStart={setStart} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
+        accepted={accepted} onDismissAccepted={() => setAcceptedId(null)}
+        onMessage={(id) => setRoute({ name: 'chat', id, from: 'tasks' })}
         bannerFor={bannerFor} myId={myId}
         onOpen={(id) => setRoute({ name: 'home', id })}
         onGo={(id) => setRoute({ name: 'goto', id })}
@@ -522,13 +557,15 @@ function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
 }
 
 // ---- Screen 1: Tasks ----
-function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, onSetStart, onAccept, onRefresh, onOpen, onGo, onDismiss, onSkip }: {
+function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, accepting, onSetStart, onAccept, onRefresh, accepted, onDismissAccepted, onMessage, onOpen, onGo, onDismiss, onSkip }: {
   open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; isDefaultStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
   bannerFor: (t: Task) => D.Banner | null; myId?: Parameters<typeof D.taskBanner>[0]['me'];
-  nextBest: NextBest | null; onSetStart: (lat: number, lng: number) => void; onAccept: () => void; onRefresh: () => void;
+  nextBest: NextBest | null; accepting: boolean; onSetStart: (lat: number, lng: number) => void; onAccept: () => void; onRefresh: () => void;
+  accepted?: Task; onDismissAccepted: () => void; onMessage: (id: string) => void;
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(false);
   // Picking a start: only before the region has loaded (no default yet), or after "Move start".
   const [moving, setMoving] = useState(false);
   const picking = !hasStart || moving;
@@ -560,7 +597,7 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
     <>
       <PhoneMap
         areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
-        padBottom={(expanded ? 520 : 330) + (showBest ? 110 : 0)}
+        padBottom={(expanded ? 520 : 330) + (showBest ? (whyOpen ? 190 : 120) : 0) + (accepted ? 170 : 0)}
         fallbackCenter={regionCenter}
         onAreaClick={picking ? undefined : pickArea}
         onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
@@ -598,15 +635,34 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
           onClick={(e) => { if (e.detail === 0) setExpanded((x) => !x); }}
         ><span /></button>
 
+        {accepted && (
+          <NotifiedCard
+            label={accepted.label} imessage={accepted.notice} onDismiss={onDismissAccepted}
+            onMessage={() => onMessage(accepted.id)} onOpen={() => onOpen(accepted.id)}
+          />
+        )}
+
         {showBest && nextBest && (
           <article className="adj-card adj-best" aria-label="Next best">
-            <span className={`adj-p ${prio(nextBest.priority)}`}>{prio(nextBest.priority)}</span>
-            <span className="adj-best-main">
-              <b>Next best · {D.fmtMiles(nextBest.distanceKm * 0.621371)}</b>
-              <span>{nextBest.reason}</span>
-            </span>
-            <button type="button" className="adj-iconbtn" aria-label="Refresh suggestions" onClick={onRefresh}><Icon name="refresh" size={18} stroke={2} /></button>
-            <button type="button" className="adj-btn dark small" onClick={onAccept}>Accept</button>
+            <div className="adj-best-row">
+              <span className={`adj-p ${prio(nextBest.priority)}`}>{prio(nextBest.priority)}</span>
+              <span className="adj-best-main">
+                <b>Next best · {recMiles(nextBest.distanceKm)}</b>
+                <span>{nextBest.reason}</span>
+              </span>
+              <button type="button" className="adj-iconbtn t44" aria-label="Refresh suggestions" onClick={onRefresh}><Icon name="refresh" size={18} stroke={2} /></button>
+              <button type="button" className="adj-btn dark small t44" disabled={accepting} onClick={onAccept}>Accept</button>
+            </div>
+            <button type="button" className="adj-why-toggle" aria-expanded={whyOpen} aria-controls="adj-why" onClick={() => setWhyOpen((x) => !x)}>
+              <Icon name="down" size={16} stroke={2.2} />Why this task
+            </button>
+            {whyOpen && (
+              <ul id="adj-why" className="adj-why">
+                <li>{prio(nextBest.priority)} area · {nextBest.reason}</li>
+                <li>{recMiles(nextBest.distanceKm)} · {Math.round(nextBest.etaMin)} min drive</li>
+                <li className="adj-why-note">Ranked by priority, then value per minute. Rules, not AI.</li>
+              </ul>
+            )}
           </article>
         )}
 
@@ -638,6 +694,7 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
                 )}
                 <div className="adj-actions">
                   <button type="button" className="adj-btn outline" onClick={() => onGo(next.id)}><Icon name="nav" size={16} stroke={2} />Go to area</button>
+                  <button type="button" className="adj-btn outline adj-msgbtn" aria-label="Message" title="Message" onClick={() => onMessage(next.id)}><Icon name="talk" size={18} stroke={2} /></button>
                   <button type="button" className="adj-btn dark grow" onClick={() => onOpen(next.id)}>Open home</button>
                 </div>
               </div>
@@ -667,9 +724,9 @@ function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meN
 }
 
 // ---- Screen 2: Home ----
-function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onBack, onGo, onReport, onClose, onDismiss, onSkip }: {
+function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onBack, onGo, onReport, onMessage, onClose, onDismiss, onSkip }: {
   t: Task; total: number; me: D.LatLng | null; live: LiveState; unsent: number; hazardType?: string; subline: string; banner: D.Banner | null;
-  onBack: () => void; onGo: () => void; onReport: () => void; onClose: () => void; onDismiss: () => void; onSkip: () => void;
+  onBack: () => void; onGo: () => void; onReport: () => void; onMessage: () => void; onClose: () => void; onDismiss: () => void; onSkip: () => void;
 }) {
   const [callTried, setCallTried] = useState(false);
   const why = D.whyText({ hazardType, hex: t.hexRow, cell: t.cell, hh: t.hh, replies: t.replies, silent: t.silent, type: t.type });
@@ -725,12 +782,23 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
               <div className="adj-irow">
                 <Icon name="phone" />
                 <span className="grow">Phone on file</span>
-                <button type="button" className="adj-btn outline small" onClick={() => setCallTried(true)}>Call</button>
+                <button type="button" className="adj-btn outline small t44" onClick={() => setCallTried(true)}>Call</button>
               </div>
               {callTried && <span className="adj-toastline" role="status">Demo household: no real number</span>}
             </>
           ) : (
             <div className="adj-irow"><Icon name="phone" /><span className="grow">No phone on file · try emergency contact</span></div>
+          )}
+          <div className="adj-irow">
+            <Icon name="talk" />
+            <span className="grow">Messages</span>
+            <button type="button" className="adj-btn outline small t44" onClick={onMessage}>Message</button>
+          </div>
+          {t.notice && (
+            <div className="adj-irow">
+              <Icon name="check" />
+              <span className="grow stack"><b>Customer notified</b><NotifiedChips imessage={t.notice} /></span>
+            </div>
           )}
           <div className="adj-irow">
             <Icon name="person" />
