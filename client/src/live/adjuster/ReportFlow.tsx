@@ -1,5 +1,5 @@
 // Field report (screen 3), report sent (screen 4) and "Can't make contact" (screen 5).
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { HexStatsRow, HouseholdFollowupRow, HouseholdRow } from '../rows';
 import * as D from './derive';
 import type { Draft, OutboxItem, PeoplePick, ReportMode, SentRecord } from './outbox';
@@ -11,6 +11,21 @@ const DAMAGE_NAMES = ['None', 'Minor', 'Severe', 'Uninhabitable'] as const;
 const REASONS = ['Unsafe to enter', 'No access', 'Dark, no power'];
 const QUICK = ['Trapped', 'Injured', 'Medical', 'Shelter'];
 const WATCHDOG_MS = 30_000;
+const NOTE_MAX_H = 104;
+
+// Notes start on one line and grow to about four.
+function useAutoGrow(key: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const h = el.scrollHeight + 2; // + the 1 px borders (border-box)
+    el.style.height = `${Math.min(h, NOTE_MAX_H)}px`;
+    el.style.overflowY = h > NOTE_MAX_H ? 'auto' : 'hidden';
+  }, [key]);
+  return ref;
+}
 
 export interface ReportTarget {
   householdId: string;
@@ -31,7 +46,7 @@ function Call911({ className }: { className: string }) {
   return (
     <>
       <button type="button" className={className} onClick={() => setTapped(true)}>
-        <Icon name="phone" size={19} stroke={2.2} />Call 911 now
+        <Icon name="phone" size={17} stroke={2.2} />Call 911 now
       </button>
       {tapped && <span className="adj-notice" role="status">Demo only. No call placed.</span>}
     </>
@@ -62,6 +77,7 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
   const [reason, setReason] = useState<string | null>(prefill?.reason ?? null);
   const [userNote, setUserNote] = useState(mode === 'correction' ? `Correction: ${prefill?.userNote ?? ''}` : mode === 'update' ? '' : '');
   const [now, setNow] = useState(() => Date.now());
+  const noteRef = useAutoGrow(userNote);
   useEffect(() => {
     if (!item) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -115,9 +131,9 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
       <div className="adj-scroll">
         <section className="adj-sec" aria-label="People">
           <h2>People</h2>
-          <div className="adj-grid2">
+          <div className="adj-grid3">
             {PEOPLE.map((o) => (
-              <button key={o.v} type="button" className="adj-tile" aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.v === 'nobody' && remote ? 'No answer' : o.label}</button>
+              <button key={o.v} type="button" className={`adj-tile${o.v === 'nobody' ? ' weak' : ''}`} aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.v === 'nobody' && remote ? 'No answer' : o.label}</button>
             ))}
           </div>
           {pick === 'needs_help' && (
@@ -140,15 +156,15 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
 
         <section className="adj-sec" aria-label="Home">
           <div className="adj-sechead">
-            <h2>{target.policy === 'condo' ? 'Unit' : 'Home'}{covered && target.type === 'Welfare check' && <span className="adj-muted" style={{ fontWeight: 500 }}> · optional</span>}</h2>
+            <h2>{target.policy === 'condo' ? 'Unit' : 'Home'} damage{covered && target.type === 'Welfare check' && <span className="adj-muted" style={{ fontWeight: 500 }}> · optional</span>}</h2>
             <span className="adj-muted">{D.POLICY_LABEL[target.policy]}</span>
           </div>
           {covered ? (
             <>
-              <div className="adj-grid2">
+              <div className="adj-grid4">
                 {DAMAGE_NAMES.map((name, d) => (
                   <button key={d} type="button" className="adj-tile" aria-pressed={damageChoice === String(d)}
-                    onClick={() => { setDamageChoice(damageChoice === String(d) ? null : String(d)); setReason(null); }}>{d} {name}</button>
+                    onClick={() => { setDamageChoice(damageChoice === String(d) ? null : String(d)); setReason(null); }}>{name}</button>
                 ))}
                 <button type="button" className="adj-tile weak" aria-pressed={damageChoice === 'na'}
                   onClick={() => { setDamageChoice(damageChoice === 'na' ? null : 'na'); setReason(null); }}>Couldn't assess</button>
@@ -169,16 +185,16 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
           )}
         </section>
 
-        <section className="adj-sec" aria-label="Note">
-          <div className="adj-sechead"><h2>Note</h2><span className="adj-muted">{na ? 'Required' : 'Optional'}</span></div>
+        <section className="adj-sec" aria-label="Needs and note">
+          <div className="adj-sechead"><h2>Needs</h2>{na && <span className="adj-muted">Note required</span>}</div>
           <div className="adj-chips">
             {QUICK.map((q) => (
               <button key={q} type="button" className="adj-chipbtn" aria-pressed={userNote.includes(`${q}. `)} onClick={() => toggleQuick(q)}>{q}</button>
             ))}
           </div>
-          <textarea className="adj-note" aria-label="Note" rows={2} maxLength={500} value={userNote}
+          <textarea ref={noteRef} className="adj-note" aria-label="Note" rows={1} maxLength={500} value={userNote}
             onChange={(e) => setUserNote(e.target.value)}
-            placeholder={pick === 'missing' ? 'Who is missing? Last seen where?' : 'What you saw'} />
+            placeholder={pick === 'missing' ? 'Who is missing? Last seen where?' : na ? 'Note (required): why?' : 'Add a note'} />
         </section>
       </div>
 
@@ -202,9 +218,9 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
         {item?.state === 'failed' && (
           <>
             <p className="adj-statebar failed" role="alert">Failed: {item.error ?? 'the server rejected the report'}</p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="adj-footrow">
               <button type="button" className="adj-link" onClick={onEdit}>Edit</button>
-              <button type="button" className="adj-btn dark" style={{ height: 50, padding: '0 26px' }} onClick={onTryNow}>Try again</button>
+              <button type="button" className="adj-btn dark" onClick={onTryNow}>Try again</button>
             </div>
           </>
         )}
@@ -257,25 +273,25 @@ export function SentSheet({ rec, cell, followup, reportT, next, nextOf, onUpdate
     <section className="adj-bottom" aria-label="Report sent">
       <span className="adj-grab" />
       <div className="adj-result">
-        <span className={`icon ${head.icon}`}>{head.mark || <Icon name="check" size={22} stroke={2.6} />}</span>
+        <span className={`icon ${head.icon}`}>{head.mark || <Icon name="check" size={16} stroke={2.8} />}</span>
         <div>
           <h1>{head.title}</h1>
-          <span className="adj-sub">{fmtT(reportT)} · {sub}</span>
+          <span className={`adj-sub${urgent ? ' urgent' : ''}`}>{fmtT(reportT)} · {sub}</span>
         </div>
       </div>
 
       <div className="adj-lines">
         <div className="adj-irow">
-          <Icon name="person" />
+          <Icon name="person" size={16} />
           {pick === 'nobody' ? (
-            <span className="grow"><b>Still unaccounted</b><br /><span className="adj-muted">Next: Locate (emergency contact, shelters)</span></span>
+            <span className="grow stack"><b>Still unaccounted</b><span className="adj-muted">Next: Locate (emergency contact, shelters)</span></span>
           ) : (
             <b className="grow">{pick === 'safe' ? 'Everyone accounted for' : pick === 'needs_help' ? 'Needs help' : 'Someone missing'}</b>
           )}
           {urgent && <span className="adj-tag red">{referral}</span>}
         </div>
-        <div className="adj-irow"><Icon name="house" /><b className="grow">{home}</b></div>
-        {area && <div className="adj-irow"><Icon name="hex" /><b className="grow" style={{ fontVariantNumeric: 'tabular-nums' }}>{area}</b></div>}
+        <div className="adj-irow"><Icon name="house" size={16} /><b className="grow">{home}</b></div>
+        {area && <div className="adj-irow"><Icon name="hex" size={16} /><b className="grow" style={{ fontVariantNumeric: 'tabular-nums' }}>{area}</b></div>}
       </div>
 
       {pick === 'needs_help' && <button type="button" className="adj-btn dark block" onClick={onUpdate}>Add update</button>}
@@ -284,8 +300,8 @@ export function SentSheet({ rec, cell, followup, reportT, next, nextOf, onUpdate
           <span className="adj-muted" style={{ color: pick === 'needs_help' ? undefined : 'rgba(255,255,255,0.75)' }}>{pick === 'needs_help' ? 'Next' : `Next up · ${nextOf}`}</span>
           <span className={`adj-p ${next.priority}`}>{next.priority}</span>
           <b className="grow">{next.label}</b>
-          {next.distance && <span style={{ fontSize: 13.5, opacity: 0.75 }}>{next.distance}</span>}
-          <Icon name="chevron" size={18} stroke={2} />
+          {next.distance && <span className="dist">{next.distance}</span>}
+          <Icon name="chevron" size={16} stroke={2} />
         </button>
       ) : (
         <div className="adj-nextcard" style={{ cursor: 'default' }}><b className="grow">All tasks done</b></div>
@@ -314,6 +330,7 @@ export function CloseSheet({ canUnreachable, canSkip, onCancel, onSkip, onCloseH
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const skip = reason === 'skip';
+  const noteRef = useAutoGrow(`${skip}:${note}`);
   const ok = reason != null && (skip || note.trim().length >= 3) && !busy;
   const options: { v: CloseReason; label: string; hint?: string; disabled?: boolean }[] = [
     ...(canSkip ? [{ v: 'skip' as const, label: "Can't get there" }] : []),
@@ -340,7 +357,7 @@ export function CloseSheet({ canUnreachable, canSkip, onCancel, onSkip, onCloseH
       <div className="adj-dim" onClick={onCancel} />
       <section className="adj-bottom" role="dialog" aria-label="Can't make contact">
         <span className="adj-grab" />
-        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em' }}>Can't make contact</h1>
+        <h1 className="adj-sheettitle">Can't make contact</h1>
         <div role="radiogroup" aria-label="Reason" style={{ borderTop: '1px solid var(--line)' }}>
           {options.map((o) => (
             <button key={o.v} type="button" role="radio" className="adj-radio" aria-checked={reason === o.v} disabled={o.disabled} onClick={() => setReason(o.v)}>
@@ -350,13 +367,13 @@ export function CloseSheet({ canUnreachable, canSkip, onCancel, onSkip, onCloseH
           ))}
         </div>
         {!skip && (
-          <textarea className="adj-note" aria-label="Note, required" rows={2} maxLength={500} value={note}
+          <textarea ref={noteRef} className="adj-note" aria-label="Note, required" rows={1} maxLength={500} value={note}
             onChange={(e) => setNote(e.target.value)} placeholder="Note (required): why?" />
         )}
         {error && <p className="adj-error" role="alert">{error}</p>}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="adj-footrow">
           <button type="button" className="adj-link" onClick={onCancel}>Cancel</button>
-          <button type="button" className="adj-btn dark" style={{ height: 50, padding: '0 26px' }} disabled={!ok} onClick={submit}>
+          <button type="button" className="adj-btn dark" disabled={!ok} onClick={submit}>
             {busy ? 'Saving…' : skip ? 'Skip task' : 'Close home'}
           </button>
         </div>
