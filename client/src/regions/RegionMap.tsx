@@ -3,8 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { MultiPolygon } from 'polygon-clipping';
 import type { Region } from './buildRegion';
-
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+import { addBasemap } from '../basemap';
 
 // [lng, lat] MultiPolygon → Leaflet [lat, lng] nesting.
 const toLeaflet = (mp: MultiPolygon) => mp.map((poly) => poly.map((ring) => ring.map(([lng, lat]) => [lat, lng] as [number, number])));
@@ -23,11 +22,7 @@ export function RegionMap({ region, opts }: { region: Region; opts: RegionMapOpt
   useEffect(() => {
     if (!el.current) return;
     const m = L.map(el.current, { zoomControl: true, zoomSnap: 0.25 });
-    L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, { attribution: 'Tiles &copy; Esri', maxZoom: 16 }).addTo(m);
-    m.createPane('labels');
-    m.getPane('labels')!.style.zIndex = '450';
-    m.getPane('labels')!.style.pointerEvents = 'none';
-    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { pane: 'labels', maxZoom: 16, opacity: 0.7 }).addTo(m);
+    addBasemap(m, { labelsOpacity: 0.7 });
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     return () => {

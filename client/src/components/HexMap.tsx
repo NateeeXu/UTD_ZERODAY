@@ -5,6 +5,7 @@ import { cellToBoundary, cellToLatLng } from 'h3-js';
 import type { HexId, World } from '@shared/types';
 import type { HexView } from '../engine/placeholderEstimate';
 import { PATTERN_DEFS, paintFused, paintSea, seaClass, type HexPaint, type SeaMode, type VariantId } from './hexStyle';
+import { addBasemap } from '../basemap';
 
 export type Layer = 'fused' | 'hazard' | 'silence' | 'claims';
 
@@ -28,7 +29,6 @@ interface HexLayers {
   inset: L.Polygon;
 }
 
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 const EMPTY = new Set<HexId>();
 
 function layerValue(h: HexView, layer: Layer): number {
@@ -61,19 +61,8 @@ export function HexMap({
     if (!el.current) return;
     // No zoom buttons: they'd sit under the floating cards; scroll/pinch still zoom.
     const m = L.map(el.current, { zoomControl: false, attributionControl: true, zoomSnap: 0.25 });
-    // Keyless light-grey basemap (Esri Canvas) + its label layer on top.
-    L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
-      attribution: 'Tiles &copy; Esri',
-      maxZoom: 16,
-    }).addTo(m);
-    m.createPane('labels');
-    m.getPane('labels')!.style.zIndex = '450';
-    m.getPane('labels')!.style.pointerEvents = 'none';
-    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, {
-      pane: 'labels',
-      maxZoom: 16,
-      opacity: 0.7,
-    }).addTo(m);
+    // Light-grey basemap + its label layer on top (see basemap.ts).
+    addBasemap(m, { labelsOpacity: 0.7 });
 
     const g = L.featureGroup().addTo(m);
     for (const cell of world.hexes) {

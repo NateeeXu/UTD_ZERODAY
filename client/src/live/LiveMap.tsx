@@ -6,13 +6,12 @@ import type { FacilityRow, HexStatsRow } from './rows';
 import type { HazardGeometry } from '@shared/types';
 import { COLOR, LOD_ZOOM, cellSetKey, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
 import { hazardLabel } from './hazard';
+import { addBasemap } from '../basemap';
 
 // The hazard is drawn in slate so it never reads as a priority colour (red / orange / yellow).
 const HAZARD_FILL = '#3b5b8c';
 const HAZARD_INK = '#1e2a3a';
 export type FitTarget = { target: 'cells' | 'cone'; n: number };
-
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 
 interface Props {
   cells: readonly HexStatsRow[];
@@ -117,15 +116,7 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     if (!el.current) return;
     const m = L.map(el.current, { zoomControl: false, zoomSnap: 0.25, scrollWheelZoom: false });
     L.control.zoom({ position: 'bottomleft' }).addTo(m);
-    L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
-      attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors',
-      maxZoom: 16,
-      keepBuffer: 4,
-    }).addTo(m);
-    m.createPane('labels');
-    m.getPane('labels')!.style.zIndex = '450';
-    m.getPane('labels')!.style.pointerEvents = 'none';
-    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: 'labels', keepBuffer: 4 }).addTo(m);
+    addBasemap(m, { keepBuffer: 4 }); // base tiles + a 'labels' pane (450) above the cells
     // Hazard panes: the forecast cone under the cells (overlayPane is 400), track / markers / label above
     // them. Neither takes clicks, so cells stay selectable through the hazard.
     for (const [name, z] of [['hazardBelow', '350'], ['hazardAbove', '455']] as const) {

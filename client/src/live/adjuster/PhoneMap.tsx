@@ -6,8 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary } from 'h3-js';
 import { cellCenter, type LatLng } from './derive';
-
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
+import { addBasemap } from '../../basemap';
 
 export interface MapArea {
   hex: string;
@@ -39,13 +38,7 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
   useEffect(() => {
     if (!el.current) return;
     const m = L.map(el.current, { zoomControl: false, attributionControl: true, zoomSnap: 0.25 });
-    L.tileLayer(`${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
-      attribution: 'Tiles &copy; Esri', maxZoom: 16,
-    }).addTo(m);
-    m.createPane('labels');
-    const pane = m.getPane('labels');
-    if (pane) { pane.style.zIndex = '450'; pane.style.pointerEvents = 'none'; }
-    L.tileLayer(`${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, pane: 'labels' }).addTo(m);
+    addBasemap(m); // base tiles + a 'labels' pane (450) above the area polygons, below the pins
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     m.setView([27.8, -97.4], 11);
