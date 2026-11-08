@@ -41,6 +41,7 @@ import JoinAsReducer from "./join_as_reducer.ts";
 import JumpToReducer from "./jump_to_reducer.ts";
 import LeaveReducer from "./leave_reducer.ts";
 import LoadModelReducer from "./load_model_reducer.ts";
+import MarkReplyParsedReducer from "./mark_reply_parsed_reducer.ts";
 import PauseReplayReducer from "./pause_replay_reducer.ts";
 import RecomputeAllReducer from "./recompute_all_reducer.ts";
 import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
@@ -61,6 +62,7 @@ import StartReplayReducer from "./start_replay_reducer.ts";
 import StepReplayReducer from "./step_replay_reducer.ts";
 import SubmitFieldReportReducer from "./submit_field_report_reducer.ts";
 import SubmitParsedReplyReducer from "./submit_parsed_reply_reducer.ts";
+import SubmitRawReplyReducer from "./submit_raw_reply_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
@@ -86,6 +88,7 @@ import ModelStateRow from "./model_state_table.ts";
 import MyAssignmentsRow from "./my_assignments_table.ts";
 import MyMemberRow from "./my_member_table.ts";
 import ReplayStateRow from "./replay_state_table.ts";
+import ReplyInboxRow from "./reply_inbox_table.ts";
 import SmsReplyRow from "./sms_reply_table.ts";
 import SmsSentRow from "./sms_sent_table.ts";
 import StaffSimRow from "./staff_sim_table.ts";
@@ -289,6 +292,23 @@ const tablesSchema = __schema({
       { name: 'replay_state_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ReplayStateRow),
+  replyInbox: __table({
+    name: 'reply_inbox',
+    indexes: [
+      { accessor: 'householdId', name: 'reply_inbox_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+      { accessor: 'id', name: 'reply_inbox_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'status', name: 'reply_inbox_status_idx_btree', algorithm: 'btree', columns: [
+        'status',
+      ] },
+    ],
+    constraints: [
+      { name: 'reply_inbox_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, ReplyInboxRow),
   smsReply: __table({
     name: 'sms_reply',
     indexes: [
@@ -384,6 +404,7 @@ const reducersSchema = __reducers(
   __reducerSchema("jump_to", JumpToReducer),
   __reducerSchema("leave", LeaveReducer),
   __reducerSchema("load_model", LoadModelReducer),
+  __reducerSchema("mark_reply_parsed", MarkReplyParsedReducer),
   __reducerSchema("pause_replay", PauseReplayReducer),
   __reducerSchema("recompute_all", RecomputeAllReducer),
   __reducerSchema("refresh_metrics", RefreshMetricsReducer),
@@ -404,6 +425,7 @@ const reducersSchema = __reducers(
   __reducerSchema("step_replay", StepReplayReducer),
   __reducerSchema("submit_field_report", SubmitFieldReportReducer),
   __reducerSchema("submit_parsed_reply", SubmitParsedReplyReducer),
+  __reducerSchema("submit_raw_reply", SubmitRawReplyReducer),
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
   __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),

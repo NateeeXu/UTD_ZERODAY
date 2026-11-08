@@ -18,6 +18,7 @@ export default __t.row({
   referralSimMinutes: __t.f64().name("referral_sim_minutes"),
   reportedSimMinutes: __t.f64().name("reported_sim_minutes"),
   closureReason: __t.string().name("closure_reason"),
+  closureNote: __t.string().name("closure_note"),
   closedBy: __t.string().name("closed_by"),
   updatedAt: __t.timestamp().name("updated_at"),
 });

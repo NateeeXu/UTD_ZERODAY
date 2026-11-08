@@ -50,7 +50,7 @@ function toIngest(e: StagedRow): IngestEvent {
         householdId: e.householdId,
         adjusterId: e.adjusterId,
         safety: e.safety as Safety,
-        damage: e.damage as Damage,
+        damage: e.damageKnown ? (e.damage as Damage) : null, // null = people checked, house not assessed
         note: '',
       };
     default:

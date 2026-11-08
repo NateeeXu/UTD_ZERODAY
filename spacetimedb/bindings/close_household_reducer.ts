@@ -13,4 +13,5 @@ import {
 export default {
   householdId: __t.string(),
   reason: __t.string(),
+  note: __t.string(),
 };

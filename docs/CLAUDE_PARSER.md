@@ -27,6 +27,7 @@ Error asymmetry: calling someone safe who is not is the worst error; an unnecess
   }
 }
 ```
+What is actually sent as `output_config.format` (`OUTPUT_SCHEMA` in `scripts/parser.ts`) differs in two ways, because structured outputs reject them: no `minimum` / `maximum` (damage 0–3 and confidence 0–1 are checked in code instead), and `evidence` has fixed keys `life_safety`, `safety`, `damage`, `needs` (every object needs `additionalProperties: false`).
 
 ## System prompt (v1)
 ```text
@@ -77,13 +78,46 @@ Return only the extraction.
 | `missing_people = true` | also call `report_member_missing(householdId, passcode)` |
 | original text, `language` | `text`, `language` (kept for audit and the eval set) |
 
-## Deployment
-- A small Node worker (`scripts/claude-worker.ts`, not written yet) using the **official Anthropic TypeScript SDK**, model **`claude-sonnet-5-5`** (Claude Sonnet 5.5: the team's choice for the live API; fast and cheaper for short extraction), low effort, structured output with the schema above.
-- Flow: the reply page writes the raw text to Spacetime → the worker (subscribed) parses it → calls `submit_parsed_reply` with its own identity.
-- The **API key lives only in the worker's `.env`** (gitignored). Never in the frontend bundle, the repo, Spacetime tables or bindings.
+## Implementation (spacetimedb/scripts)
+| File | What it does |
+|---|---|
+| `scripts/parser.ts` | `parseReply(text): Promise<ParsedReply>`: one call to **`claude-sonnet-5-5`** via the official SDK (`@anthropic-ai/sdk`, devDependency of `spacetimedb/`, scripts only: the module never imports it), `output_config: { effort: 'low', format: json_schema }`, adaptive thinking left at its default, `max_tokens` 2048, server-side refusal fallback on (`fallbacks: 'default'`, beta `server-side-fallback-2026-07-01`; `CLAUDE_PARSER_FALLBACK=off` disables it). Then schema validation, the keyword net, the consistency rules and `toReducerArgs`. `PROMPT_VERSION = 'v1'` |
+| `scripts/claude-worker.ts` | Subscribes to `reply_inbox WHERE status = 'pending'`, one reply at a time: `parseReply` → `submit_parsed_reply` (+ `report_member_missing`) → `mark_reply_parsed`. Joins as a manager named "Claude parser" with `STAFF_PASSCODE`, leaves on exit. One log line per reply, no text, no secrets |
+| `scripts/parser-eval.ts` | The eval below |
+| `scripts/parser-test.ts` | Offline checks with a stubbed SDK call: keyword net, validation, every fallback path, mapping |
+
+Flow: reply page → `submit_raw_reply(householdId, text, passcode)` → `reply_inbox` row (`pending`) → worker → `submit_parsed_reply` with its own identity → `mark_reply_parsed(id, 'parsed' | 'failed', error)`. The reply page never sees the key.
+
+Guardrails as implemented:
+- **Timeout**: one overall 10 s deadline per reply (SDK `timeout` + an abort signal; the SDK's own retries on 429 / 5xx / network happen inside it).
+- **Fallback** on timeout, any API error, `stop_reason` `refusal` or `max_tokens`, empty / non-JSON text, or a schema violation: `safety = 'unsure'`, `life_safety = false`, `damage = null`, `error = <code>` (`timeout`, `server_529`, `rate_limited`, `auth`, `refusal: <category>`, `invalid_json`, `schema: <field>`, `no_api_key`, ...). The keyword net still runs on the raw text, so "SOS, trapped" during an outage is still a life-safety referral.
+- **Keyword net** (escalate only, ~60 rules in en/es/zh/vi/tl/ko): a hit sets `life_safety = true` and `safety = 'needs_help'`; it never lowers anything. Negation in the two words before a hazard word in the same clause ("no gas", "nobody got hurt", "walang sunog", "没有煤气") and offers of help ("we can help the neighbors", "no necesitamos ayuda", "hindi namin kailangan ng tulong") do not count.
+- **Consistency** (escalate only): `missing_people` → `life_safety`; `life_safety` → `safety = 'needs_help'`.
+- **Review flags** (`ParsedReply.review`): `keyword_net:<rules>`, `parser_error`, `unsure`, `low_confidence` (< 0.6). The worker writes them to `reply_inbox.error` as `review: ...` on parsed rows.
+- **Inbox status**: `parsed` = Claude's answer used; `failed` = fallback submitted (`parser: <code>; fallback submitted`) or the reducer rejected the reply (`submit: <message>`).
+- **Key**: read from `ANTHROPIC_API_KEY` only (no other credential source), never logged or written anywhere. It lives in `spacetimedb/.env` (gitignored). Never in the frontend, the repo, Spacetime tables or bindings.
+
+## Commands (from `spacetimedb/`)
+```bash
+npm run parser:test                                   # offline: stubbed client, no key needed
+node scripts/parser-eval.ts --no-claude               # offline baseline: fallback + keyword net only
+node --env-file=.env scripts/parser-eval.ts           # = npm run parser:eval (needs ANTHROPIC_API_KEY; ~80 short calls)
+node --env-file=.env scripts/parser-eval.ts --set adversarial --out /tmp/eval.json
+node --env-file=.env scripts/claude-worker.ts         # = npm run worker (SPACETIME_HOST / SPACETIME_DB from .env)
+node --env-file=.env scripts/claude-worker.ts --host ws://127.0.0.1:3000 --db triage-loop   # local server
+node scripts/claude-worker.ts --host ws://127.0.0.1:3000 --db triage-loop --once --no-claude  # degraded mode / plumbing test
+```
+`spacetimedb/.env` points at Maincloud by default, so pass `--host` / `--db` explicitly for the local server. Without `ANTHROPIC_API_KEY` the worker refuses to start unless `--no-claude` is given (then every reply goes in as "needs help, a person calls back", and the keyword net still escalates).
+
+End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply live-h00010 "help, we are trapped in the attic, water rising" ""` (owner, no passcode needed), run the worker, then `spacetime sql -s local triage-loop "SELECT escalation FROM household_estimate WHERE household_id = 'live-h00010'"` → `emergency_referral`; a fallback "unsure" reply → `assistance`.
 
 ## Eval and pass criteria
 - **Sets**: (a) 80 sampled template replies from the regenerated `data/real/*/live.json` (labels from the simulator, relabeled by hand where the template is ambiguous); (b) `data/eval/sms_parse_adversarial.jsonl` (40 hand-written hard cases in en/es/zh/vi/tl/ko).
 - **Pass**: life-safety recall **100 %** on both sets; false-safe rate (said `safe`, expected `needs_help`/`unsure`) ≤ 2 %; damage exact ≥ 70 % and within ±1 ≥ 95 % where expected damage is not null; `damage = null` correct ≥ 90 % where expected null; valid JSON 100 %.
 - **Loop**: run, read every failure, change one thing in the prompt, rerun both sets. A guardrail change counts too.
-- **Versioning**: the prompt text lives in the worker as `PROMPT_VERSION = 'v1'`; every parsed reply stores the version (with the text) so a later prompt can be compared on the same messages.
+- **Versioning**: the prompt text lives in `scripts/parser.ts` as `PROMPT_VERSION = 'v1'`; `parser-eval.ts --out` stores it with every result so a later prompt can be compared on the same messages. (The `sms_reply` row stores the text and language, not the version.)
+- **Real-set sampling** (`parser-eval.ts`): 20 free-text replies per region (Bay Area, Corpus Christi), stratified and seeded (`--seed 7`): 5 life-safety, 5 other needs-help, 4 not-home, the rest safe at home, round-robin over languages, deduplicated by text. Simulator labels that contradict rule 2 are relabeled by rule and marked in the output: an inspection request alone is `safe`, not `needs_help` (5 of the 40 with seed 7). False-safe rate = said `safe` / expected `needs_help` or `unsure`.
+
+## Results
+- **Offline** (2026-11-08): `npm run parser:test` 49/49 pass. Keyword net alone (`parser-eval.ts --no-claude`): life-safety recall **15/15** adversarial and **10/10** real, 0 extra referrals on the 80 cases, 0 false-safe (every non-net case falls back to `unsure`). Damage / needs / valid-JSON numbers are meaningless without Claude.
+- **With Claude**: not run yet (no `ANTHROPIC_API_KEY` in `spacetimedb/.env` when this was written). Run `npm run parser:eval` and paste the summary here.

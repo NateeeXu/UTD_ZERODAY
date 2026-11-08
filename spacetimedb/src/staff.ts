@@ -115,6 +115,7 @@ function setReferral(ctx: Ctx, householdId: string, hex: string, status: string,
     referralStatus: status,
     referralSimMinutes: atMin,
     closureReason: prev?.closureReason ?? '',
+    closureNote: prev?.closureNote ?? '',
     closedBy: prev?.closedBy ?? '',
     updatedAt: ctx.timestamp,
   };
@@ -177,6 +178,7 @@ function closeUnreachable(ctx: Ctx, householdId: string, hex: string) {
     referralStatus: prev?.referralStatus ?? '',
     referralSimMinutes: prev?.referralSimMinutes ?? 0,
     closureReason: 'unreachable_after_visit',
+    closureNote: `visited, nobody home; emergency contact unreachable after ${MAX_LOCATE_TRIES} tries`,
     closedBy: 'sim-staff',
     updatedAt: ctx.timestamp,
   };
@@ -315,7 +317,8 @@ function staffStep(ctx: Ctx, at: number) {
     for (const cnd of candidates) {
       if (inspections >= inspBudget) break;
       if (visited.has(cnd.householdId)) continue;
-      if ([...ctx.db.fieldReport.householdId.filter(cnd.householdId)].length > 0) continue;
+      // Skip houses already assessed (a people-only visit leaves the property to inspect).
+      if ([...ctx.db.fieldReport.householdId.filter(cnd.householdId)].some((r) => r.damageKnown)) continue;
       const hh = ctx.db.household.id.find(cnd.householdId);
       const truth = ctx.db.simTruth.householdId.find(cnd.householdId);
       if (!hh || !truth) continue;

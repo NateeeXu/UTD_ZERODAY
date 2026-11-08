@@ -128,7 +128,7 @@ function validate(file: string, b: EventBundle): void {
       if ((e.text === undefined) !== (e.language === undefined)) fail(file, 'text/language must come together');
     }
     if (e.kind === 'claim' && (!DAMAGES.has(e.reportedDamage) || !(isQuake ? ['earthquake'] : ['wind', 'flood']).includes(e.peril))) fail(file, `bad claim ${JSON.stringify(e)}`);
-    if (e.kind === 'field_report' && (!DAMAGES.has(e.damage) || !['safe', 'needs_help', 'unsure'].includes(e.safety))) fail(file, 'bad field_report');
+    if (e.kind === 'field_report' && ((e.damage !== null && !DAMAGES.has(e.damage)) || !['safe', 'needs_help', 'unsure'].includes(e.safety))) fail(file, 'bad field_report');
   }
   const hold = w.households.filter((h) => h.holdout).length / w.households.length;
   if (Math.abs(hold - 0.15) > 0.01) fail(file, `holdout share ${hold.toFixed(3)}`);

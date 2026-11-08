@@ -54,7 +54,7 @@ Five guarantees, each backed by data the frontend can show:
 | `metrics` | `accounted`, `unaccounted`, `accountedRate`; `vulnerable`, `vulnerableAccounted`, `vulnerableAccountedRate` (equity check vs `accountedRate`); `highRiskUnaccounted`, `longestWaitMin` (longest a high-risk household has gone without contact); `recheckDue`; `openReferrals`, `overdueReferrals`, `membersMissing`; `closedNoContact` |
 | `hex_stats` | the same counters per cell (`accounted`, `unaccounted`, `vulnerable`, `unaccountedVulnerable`, `highRiskUnaccounted`, `longestWaitMin`, `recheckDue`, `openReferrals`, `overdueReferrals`, `membersMissing`, `closedNoContact`) |
 | `household_estimate`, `inspection_candidate` | `accounted` (bool), `escalation` |
-| `household_followup` | per household: `memberMissing`, `reportedSimMinutes`, `referralStatus` (`''` / `referred` / `acknowledged` / `resolved`), `referralSimMinutes` (when referred, or when resolved), `closureReason` (`vacant` / `not_in_area` / `unreachable_after_visit`), `closedBy` |
+| `household_followup` | per household: `memberMissing`, `reportedSimMinutes`, `referralStatus` (`''` / `referred` / `acknowledged` / `resolved`), `referralSimMinutes` (when referred, or when resolved), `closureReason` (`vacant` / `not_in_area` / `unreachable_after_visit`), `closureNote` (why; required with a reason), `closedBy` |
 | `unaccounted_queue` | top 5 per cell that still need contact: `rank`, `weight`, `waitSinceMin`, `escalation`, `vulnerable`, `cellPriority` |
 | `staff_sim` (singleton) | `enabled`, `callsPerHour`, `visitsPerHour`, `lastRunMin`, counters (see below) |
 
@@ -77,7 +77,7 @@ Reducers:
 |---|---|---|
 | `report_member_missing(householdId, passcode)` | reply page (policyholder_demo, manager, or reply passcode) | "Someone in my household is unaccounted for": opens a referral (a repeat report keeps the original clock) |
 | `update_referral(householdId, status)` | manager | `referred` / `acknowledged` / `resolved`; a needs-help reply after `resolved` opens a new referral |
-| `close_household(householdId, reason)` | manager or adjuster | `vacant`, `not_in_area`, `unreachable_after_visit` (needs an assignment first), or `''` to reopen |
+| `close_household(householdId, reason, note)` | manager or adjuster | `vacant`, `not_in_area`, `unreachable_after_visit` (needs a field report with safety `unsure` for the household first), or `''` to reopen. `note` (≥ 3 chars) is required with a reason and stored in `closureNote`; closing marks the household's open assignments `done`; reopening clears the note and leaves assignments alone |
 | `set_staff_sim(enabled, callsPerHour, visitsPerHour)` | manager | simulated staff on/off and capacity (0 = default) |
 
 Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
@@ -135,6 +135,7 @@ scripts/seed.ts ──► seed_* reducers ──► world, hex, household, facil
                                                                          │
 start_replay ──► replay_tick (scheduled, every 1 s) ── releases due staged events ──┐
 submit_sms_reply / submit_sms_text_reply (policyholder page) ───────────────────────┤
+submit_raw_reply ─► reply_inbox ─► Claude worker (Node) ─► submit_parsed_reply ─────┤
 submit_field_report (adjuster, permission-checked) ─────────────────────────────────┤
                                                                                     ▼
              onEvent(): insert event row ─► hex_stats counters + metrics (incremental, same transaction)
@@ -300,7 +301,7 @@ Extra fields:
 
   `safety`/`damage` are the values parsed from the text. The bundles carry text for about a quarter of the replies.
 - `claim`: `peril` (`wind` / `flood` / `earthquake`), `reportedDamage` (0 to 3).
-- `field_report`: `adjusterId` (the adjuster's display name), `safety` (`safe` / `needs_help` / `unsure`), `damage`, `note`.
+- `field_report`: `adjusterId` (the adjuster's display name), `safety` (`safe` / `needs_help` / `unsure`), `damage` (0 to 3; 0 when `damageKnown` is false), `damageKnown` (false = the adjuster checked the people but did not assess the house; the note says why, and the house stays unverified and in the inspection queue), `note`.
 
 ### `replay_state` (singleton, id = 0)
 | field | type | meaning |
@@ -343,12 +344,13 @@ Extra fields:
 | pSevere | f64 | P(damage ≥ 2) |
 | pNeedsHelp | f64 | P(safety = needs_help) |
 | uncertainty | f64 0–1 | higher = less sure |
-| verified | bool | has a field report |
+| verified | bool | has a field report that assessed the house (a people-only report, damage 255, does not verify the property) |
 | inspectScore | f64 0–1 | active-inspection score (engine `inspectionScore`: severe + help + uncertainty + cell silence + needs-verification), 0 when verified |
 | updatedAt | timestamp | rows are rewritten only when a value moves by ≥ 0.0005 |
 
 ### `inspection_candidate`: the verification queue without downloading every household
 The top 3 unverified households of each cell by `inspectScore` (the engine's `perCellCap`): at most 3 × cells rows (≤ 1,833 in the Bay Area). Sorting this table by `inspectScore` gives exactly the engine's `recommendInspections()` order (checked by `parity.ts`).
+**Coverage-aware:** only houses whose policy covers this event's peril (homeowners / condo / no policy type, and hurricane: `windCovered` or `floodPolicy`, earthquake: `earthquakeEndorsement`) or that filed a claim are eligible; renters only via a claim (`src/fusion/coverage.ts`). Everyone else still gets estimates, accounting, escalation and counts in `hex_stats`; only this queue (and the staff sim's property inspections) skips them. Bay Area: 1,815 → 1,283 rows at t = 0 (1,419 at 24 h, as claims arrive); only 6.8 % of its households carry an earthquake endorsement.
 
 | field | type | meaning |
 |---|---|---|
@@ -384,7 +386,10 @@ The top 3 unverified households of each cell by `inspectScore` (the engine's `pe
 `identity` (PK), `role` (`manager` / `adjuster` / `policyholder_demo`), `name`, `joinedAt`. Use it for the adjuster picker in the manager UI (`identity.toHexString()` is what `assign` expects).
 
 ### `assignment`
-`id` (u64), `householdId`, `hex`, `adjuster` (identity), `assignedBy`, `status` (`assigned` / `done` / `cancelled`), `createdAt`, `updatedAt`. A field report by the assigned adjuster marks it `done` automatically.
+`id` (u64), `householdId`, `hex`, `adjuster` (identity), `assignedBy`, `status` (`assigned` / `done` / `cancelled`), `createdAt`, `updatedAt`. A field report by the assigned adjuster, or `close_household` with a reason, marks it `done` automatically.
+
+### `reply_inbox`: raw free-text replies for the Claude parser worker
+`id` (u64 PK), `householdId`, `text` (1–500 chars, trimmed), `language` (hint: `household.primaryLanguage`, `''` if none), `status` (`pending` / `parsed` / `failed`), `receivedAt`, `parsedAt` (option timestamp, unset while pending), `error` (`''`; `review: <reasons>` = parsed but a person should look; `parser: <code>; fallback submitted` = Claude failed and the reply went in as "needs help, a person calls back"; `submit: <message>` = the reducer rejected it). The reply page writes it with `submit_raw_reply` (no Anthropic key in the browser) and can watch its own row; `scripts/claude-worker.ts` turns each pending row into `submit_parsed_reply` (docs/CLAUDE_PARSER.md). Cleared with the demo state.
 
 ### Views (per caller)
 - `my_member`: the caller's own member row (0 or 1 rows). Use it to show "joined as ...".
@@ -399,15 +404,18 @@ The top 3 unverified households of each cell by `inspectScore` (the engine's `pe
 
 ## 5. Reducers
 
-Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damage, note })` returns a Promise that **rejects with the error message** when the reducer throws (wrong role, bad input). React: `const submit = useReducer(reducers.submitFieldReport)`.
+Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damage, note, memberMissing })` returns a Promise that **rejects with the error message** when the reducer throws (wrong role, bad input). React: `const submit = useReducer(reducers.submitFieldReport)`.
 
 | Reducer (SQL name) | Args | Who | Effect |
 |---|---|---|---|
 | `join_as` | role, name, passcode | anyone | Create or replace the caller's member row (switching roles is allowed) |
 | `leave` | — | anyone | Remove the caller's member row |
 | `submit_sms_reply` | householdId, safety (`safe`/`needs_help`), damage (0–3), passcode (`''` if joined) | `policyholder_demo` / `manager` member, owner, or anyone with the reply passcode | Inserts an `sms_reply` at the current sim minute (and an `sms_sent` if that household was never texted), then recomputes the cell |
-| `submit_sms_text_reply` | householdId, safety, damage, text (≤ 1000 chars), language, passcode | same | Same, and stores the original free-text reply + language (safety/damage are its parsed values, e.g. from Claude on the reply page) |
-| `submit_field_report` | householdId, safety (`safe`/`needs_help`/`unsure`), damage (0–3), note (≤ 500 chars) | **`adjuster` members only** | Inserts a `field_report`, recomputes the cell (household becomes verified; neighbours get the engine's residual update), completes the adjuster's assignment, and feeds the trust batch |
+| `submit_sms_text_reply` | householdId, safety, damage, text (≤ 1000 chars), language, passcode | same | Same, and stores the original free-text reply + language (safety/damage are its parsed values) |
+| `submit_parsed_reply` | householdId, safety (`safe`/`needs_help`), damage (0–3, 255 = unknown), lifeSafety, needs (comma-separated subset of `medical,power_for_device,shelter,water_food,transport,inspection,other`), notHome, text, language, passcode | same | The full parse of a free-text reply (the Claude worker calls it as a manager). See docs/CLAUDE_PARSER.md |
+| `submit_raw_reply` | householdId, text (1–500 chars after trimming), passcode | same | Free-text reply page: stores the raw text in `reply_inbox` (`pending`) for the Claude worker. At most 5 pending rows per household and 500 in total |
+| `mark_reply_parsed` | id (u64), status (`parsed` / `failed` / `pending` = re-queue), error (truncated to 500) | manager / owner | Worker bookkeeping on `reply_inbox` (sets `parsedAt`) |
+| `submit_field_report` | householdId, safety (`safe`/`needs_help`/`unsure`), damage (0–3, or **255 = house not assessed**), note (≤ 500 chars; **required, ≥ 3 chars, with 255**, e.g. `unsafe to enter`, `no access: flooded`, `dark, no power`), memberMissing (bool) | **`adjuster` members only** | Inserts a `field_report`, recomputes the cell and completes the adjuster's assignment. Damage 0–3: the household becomes verified, neighbours get the engine's residual update, the report feeds the trust batch. Damage 255: `damageKnown = false`; `safety` still accounts the people (`safe` / `needs_help`), the house stays unverified and in the inspection queue, no trust update; a later people-only report keeps the earlier assessed damage. `memberMissing = true`: someone is unaccounted for on site (same as `report_member_missing`; keeps an open referral) |
 | `assign` | householdId, adjusterIdentityHex | manager / owner | New `assigned` row; cancels another adjuster's open assignment for that household |
 | `assign_hex` | hex, adjusterIdentityHex, count (1–50) | manager / owner | Active inspection: assigns the `count` unverified, unassigned households of the cell with the highest `inspectScore` |
 | `update_assignment` | id (u64), status | the assigned adjuster, or manager / owner | Set `assigned` / `done` / `cancelled` |
@@ -481,7 +489,7 @@ SELECT * FROM sms_reply WHERE household_id = 'ca-live-h000552'
 ```
 - Write the outreach text in `household.primaryLanguage`.
 - SAFE / HELP and 0–3 call `submit_sms_reply(householdId, safety, damage, code)`.
-- A free-text reply parsed by Claude calls `submit_sms_text_reply(householdId, safety, damage, text, language, code)`.
+- A free-text reply calls `submit_raw_reply(householdId, text, code)`; the Claude worker (`npm run worker`) parses it into `submit_parsed_reply` within a few seconds. Watch `SELECT * FROM reply_inbox WHERE household_id = '…'` for its status.
 - The reply lands on the manager map within one round trip.
 
 ## 7. Minimal client code
@@ -566,6 +574,8 @@ spacetime logs -s maincloud <db-name> -f
 - Client env: `VITE_SPACETIME_HOST=https://maincloud.spacetimedb.com`, plus `VITE_SPACETIME_DB=<db-name>` or `?db=<db-name>`.
 - The seed script authenticates as the CLI login (`~/.config/spacetime/cli.toml`) or `SPACETIME_TOKEN`; that identity becomes the owner on publish.
 - Keep the local server as the offline fallback (same commands with `-s local`).
+- The parser worker / field-report change adds columns (`field_report.damageKnown`, `household_followup.closureNote`) and a table (`reply_inbox`): republish existing databases with `--delete-data=always` and reseed.
+- Claude parser worker: runs on a laptop next to the demo, not in Spacetime. Put `ANTHROPIC_API_KEY` in `spacetimedb/.env` (gitignored, never in the frontend) and run `npm run worker` (reads `SPACETIME_HOST` / `SPACETIME_DB` / `STAFF_PASSCODE` from `.env`; one worker per world database, `--db <name>`). See docs/CLAUDE_PARSER.md.
 
 ## 10. Limits and measured costs
 

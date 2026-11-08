@@ -55,7 +55,7 @@ function estimateHousehold(s: HouseholdSignals, input: CellInput): HouseholdOutp
     s.smsSentT !== null && nowMin - s.smsSentT >= REPLY_GRACE_MIN && !s.reply && !s.claim;
   const cutOff = cell.towerOutagePct >= 60 && isHighHazard(cell);
 
-  if (s.field) {
+  if (s.field && s.field.damage !== null) {
     const pSevere = s.field.damage >= 2 ? 0.97 : 0.03;
     const pNeedsHelp =
       s.field.safety === 'needs_help' ? 0.97 : s.field.safety === 'unsure' ? 0.5 : 0.03;
@@ -86,7 +86,10 @@ function estimateHousehold(s: HouseholdSignals, input: CellInput): HouseholdOutp
   if (s.reply?.safety === 'needs_help') help += 3.0 * (0.4 + 0.8 * trust.sms);
   else if (s.reply?.safety === 'safe') help -= 2.5 * (0.4 + 0.8 * trust.sms);
   else if (silentDue && cutOff) help += 0.4; // cannot reach them in a hard-hit, cut-off cell
-  const pNeedsHelp = sigmoid(help);
+  let pNeedsHelp = sigmoid(help);
+  // People-only visit (house not assessed): the occupants were seen, the property stays unverified.
+  if (s.field?.safety === 'needs_help') pNeedsHelp = 0.97;
+  else if (s.field?.safety === 'safe') pNeedsHelp = 0.03;
 
   const info = s.reply && s.claim ? 0.35 : s.reply ? 0.45 : s.claim ? 0.55 : 0.9;
   const uncertainty = clamp01(info * (0.6 + 0.4 * entropy(pSevere)));
@@ -128,7 +131,7 @@ export function estimateCellStub(input: CellInput): CellOutput {
     if (s.smsSentT !== null) texted++;
     if (s.reply) replies++;
     if (s.claim) claims++;
-    if (s.field) fieldReports++;
+    if (s.field && s.field.damage !== null) fieldReports++; // property-verified
     if (s.reply || s.claim || s.field) heard++;
     if (s.smsSentT !== null && nowMin - s.smsSentT >= REPLY_GRACE_MIN) {
       due++;
