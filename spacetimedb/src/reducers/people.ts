@@ -320,7 +320,7 @@ export const acceptRecommendation = spacetimedb.reducer(
     const me = requireAdjuster(ctx);
     const row = [...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)].find(r => r.householdId === householdId);
     if (!row) throw new SenderError('not in your Next best list');
-    if (stillNeeded(ctx, householdId)) {
+    if (stillNeeded(ctx, householdId, row.kind)) {
       assignOne(ctx, householdId, ctx.sender);
       notifyTaskAccepted(ctx, householdId, row.kind, me.name);
     } else dropFromAllLists(ctx, householdId);
@@ -432,6 +432,8 @@ export const updateAssignment = spacetimedb.reducer(
     if (!a) throw new SenderError('unknown assignment');
     const mine = a.adjuster.equals(ctx.sender);
     if (!mine) requireManager(ctx);
+    if (status === 'assigned' && [...ctx.db.assignment.householdId.filter(a.householdId)].some(o => o.id !== a.id && o.status === 'assigned'))
+      throw new SenderError('this household already has an open assignment');
     ctx.db.assignment.id.update({ ...a, status, updatedAt: ctx.timestamp });
   }
 );

@@ -56,9 +56,11 @@ export function recomputeRecommendations(ctx: Ctx, adjuster: Identity) {
   for (const r of [...ctx.db.adjusterRecommendation.adjuster.filter(adjuster)]) ctx.db.adjusterRecommendation.id.delete(r.id);
   const from = ctx.db.adjusterLocation.identity.find(adjuster);
   if (!from) return;
-  const open = new Set<string>();
-  for (const a of ctx.db.assignment.iter()) if (a.status === 'assigned') open.add(a.householdId);
-  for (const r of rankCandidates(gatherCandidates(ctx), from, simNow(ctx), open))
+  // Taken by anyone, or already visited by this adjuster (a report that could not assess the house leaves it a candidate).
+  const excluded = new Set<string>();
+  for (const a of ctx.db.assignment.iter())
+    if (a.status === 'assigned' || (a.status === 'done' && a.adjuster.equals(adjuster))) excluded.add(a.householdId);
+  for (const r of rankCandidates(gatherCandidates(ctx), from, simNow(ctx), excluded))
     ctx.db.adjusterRecommendation.insert({ id: 0n, adjuster, createdAt: ctx.timestamp, ...r });
 }
 
@@ -67,11 +69,12 @@ export function dropFromAllLists(ctx: Ctx, householdId: string) {
 }
 
 /** False when a reply, the simulated staff or another adjuster has already taken care of this household. */
-export function stillNeeded(ctx: Ctx, householdId: string): boolean {
+export function stillNeeded(ctx: Ctx, householdId: string, kind: string): boolean {
   if (hasOpenAssignment(ctx, householdId)) return false;
-  if (ctx.db.unaccountedQueue.householdId.find(householdId)?.escalation === 'field_visit') return true;
-  const c = ctx.db.inspectionCandidate.householdId.find(householdId);
-  return !!c && c.escalation !== 'closed';
+  // The estimate, not the top-N queues: a household pushed out of a queue still needs the visit.
+  const e = ctx.db.householdEstimate.householdId.find(householdId);
+  if (!e || e.escalation === 'closed') return false;
+  return kind === 'welfare' ? e.escalation === 'field_visit' : !e.verified;
 }
 
 /** A demo adjuster is now standing at the reported household; a GPS position stays what the phone says. */

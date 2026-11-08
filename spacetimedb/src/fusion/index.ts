@@ -645,9 +645,10 @@ export function accountFor(
   const resolvedAt = resolved ? f!.referralSimMinutes : -Infinity;
   const danger: number[] = [];
   const safeTs: number[] = [];
-  if (s?.reply) {
-    if (s.reply.lifeSafety) danger.push(s.reply.t);
-    else if (s.reply.safety === 'safe') safeTs.push(s.reply.t);
+  // A later call-back-only reply says nothing about danger, so it cannot cancel an earlier life-safety reply.
+  if (s?.evidenceReply) {
+    if (s.evidenceReply.lifeSafety) danger.push(s.evidenceReply.t);
+    else if (s.evidenceReply.safety === 'safe') safeTs.push(s.evidenceReply.t);
   }
   if (s?.field) {
     if (s.field.safety === 'needs_help') danger.push(s.field.t);

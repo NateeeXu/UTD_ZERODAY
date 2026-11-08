@@ -199,6 +199,22 @@ async function main() {
     check('call-back-only reply goes to customer care without raising pNeedsHelp', e1?.escalation === 'assistance' && (e1?.pNeedsHelp ?? 1) <= help0 + 0.05, `${e1?.escalation}, pNeedsHelp ${help0.toFixed(3)} -> ${e1?.pNeedsHelp.toFixed(3)}`);
   }
 
+  const unused = [...db.household.iter()].filter(h => h.hex !== target.hex && h.hex !== other?.hex && h.hex !== callback?.hex && !h.holdout && h.phoneOnFile);
+  const parsed = (householdId: string, a: { safety: string; damage: number; lifeSafety: boolean; text: string }) =>
+    outsider.conn.reducers.submitParsedReply({ householdId, needs: '', notHome: false, language: 'en', passcode: REPLY_PASSCODE, ...a });
+  const [danger, roof] = unused;
+  if (danger && roof) {
+    await parsed(danger.id, { safety: 'needs_help', damage: 255, lifeSafety: true, text: 'my husband is trapped' });
+    await sleep(300);
+    await parsed(danger.id, { safety: 'needs_help', damage: 255, lifeSafety: false, text: 'does my policy cover this?' });
+    await sleep(300);
+    check('a later coverage question keeps the emergency referral', est(danger.id)?.escalation === 'emergency_referral', est(danger.id)?.escalation);
+    const severe0 = est(roof.id)?.pSevere ?? 1;
+    await parsed(roof.id, { safety: 'needs_help', damage: 2, lifeSafety: false, text: 'roof half gone, does my policy cover it?' });
+    await sleep(300);
+    check('a call-back-only reply still counts its damage', (est(roof.id)?.pSevere ?? 0) > severe0, `pSevere ${severe0.toFixed(3)} -> ${est(roof.id)?.pSevere.toFixed(3)}`);
+  }
+
   // ----- field reports: house not assessed, missing member, documented closure -----
   const reported = new Set([...db.fieldReport.iter()].map(r => r.householdId));
   const spare = [...db.household.iter()]
@@ -366,6 +382,15 @@ async function main() {
       `${locBefore?.lat.toFixed(5)},${locBefore?.lng.toFixed(5)} -> ${locAfter?.lat.toFixed(5)},${locAfter?.lng.toFixed(5)}, source ${locAfter?.source}`
     );
     check('reported household is not back on the recomputed list', !recs().some(r => r.householdId === top.householdId), `${recs().length} rows`);
+
+    const next = recs()[0];
+    if (next) {
+      await adjuster.conn.reducers.acceptRecommendation({ householdId: next.householdId });
+      await sleep(300);
+      await adjuster.conn.reducers.submitFieldReport({ householdId: next.householdId, safety: 'safe', damage: 255, note: 'smoke test: no access', memberMissing: false });
+      await sleep(300);
+      check('a visited house stays off the list even when it could not be assessed', !recs().some(r => r.householdId === next.householdId), `${recs().length} rows`);
+    }
   }
 
   const mEnd = metrics();
