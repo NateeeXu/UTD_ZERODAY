@@ -14,7 +14,7 @@ import { CAUSE, COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMo
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
-import { HouseholdPanel, useLogContact, type Outcome } from './household';
+import { HouseholdPanel, reportDamage, useLogContact, type Outcome } from './household';
 import { SevereCard } from './SevereCard';
 import { homeLabel, pct } from '../format';
 
@@ -90,7 +90,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   });
   const [claims] = useTable(tables.claim);
   const [fieldReports] = useTable(tables.fieldReport, {
-    onInsert: (r) => recent(r.ingestedAt) && onLiveEvent(r.hex, `Field report · ${r.adjusterId}`, `${r.safety.replace('_', ' ')}, damage ${r.damage}`),
+    onInsert: (r) => recent(r.ingestedAt) && onLiveEvent(r.hex, `Field report · ${r.adjusterId}`, `${r.safety === 'unsure' ? 'nobody seen' : r.safety.replace('_', ' ')}, ${reportDamage(r)}`),
   });
 
   useEffect(() => {
@@ -148,7 +148,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     const items: FeedItem[] = [];
     for (const r of smsReplies) items.push({ key: `s${r.id}`, kind: 'sms_reply', t: r.t, at: r.ingestedAt.toDate().getTime(), hex: r.hex, householdId: r.householdId, live: r.source === 'live', text: replyText(r), help: r.lifeSafety });
     for (const c of claims) items.push({ key: `c${c.id}`, kind: 'claim', t: c.t, at: c.ingestedAt.toDate().getTime(), hex: c.hex, householdId: c.householdId, live: c.source === 'live', text: `Claim · ${c.peril} · damage ${c.reportedDamage}`, help: false });
-    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, text: `Visit (${f.adjusterId}) · ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · damage ${f.damage}`, help: f.safety === 'needs_help' });
+    for (const f of fieldReports) items.push({ key: `f${f.id}`, kind: 'field_report', t: f.t, at: f.ingestedAt.toDate().getTime(), hex: f.hex, householdId: f.householdId, live: true, text: `Visit (${f.adjusterId}) · ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · ${reportDamage(f)}`, help: f.safety === 'needs_help' });
     return items.sort((a, b) => b.t - a.t || b.at - a.at).slice(0, 50);
   }, [smsReplies, claims, fieldReports]);
 

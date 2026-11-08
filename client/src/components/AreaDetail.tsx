@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Household, SimEvent } from '@shared/types';
 import type { AreaView } from '../areas';
 import { useTriage } from '../state/TriageStore';
-import { DAMAGE_LABEL, addressOf, fmtAgo, pct } from '../format';
+import { DAMAGE_LABEL, fmtAgo, homeLabel, pct } from '../format';
 import { Chip, ZONE_LABEL, areaHazard } from './bits';
 
 const ADJUSTERS = ['adj-01', 'adj-02', 'adj-03'];
@@ -28,7 +28,7 @@ export function statusOf(hh: Household, evs: SimEvent[], t: number): { rank: num
   }
   if (field?.safety === 'needs_help') return { rank: 0, status: 'Field · needs help', help: true };
   if (reply?.safety === 'needs_help') return { rank: 1, status: 'HELP', help: true };
-  if (field) return { rank: 2, status: `Field · ${DAMAGE_LABEL[field.damage].toLowerCase()}, ${field.safety.replace('_', ' ')}`, help: false };
+  if (field) return { rank: 2, status: `Field · ${field.damage == null ? 'house not assessed' : DAMAGE_LABEL[field.damage].toLowerCase()}, ${field.safety.replace('_', ' ')}`, help: false };
   if (sent && !reply && !claim) return { rank: 3, status: `No reply · ${fmtAgo(t - sent.t).replace(' ago', '')}`, help: false };
   if (claim) return { rank: 4, status: `Claim · ${claim.peril}, ${DAMAGE_LABEL[claim.reportedDamage].toLowerCase()}`, help: false };
   if (reply) return { rank: 5, status: `SAFE · damage ${reply.damage}`, help: false };
@@ -129,7 +129,7 @@ export function AreaDetail({ view, onClose }: { view: AreaView; onClose: () => v
           {shown.map((r) => (
             <li key={r.hh.id}>
               <span className="hh-main">
-                <b>{addressOf(r.hh)}</b>
+                <b>{homeLabel(r.hh.id)}</b>
                 <span className="muted small">{tagsOf(r.hh)}</span>
               </span>
               {r.help ? <span className="help-tag">{r.status}</span> : <span className="small hh-status">{r.status}</span>}

@@ -9,8 +9,10 @@ import { useEstimatesById, useHouseholdsById } from './hooks';
 import { makeKidsNote } from './accounting';
 import { cellSetKey, prio, RANK } from './mapModel';
 import type { HouseholdRow } from './rows';
-import { CLOSURES, DAMAGE, PeopleProperty, contactHistory } from './household';
-import { fmtT, homeLabel, pct } from '../format';
+import { CloseHousehold, DAMAGE, PeopleProperty, contactHistory } from './household';
+import { directionsUrl, fmtT, homeLabel, pct } from '../format';
+
+const NOT_ASSESSED = 255; // submit_field_report: house not assessed (needs a note saying why)
 
 export function AdjusterLive() {
   const region = useMemo(initialLiveRegion, []);
@@ -138,26 +140,27 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
   const [claims] = useTable(tables.claim.where((r) => r.householdId.eq(hh.id)));
   const [reports] = useTable(tables.fieldReport.where((r) => r.householdId.eq(hh.id)));
   const submit = useReducer(reducers.submitFieldReport);
-  const closeHousehold = useReducer(reducers.closeHousehold);
   const [followRows] = useTable(tables.householdFollowup.where((r) => r.householdId.eq(hh.id)));
-  const closure = followRows[0]?.closureReason ?? '';
   const est = useEstimatesById(useMemo(() => [hh.id], [hh.id])).get(hh.id);
   const signals = { est, replies, reports, claims, followup: followRows[0] };
-  const [closeError, setCloseError] = useState<string | null>(null);
   const [safety, setSafety] = useState<Safety | null>(null);
   const [damage, setDamage] = useState<number | null>(null);
+  const [memberMissing, setMemberMissing] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const history = contactHistory(signals);
+  const noteRequired = damage === NOT_ASSESSED;
+  const noteOk = !noteRequired || note.trim().length >= 3;
 
   const send = async () => {
-    if (safety == null || damage == null) return;
+    if (safety == null || damage == null || !noteOk) return;
     setBusy(true);
     setError(null);
     try {
-      await submit({ householdId: hh.id, safety, damage, note: note.slice(0, 500) });
+      // memberMissing opens the missing-member referral on the backend (no separate report_member_missing).
+      await submit({ householdId: hh.id, safety, damage, note: note.trim().slice(0, 500), memberMissing });
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -172,7 +175,10 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
       <div className="card">
         <button className="link muted back" onClick={onDone}>← Tasks</button>
         <h2>{homeLabel(hh.id, fictional)}</h2>
-        <p className="muted small">{area}</p>
+        <div className="hh-where">
+          <p className="muted small">{area}</p>
+          <a className="btn small-btn" href={directionsUrl(hh.lat, hh.lng)} target="_blank" rel="noreferrer">Directions ↗</a>
+        </div>
         {kids && <p className="kids-banner">{kids}</p>}
         <PeopleProperty {...signals} />
         <div className="tags">
@@ -205,43 +211,33 @@ function HouseholdCard({ hh, area, fictional, kids, onDone }: { hh: HouseholdRow
             </button>
           ))}
         </div>
+        <label className="check small member-missing">
+          <input type="checkbox" checked={memberMissing} onChange={(e) => setMemberMissing(e.target.checked)} />
+          <span>A household member is missing: referred to 911 / local agencies</span>
+        </label>
 
         <h3>2 · Home</h3>
         <div className="seg">
           {DAMAGE.map((label, d) => (
             <button key={d} className={damage === d ? 'on' : ''} aria-pressed={damage === d} onClick={() => setDamage(d)}>{label}</button>
           ))}
+          <button className={damage === NOT_ASSESSED ? 'on' : ''} aria-pressed={damage === NOT_ASSESSED} onClick={() => setDamage(NOT_ASSESSED)}
+            title="People checked, house not assessed (dark, unsafe, no access). The house stays uninspected.">Can't assess</button>
         </div>
 
         <label className="field note">
-          <span>Note (optional)</span>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={2} />
+          <span>{noteRequired ? 'Note (required: why the house could not be assessed)' : 'Note (optional)'}</span>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={2}
+            placeholder={noteRequired ? 'e.g. unsafe to enter, no access: flooded' : undefined} />
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button className="btn primary block" disabled={safety == null || damage == null || busy} onClick={send}>
+        <button className="btn primary block" disabled={safety == null || damage == null || !noteOk || busy} onClick={send}>
           {busy ? 'Sending…' : 'Submit field report'}
         </button>
 
         <h3>Can't make contact?</h3>
-        <label className="field">
-          <span>Close without contact (documented reason)</span>
-          <select
-            value={closure}
-            onChange={async (e) => {
-              setCloseError(null);
-              try {
-                await closeHousehold({ householdId: hh.id, reason: e.target.value });
-              } catch (err) {
-                setCloseError(err instanceof Error ? err.message : String(err));
-              }
-            }}
-          >
-            <option value="">{closure ? 'Reopen (not closed)' : 'Open · choose a reason…'}</option>
-            {CLOSURES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </label>
-        {closure && <p className="small muted">Closed: {CLOSURES.find((c) => c.value === closure)?.label ?? closure}{followRows[0]?.closedBy ? ` · by ${followRows[0].closedBy}` : ''}</p>}
-        {closeError && <p className="form-error">{closeError}</p>}
+        <p className="small muted">Close without contact, with a documented reason.</p>
+        <CloseHousehold householdId={hh.id} followup={followRows[0]} reports={reports} />
       </div>
     </div>
   );

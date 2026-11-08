@@ -55,15 +55,23 @@ export function peopleLine({ est, replies, reports, followup }: HouseholdSignals
 
 export function propertyLine({ est, replies, reports, claims }: HouseholdSignals): { status: string; detail: string | null } {
   const report = latest(reports);
-  if (report) return { status: `Inspected · ${DAMAGE[report.damage] ?? report.damage}`, detail: `${report.adjusterId} · ${fmtT(report.t)}` };
+  // A visit that could not assess the house (damage 255, damageKnown = false) leaves it uninspected.
+  const assessed = latest(reports.filter((r) => r.damageKnown));
+  if (assessed) return { status: `Inspected · ${DAMAGE[assessed.damage] ?? assessed.damage}`, detail: `${assessed.adjusterId} · ${fmtT(assessed.t)}` };
+  const why = report ? `Visit ${fmtT(report.t)}: house not assessed${report.note ? ` (${report.note})` : ''}` : null;
+  const withWhy = (d: string | null) => [why, d].filter(Boolean).join(' · ') || null;
   const model = est ? `Model estimate: ${pct(est.pSevere)} chance of severe damage` : null;
   const reply = latest(replies);
-  if (reply && !reply.damageKnown) return { status: 'Damage unknown', detail: model ? `Reply didn't describe the home · ${model}` : "Reply didn't describe the home" };
-  if (reply) return { status: `Resident reported: ${DAMAGE[reply.damage] ?? reply.damage}`, detail: model };
+  if (reply && !reply.damageKnown) return { status: 'Damage unknown', detail: withWhy(model ? `Reply didn't describe the home · ${model}` : "Reply didn't describe the home") };
+  if (reply) return { status: `Resident reported: ${DAMAGE[reply.damage] ?? reply.damage}`, detail: withWhy(model) };
   const claim = latest(claims);
-  if (claim) return { status: `Claim reported: ${DAMAGE[claim.reportedDamage] ?? claim.reportedDamage}`, detail: model };
-  return { status: 'Not inspected', detail: model };
+  if (claim) return { status: `Claim reported: ${DAMAGE[claim.reportedDamage] ?? claim.reportedDamage}`, detail: withWhy(model) };
+  return { status: report ? 'Not assessed' : 'Not inspected', detail: withWhy(model) };
 }
+
+// Field report damage as text ("not assessed" when the visit could not look at the house).
+export const reportDamage = (f: Pick<FieldReportRow, 'damage' | 'damageKnown'>) =>
+  f.damageKnown ? `damage ${DAMAGE[f.damage] ?? f.damage}` : 'house not assessed';
 
 // The two lines, as shown on both cards.
 export function PeopleProperty(s: HouseholdSignals) {
@@ -92,7 +100,7 @@ export function contactHistory(s: HouseholdSignals) {
         + `${r.needs ? ` · asked for ${needsText(r.needs)}` : ''}${r.text ? ` · “${r.text}”` : ''}`,
     })),
     ...s.claims.map((c) => ({ t: c.t, text: `Claim: ${c.peril} · damage ${DAMAGE[c.reportedDamage] ?? c.reportedDamage}` })),
-    ...s.reports.map((f) => ({ t: f.t, text: `Visit (${f.adjusterId}): ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · ${DAMAGE[f.damage] ?? f.damage}` })),
+    ...s.reports.map((f) => ({ t: f.t, text: `Visit (${f.adjusterId}): ${f.safety === 'unsure' ? 'nobody seen' : f.safety.replace('_', ' ')} · ${reportDamage(f)}${f.note ? ` · “${f.note}”` : ''}` })),
   ].sort((a, b) => a.t - b.t);
 }
 
@@ -169,14 +177,11 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
 }) {
   const [followRows] = useTable(useMemo(() => tables.householdFollowup.where((r) => r.householdId.eq(householdId)), [householdId]));
   const followup = followRows[0];
-  const closeHousehold = useReducer(reducers.closeHousehold);
-  const [closeError, setCloseError] = useState<string | null>(null);
   const [logging, setLogging] = useState(false);
   const signals: HouseholdSignals = { est, replies, reports, claims, followup };
   const history = contactHistory(signals);
   const flags = riskFlags(household);
   const kids = noteFor?.(household);
-  const closure = followup?.closureReason ?? '';
   const step = est?.escalation ?? '';
 
   return (
@@ -210,25 +215,76 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
           </>
         )}
         <h3 className="eyebrow divider">Close without contact</h3>
-        <select
-          className="hh-close"
-          value={closure}
-          onChange={async (e) => {
-            setCloseError(null);
-            try {
-              await closeHousehold({ householdId, reason: e.target.value });
-            } catch (err) {
-              setCloseError(err instanceof Error ? err.message : String(err));
-            }
-          }}
-        >
-          <option value="">{closure ? 'Reopen (not closed)' : 'Open · choose a documented reason…'}</option>
-          {CLOSURES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        {closure && followup?.closedBy && <p className="small muted">Closed by {followup.closedBy}</p>}
-        {closeError && <p className="form-error small">{closeError}</p>}
+        <CloseHousehold householdId={householdId} followup={followup} reports={reports} />
       </div>
     </aside>
+  );
+}
+
+// Close a household nobody could reach, with a documented reason and a note saying what was tried
+// (backend: note of at least 3 characters; "unreachable after a visit" needs a visit report with
+// nobody seen first). Closing also completes the household's open assignment. Reopening needs no note.
+export function CloseHousehold({ householdId, followup, reports }: {
+  householdId: string;
+  followup: HouseholdFollowupRow | undefined;
+  reports: readonly FieldReportRow[];
+}) {
+  const closeHousehold = useReducer(reducers.closeHousehold);
+  const closure = followup?.closureReason ?? '';
+  const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const visitedNobodySeen = reports.some((r) => r.safety === 'unsure');
+
+  const run = async (r: string, n: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await closeHousehold({ householdId, reason: r, note: n.trim() });
+      setReason('');
+      setNote('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (closure) {
+    return (
+      <div className="close-hh">
+        <p className="small">
+          <b>Closed: {CLOSURES.find((c) => c.value === closure)?.label ?? closure}</b>
+          {followup?.closedBy ? <span className="muted"> · by {followup.closedBy}</span> : null}
+        </p>
+        {followup?.closureNote && <p className="small muted">“{followup.closureNote}”</p>}
+        <button className="btn small-btn" onClick={() => run('', '')} disabled={busy}>{busy ? 'Reopening…' : 'Reopen'}</button>
+        {error && <p className="form-error small">{error}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="close-hh">
+      <select className="hh-close" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason for closing">
+        <option value="">Choose a documented reason…</option>
+        {CLOSURES.map((c) => {
+          const blocked = c.value === 'unreachable_after_visit' && !visitedNobodySeen;
+          return <option key={c.value} value={c.value} disabled={blocked}>{c.label}{blocked ? ' (needs a visit with nobody seen)' : ''}</option>;
+        })}
+      </select>
+      {reason && (
+        <>
+          <textarea className="hh-close-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500}
+            placeholder="What was tried (required)" aria-label="Note: what was tried" />
+          <button className="btn small-btn" onClick={() => run(reason, note)} disabled={busy || note.trim().length < 3}>
+            {busy ? 'Closing…' : 'Close household'}
+          </button>
+          <span className="small muted">Closing also completes its open assignment.</span>
+        </>
+      )}
+      {error && <p className="form-error small">{error}</p>}
+    </div>
   );
 }
 

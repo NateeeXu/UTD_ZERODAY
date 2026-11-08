@@ -226,7 +226,7 @@ function kindTitle(e: SimEvent): string {
 
 function kindDetail(e: SimEvent): string {
   switch (e.kind) {
-    case 'field_report': return `${DAMAGE_LABEL[e.damage].toLowerCase()} damage, ${e.safety.replace('_', ' ')}`;
+    case 'field_report': return `${e.damage == null ? 'house not assessed' : `${DAMAGE_LABEL[e.damage].toLowerCase()} damage`}, ${e.safety.replace('_', ' ')}`;
     case 'sms_reply': return `damage ${e.damage}`;
     case 'claim': return `${e.peril}, damage ${e.reportedDamage}`;
     case 'sms_sent': return '';

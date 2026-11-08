@@ -596,3 +596,18 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .detail-body .range-note { margin: 6px 20px 0; }
 .modal .check { align-items: flex-start; color: var(--muted); }
 .modal .check input { margin-top: 2px; flex-shrink: 0; }
+
+/* Adjuster card: area + Directions (coordinates only, no street address) */
+.hh-where { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hh-where .btn { flex-shrink: 0; text-decoration: none; }
+.member-missing { margin-top: 8px; align-items: flex-start; }
+.member-missing input { margin-top: 2px; flex-shrink: 0; }
+
+/* Close without contact: reason + required note */
+.close-hh { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.close-hh .hh-close, .close-hh .hh-close-note { width: 100%; }
+.hh-close-note { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; }
+.close-hh p { margin: 0; }
+
+.free-text { flex-wrap: wrap; }
+.free-text-error { flex-basis: 100%; margin: 0; }

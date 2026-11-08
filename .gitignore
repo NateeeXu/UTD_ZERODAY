@@ -25,3 +25,6 @@ data/raw/
 
 # random disasters generated on demand (sim/real/random.ts)
 data/real/*/scenarios/
+
+# Vercel CLI project link
+.vercel

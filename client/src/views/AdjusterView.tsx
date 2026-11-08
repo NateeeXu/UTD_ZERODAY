@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import type { Damage, Household, Safety, SimEvent } from '@shared/types';
 import { useTriage } from '../state/TriageStore';
-import { DAMAGE_LABEL, addressOf, describeEvent, fmtT } from '../format';
+import { DAMAGE_LABEL, describeEvent, fmtT, homeLabel } from '../format';
 import { statusOf } from '../components/AreaDetail';
 import { Chip } from '../components/bits';
 
@@ -90,7 +90,7 @@ export function AdjusterView() {
                   <button className="task" onClick={() => setOpenId(hh.id)}>
                     <Chip priority={hex.priority} verification={hex.verification} />
                     <span className="task-main">
-                      <b>{addressOf(hh)}</b>
+                      <b>{homeLabel(hh.id)}</b>
                       <span className="muted small">
                         {s.areaOfHex.get(hh.hex)?.name}{mine && ' · assigned to you'}
                       </span>
@@ -129,7 +129,7 @@ function HouseholdCard({ hh, adjusterId, onDone }: { hh: Household; adjusterId: 
   return (
     <div className="card">
       <button className="link muted back" onClick={onDone}>← Tasks</button>
-      <h2>{addressOf(hh)}</h2>
+      <h2>{homeLabel(hh.id)}</h2>
       <p className="muted small">{s.areaOfHex.get(hh.hex)?.name}</p>
       <div className="tags">
         <Tag on={hh.windCovered}>Wind</Tag>

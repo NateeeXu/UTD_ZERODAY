@@ -1,4 +1,4 @@
-import type { Damage, Household, Priority, SimEvent } from '@shared/types';
+import type { Damage, Priority, SimEvent } from '@shared/types';
 
 export const PRIORITY_COLOR: Record<Priority, string> = {
   P0: '#DC2626',
@@ -34,17 +34,13 @@ export function fmtAgo(minutes: number): string {
 
 export const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-const STREETS = [
-  'Bayou', 'Pelican', 'Magnolia', 'Seawall', 'Cypress', 'Harbor', 'Gulfview', 'Live Oak',
-  'Marsh', 'Lighthouse', 'Pecan', 'Tidewater', 'Heron', 'Saltgrass', 'Driftwood', 'Oyster Bay',
-];
-const SUFFIX = ['St', 'Ave', 'Dr', 'Ln', 'Ct', 'Rd'];
-
-// Synthetic street address derived from the household id (stable across reloads).
-export function addressOf(h: Pick<Household, 'id'>): string {
-  const n = parseInt(h.id.replace(/\D/g, ''), 10) || 0;
-  const num = 100 + ((n * 37) % 8900);
-  return `${num} ${STREETS[n % STREETS.length]} ${SUFFIX[(n >> 4) % SUFFIX.length]}`;
+// No street addresses anywhere (not even invented ones): a home is its household number plus its area.
+// Directions open the phone's map app at the household's coordinates.
+export function directionsUrl(lat: number, lng: number): string {
+  const ll = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const ua = navigator.userAgent;
+  const ios = /iP(hone|ad|od)/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+  return ios ? `https://maps.apple.com/?daddr=${ll}&dirflg=d` : `https://www.google.com/maps/dir/?api=1&destination=${ll}`;
 }
 
 export function describeEvent(e: SimEvent): string {
@@ -56,13 +52,13 @@ export function describeEvent(e: SimEvent): string {
     case 'claim':
       return `Claim filed: ${e.peril} · damage ${e.reportedDamage}`;
     case 'field_report':
-      return `Field report (${e.adjusterId}): ${e.safety.replace('_', ' ')} · ${DAMAGE_LABEL[e.damage]}`;
+      return `Field report (${e.adjusterId}): ${e.safety.replace('_', ' ')} · ${e.damage == null ? 'house not assessed' : DAMAGE_LABEL[e.damage]}`;
   }
 }
 
-// Real geography: never invent street names over real places; use a neutral home number.
-export function homeLabel(id: string, fictional: boolean): string {
-  if (fictional) return addressOf({ id });
+// The household number, e.g. "Home #000013" for tx-celia-type-direct-hit-h000013. Same for the fictional
+// town and real geography (the second argument is kept so call sites stay unchanged).
+export function homeLabel(id: string, _fictional?: boolean): string {
   const digits = id.match(/(\d+)$/)?.[1];
   return digits ? `Home #${digits}` : `Home ${id}`;
 }

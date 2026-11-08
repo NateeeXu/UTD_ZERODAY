@@ -1,0 +1,13 @@
+# Upload only what the client build reads: client/, shared/ (@shared/types) and
+# docs/preview/ (preview snapshot). data/ alone is ~200 MB and is never needed.
+/*
+!/client
+!/shared
+!/docs
+!/vercel.json
+/docs/*
+!/docs/preview
+/client/node_modules
+/client/dist
+.env
+.env.*

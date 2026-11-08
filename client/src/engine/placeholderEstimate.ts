@@ -84,11 +84,12 @@ export function estimate(world: World, events: SimEvent[], t: number, model: Mod
     }
     const f = field.get(hh.id);
     if (f) {
-      pSevere = f.damage >= 2 ? 0.98 : 0.02;
+      // damage null = people checked, house not assessed: the property estimate stays as it was.
+      if (f.damage != null) pSevere = f.damage >= 2 ? 0.98 : 0.02;
       pHelp = f.safety === 'needs_help' ? 0.98 : f.safety === 'unsure' ? 0.5 : 0.02;
       uncertainty = f.safety === 'unsure' ? 0.3 : 0.05;
     }
-    households.set(hh.id, { householdId: hh.id, pSevere, pNeedsHelp: pHelp, uncertainty, verified: !!f });
+    households.set(hh.id, { householdId: hh.id, pSevere, pNeedsHelp: pHelp, uncertainty, verified: !!f && f.damage != null });
 
     const a = agg.get(hh.hex) ?? {
       n: 0, sumSevere: 0, maxHelp: 0, sumUnc: 0, prior: 0, expClaims: 0,
