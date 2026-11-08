@@ -158,3 +158,29 @@ The Bay Area is a weekday-daytime earthquake: most people are away when it hits,
 | Bay Area (5) | 0.102 [0.099, 0.105] (0.036–0.160) | 0.882 [0.877, 0.886] | 0.018 | 0.18 (0.09–0.24) |
 
 The bootstrap CIs are narrow because they only measure sampling noise within these simulated events; they say nothing about real-world accuracy (see Known limitations).
+
+## 9. Random disasters (out-of-sample demos)
+
+Each database normally plays one fixed live event. For a demo where the judges pick the disaster, generate a new hypothetical event for the same region and load it; the calibrated model is kept, so the event is new to it (a genuine out-of-sample test, visible in `intervalCoverageLive` and the holdout metrics).
+
+```bash
+cd spacetimedb
+node --env-file=.env scripts/new-disaster.ts --region tx --db triage-loop-nateeexu-tx --category 4 --hour 2
+node --env-file=.env scripts/new-disaster.ts --region ca --db triage-loop-nateeexu-ca --fault Hayward --magnitude 7.0 --hour 17 --weekday true
+node ../sim/real/random.ts list      # presets and faults
+```
+Generation takes about 1 s; loading the Bay Area into Maincloud about a minute. Omit options to draw them at random (`--seed N` reproduces a draw). Generated files go to `data/real/<region>/scenarios/` (gitignored).
+
+- **Hurricanes** (Corpus Christi): category drawn from Texas landfall climatology, wind within the Saffir-Simpson band, radius of maximum wind shrinking with intensity, forward speed and heading from triangular distributions, landfall anywhere on the Coastal Bend (27.3–28.1° N), storm surge by category, more rain for slow storms, random local time. Spec: `sim/real/random-spec.ts`.
+- **Earthquakes** (Bay Area): fault drawn by likelihood weight (Hayward, Calaveras, San Andreas Peninsula, Concord–Green Valley, Greenville), magnitude within the fault's range, epicentre along the fault; shaking from a finite rupture (Wells & Coppersmith 1994 length) and a California intensity prediction equation (Atkinson & Wald 2007). Code: `sim/real/quake-model.ts`.
+- Everything downstream (households, replies, claims, truth, people's whereabouts) is generated exactly as for the fixed events.
+
+Two random runs, simulated staff on (true severe count vs the live range):
+
+| Event | t = 0 | 24 h | 72 h | true | cell coverage | reached by 72 h |
+|---|---|---|---|---|---|---|
+| Random Cat-1 hurricane, weekend 15:00 (TX seed 42) | 322 [37, 872] | 236 [193, 418] | 247 [241, 266] | 245 | 99–100 % | 20,000 / 20,000 |
+| Hayward M7.0, weekday 03:00 (CA seed 8) | 12,138 [8,916, 15,417] | 12,790 [10,883, 14,791] | 12,598 [11,171, 14,139] | 12,296 | 88–92 % | 30,000 / 30,000 |
+
+Caveat: the random parameter ranges are research-based but simplified (a straight rupture, one IPE, no site amplification beyond liquefaction; a parametric hurricane wind and surge model). They make realistic-looking, varied events for testing the pipeline, not hazard forecasts.
+

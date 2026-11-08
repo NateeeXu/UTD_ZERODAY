@@ -24,7 +24,9 @@ export interface QuakeScenario {
   name: string;
   seed: number;
   landfallIso: string;     // event origin time (synthetic); local hour / weekday are derived from it
-  usgsEventId: string;
+  /** USGS ShakeMap scenario grid (data/raw/usgs/grid_<id>.xml); or `parametric` for a random event */
+  usgsEventId?: string;
+  parametric?: { faultName: string; epicenter: { lat: number; lng: number }; magnitude: number; strikeDeg: number; depthKm: number };
   extraOutageClusters: number;
 }
 

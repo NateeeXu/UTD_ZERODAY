@@ -149,7 +149,7 @@ submit_field_report (adjuster, permission-checked) ─────────�
 - **Permissions**: only `adjuster` members can file field reports. Only `manager` members (or the owner) drive the replay and assign work. Only the owner seeds.
 - **Real-time statistics**: `hex_stats` counters and global `metrics` are updated in the same transaction as the events.
 - **Fusion**: engine v2 (`engine/src`, copied into `spacetimedb/src/fusion/engine/`) runs inside the reducers:
-  - 44 features: CMIST vulnerability, tenure, students, school hours, away-at-work;
+  - 45 features: CMIST vulnerability, tenure, students, school hours, away-at-work;
   - hazard-agnostic hazard score (`hazardIndex`);
   - silence baselines conditioned on coverage, tenure, language and being away;
   - `silenceCause`, a one-line `reason`, and per-region models (model version 2).
