@@ -6,6 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptRecommendationReducer from "../accept_recommendation_reducer.ts";
 import AssignReducer from "../assign_reducer.ts";
 import AssignHexReducer from "../assign_hex_reducer.ts";
 import CloseHouseholdReducer from "../close_household_reducer.ts";
@@ -17,6 +18,7 @@ import MarkReplyParsedReducer from "../mark_reply_parsed_reducer.ts";
 import PauseReplayReducer from "../pause_replay_reducer.ts";
 import RecomputeAllReducer from "../recompute_all_reducer.ts";
 import RefreshMetricsReducer from "../refresh_metrics_reducer.ts";
+import RefreshRecommendationsReducer from "../refresh_recommendations_reducer.ts";
 import RemoveMemberReducer from "../remove_member_reducer.ts";
 import ReportMemberMissingReducer from "../report_member_missing_reducer.ts";
 import ResetDemoReducer from "../reset_demo_reducer.ts";
@@ -38,9 +40,11 @@ import SubmitRawReplyReducer from "../submit_raw_reply_reducer.ts";
 import SubmitSmsReplyReducer from "../submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "../submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "../update_assignment_reducer.ts";
+import UpdateMyLocationReducer from "../update_my_location_reducer.ts";
 import UpdateReferralReducer from "../update_referral_reducer.ts";
 import WipeWorldReducer from "../wipe_world_reducer.ts";
 
+export type AcceptRecommendationParams = __Infer<typeof AcceptRecommendationReducer>;
 export type AssignParams = __Infer<typeof AssignReducer>;
 export type AssignHexParams = __Infer<typeof AssignHexReducer>;
 export type CloseHouseholdParams = __Infer<typeof CloseHouseholdReducer>;
@@ -52,6 +56,7 @@ export type MarkReplyParsedParams = __Infer<typeof MarkReplyParsedReducer>;
 export type PauseReplayParams = __Infer<typeof PauseReplayReducer>;
 export type RecomputeAllParams = __Infer<typeof RecomputeAllReducer>;
 export type RefreshMetricsParams = __Infer<typeof RefreshMetricsReducer>;
+export type RefreshRecommendationsParams = __Infer<typeof RefreshRecommendationsReducer>;
 export type RemoveMemberParams = __Infer<typeof RemoveMemberReducer>;
 export type ReportMemberMissingParams = __Infer<typeof ReportMemberMissingReducer>;
 export type ResetDemoParams = __Infer<typeof ResetDemoReducer>;
@@ -73,6 +78,7 @@ export type SubmitRawReplyParams = __Infer<typeof SubmitRawReplyReducer>;
 export type SubmitSmsReplyParams = __Infer<typeof SubmitSmsReplyReducer>;
 export type SubmitSmsTextReplyParams = __Infer<typeof SubmitSmsTextReplyReducer>;
 export type UpdateAssignmentParams = __Infer<typeof UpdateAssignmentReducer>;
+export type UpdateMyLocationParams = __Infer<typeof UpdateMyLocationReducer>;
 export type UpdateReferralParams = __Infer<typeof UpdateReferralReducer>;
 export type WipeWorldParams = __Infer<typeof WipeWorldReducer>;
 

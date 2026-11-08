@@ -71,6 +71,7 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
    - **不显示**六边形热力层和图例。
 2. **浮在地图上的卡片**："Field tasks" / "J. Ortiz · Corpus Christi · T+14h 30m"，右侧是 `live` 标记。
 3. **底部面板**（没有 Tabs，Suggested 已删）。小标题 "NEXT UP"，右侧写 "3 open · 1 done"。
+   - "Next best" card above NEXT UP: see 2.7.
 4. **Next up 卡片**（第一个未完成的任务）
    - 第一行：`P0` badge、类型 badge（`Welfare check` / `Property inspection`）、`Silent 14 h`。
    - 标题："Home #006142"。
@@ -150,7 +151,7 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
 选中后，选项下方出现一块，按从上到下的顺序：
 - **Needs help**（红色块，最醒目）：
   - 标题 "Anyone in danger? Call 911 now."
-  - 全宽红色大按钮 `Call 911 now`（`<a href="tel:911">`；只打开拨号界面，不会自动拨出）。
+  - 全宽红色大按钮 `Call 911 now`（演示版只弹提示 "Demo only. No call placed."；正式版才用 `<a href="tel:911">`）。
   - 按钮下面一行小字 "Also creates a referral."
   - 勾选框 "Someone who lives here is missing"，勾上后 `memberMissing = true`。
 - **Some seen, someone missing**（琥珀色，一行）："Opens a missing-member referral"。备注的 placeholder 换成 "Who is missing? Last seen where?"。
@@ -284,6 +285,32 @@ renters 的区块内容：
 - 回复 `safe` 只代表人报了平安，房子可能还没查勘：如果这是 Property inspection 任务，这一行改为 "Replied safe · house not inspected"（仍是一行），并且默认按钮是 Still go。
 - 不弹系统通知，也不在通知里显示内容（隐私）。
 
+### 2.7 Next best
+
+Purpose: suggest one task from where the adjuster is, without waiting for a manager. Rules only; Claude does not rank. Ranking details: `SPACETIME_API.md` section 4 (`adjuster_recommendation`).
+
+**Card** (on top of the task list, above NEXT UP)
+- First line: "Next best · 0.4 mi" (`distanceKm` in miles; straight line, like "1.2 mi" on Home).
+- Reason line: `reason` as sent, e.g. "No reply 14 h" or "Inspect · first in area".
+- One action: "Accept" → `acceptRecommendation({ householdId })`. The task then arrives through `my_assignments` like any other.
+- Refresh: a small icon on the card → `refreshRecommendations()`.
+- Show the row with the lowest `rank`, not `rank === 1`: when another adjuster takes a task, its row goes and the others keep their ranks.
+- No rows: hide the card.
+
+**Start position** (demo)
+- Households are synthetic, so the demo uses no real GPS and no navigation to a synthetic address. The adjuster picks a start position on the map → `updateMyLocation({ lat, lng, source: 'demo' })`.
+- No `adjuster_location` row yet: show the picker instead of the card. `refreshRecommendations` rejects until a position exists.
+- In the demo the blue dot (2.1) shows this position, not `watchPosition`.
+
+**Behaviour**
+- The list changes only when the adjuster updates location, taps refresh, accepts a task or submits a report. It never replaces a task on its own.
+- After a report, a `demo` adjuster moves to that household and the list is rebuilt from there. A `gps` position stays.
+- Assignment, report or closure removes the household from every adjuster's list.
+- Accept on a task that is no longer needed: the row goes and the list refreshes, with no assignment and no error. Show no error; the card moves to the new top row.
+- Distance is not routing: `distanceKm` is straight line and `etaMin` applies a road factor. "Go to area" (2.2) is unchanged.
+
+Data: `SELECT * FROM my_recommendations`; `SELECT * FROM adjuster_location WHERE identity = <me>`.
+
 ## 3. 发送状态机
 
 只用于 `submit_field_report`。发件箱存在 `localStorage['adjuster-outbox-v1']`，每条记录：
@@ -310,7 +337,7 @@ renters 的区块内容：
                                        先查重：我的报告数 > baseCount？ 是 → [Sent]；否 → [Sending]
 
  needs_help 看门狗：点 Send 起 30 s 内没进 [Sent]（Queued 或 Failed 都算）
-   → 全宽红色块 "Not delivered — call 911 directly" + `Call 911 now`（tel:911），后台继续重试。
+   → 全宽红色块 "Not delivered — call 911 directly" + `Call 911 now`（演示版不要真的拨号：弹提示 "Demo only. No call placed."；正式版才用 tel:911），后台继续重试。
 ```
 
 - **"我的报告"** 指 `field_report.householdId === X && ingestedBy.isEqual(myIdentity)`。用条数判断，不用时间，这样不受手机时钟偏差影响。

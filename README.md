@@ -21,7 +21,7 @@ Three worlds: Harbor Bend, TX (fictional), Corpus Christi, TX (hypothetical Cat 
 2. **SMS check-ins**: simulated texts to existing policyholders at insured addresses ("Are you safe? How bad is the damage?").
 3. **State Farm data**: policy locations, coverage, and claims compared to the expected volume.
 
-The signals are fused per H3 hexagon into an **action priority** (P0 / P1 / P2) and a **verification status** (verified / needs verification). High-hazard areas with no replies are never treated as safe. Field adjusters' reports update the estimate locally right away, and adjust source trust gradually as reports accumulate.
+The signals are fused per H3 hexagon into an **action priority** (P0 / P1 / P2) and a **verification status** (verified / needs verification). High-hazard areas with no replies are never treated as safe. Field adjusters' reports update the estimate locally right away, and adjust source trust gradually as reports accumulate. A rules-based "Next best" list suggests each adjuster's next task by cell priority, then value per minute from their location.
 
 ## How to run
 Needs Node 22.18+ and the SpacetimeDB 2.x CLI.

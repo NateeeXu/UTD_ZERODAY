@@ -471,6 +471,8 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.claim.clear();
   ctx.db.fieldReport.clear();
   ctx.db.assignment.clear();
+  ctx.db.adjusterLocation.clear();
+  ctx.db.adjusterRecommendation.clear();
   ctx.db.householdEstimate.clear();
   ctx.db.inspectionCandidate.clear();
   ctx.db.householdFollowup.clear();

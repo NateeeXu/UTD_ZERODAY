@@ -326,7 +326,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 | FA-2 | Task list | Must | Branch (partial) | `my_assignments`, plus top unassigned candidates in the branch version |
 | FA-3 | Report people and home separately | Must | Branch (partial) | `submit_field_report`. Options map to `safety` / `memberMissing`: "Safe · everyone accounted for" = `safe` / false; "Needs help" = `needs_help` / false, or true if ticked; "Some seen, someone missing" = `unsure` / true; "Nobody seen · still unaccounted" = `unsure` / false. Branch has Safe, Needs help and Nobody seen, and omits `memberMissing` (R1) |
 | FA-4 | Five-screen app | Must | Spec | Screens below; ordering P0 → P1 → P2, then `pNeedsHelp` |
-| FA-5 | Needs help puts 911 first | Must | Spec | Red block "Anyone in danger? Call 911 now."; `Call 911 now` is `tel:911` and only opens the dialer; "Also creates a referral." |
+| FA-5 | Needs help puts 911 first | Must | Spec | Red block "Anyone in danger? Call 911 now."; `Call 911 now` shows "Demo only. No call placed." in the demo build (`tel:911` in production); "Also creates a referral." |
 | FA-6 | House not assessed | Must | Built; UI Spec | `damage = 255` needs a note ≥ 3 chars; no trust update; house stays queued. Reasons: "Unsafe to enter", "No access (flooded, cordon, red-tagged)", "Dark, no power" |
 | FA-7 | Policy-aware form | Should | Spec | Renters: "Belongings and tonight" instead of structure. Condo: "Unit only · not the building". Welfare check: home section optional |
 | FA-8 | Can't make contact | Should | Built; Branch (partial: closure only, no note) | Skip: `update_assignment(cancelled)`. Close: `close_household` with reason and note |
@@ -407,6 +407,23 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 | Severe total, range, width, live coverage | `metrics.expectedSevereTotal`, `severeTotalLo`, `severeTotalHi`, `severeIntervalWidth`, `intervalCoverageLive` | Branch |
 | Staff work done | `staff_sim.callsMade`, `callsReached`, `visitsMade`, `visitsNobodyHome`, `inspectionsMade`, `referralsMade`, `helpFound` | Branch |
 
+### 6.13 Next best recommendations (NB)
+
+Location-based task suggestions for field adjusters. Open questions: Q6 and Q7.
+
+Shift simulation (5 adjusters, 8 h, from t = 24 h, synthetic households, static task pool, straight-line distance): P0 tasks done were 143 against 80 for queue order and 102 for nearest first in Texas, and 147 against 66 and 37 in the Bay Area. Nearest first drives less and finishes more tasks in total. The list stays people first: P0 work in these runs was almost entirely welfare visits, and a visit report can also assess the house.
+
+| ID | Requirement | Pri | Status | Acceptance criteria |
+|---|---|---|---|---|
+| NB-1 | Suggest tasks from where the adjuster is | Should | Built; UI Spec | `update_my_location` writes `adjuster_location` (`demo` or `gps`); `my_recommendations` returns the caller's top 10, at most 3 per cell |
+| NB-2 | Candidates are visits a person still has to make | Should | Built | `unaccounted_queue` with `escalation = 'field_visit'` (welfare) plus `inspection_candidate` (inspection), minus households with an open assignment. A household in both stays welfare |
+| NB-3 | Distance never beats urgency; rules, not an LLM | Must | Built | `recommend-rank.ts`, deterministic; Claude does not rank. Cell priority first: a nearer P1 never beats a P0. Within a priority: value / (drive minutes + 15 min on site), drive = straight-line km × 1.3 road factor at 35 km/h, not routing. Welfare value = 0.5 + 0.5 × min(1, weight × (1 + waitMin / 360)). Inspection value = `inspectScore` × 2 / (2 + verified households in the cell) |
+| NB-4 | The list does not change under the adjuster | Should | Built | Recomputed only on location update, refresh, accept or report; never replaces a task on its own. Assignment, report or closure removes the household from every adjuster's list |
+| NB-5 | One-tap self-assign | Should | Built; UI Spec | `accept_recommendation(householdId)`, adjuster role only. Task no longer needed: row removed and list refreshed, with no assignment and no error |
+| NB-6 | Phone card | Should | Spec | "Next best · 0.4 mi" on top of the task list, reason line ("No reply 14 h", "Inspect · first in area"), one Accept action (`docs/ADJUSTER_APP.md` section 2.7) |
+| NB-7 | Demo start position | Should | Built; UI Spec | Households are synthetic, so the adjuster picks a start on the map (`source = 'demo'`); no real GPS or navigation to a synthetic address. A field report moves a `demo` adjuster to that household; `gps` stays |
+| NB-8 | Adjusters on the manager map | Should | Built; UI Spec | `adjuster_location` + `member` names. The table is public for this; demo only, a real deployment restricts it to managers |
+
 ## 7. Data
 
 ### 7.1 Real vs synthetic
@@ -472,9 +489,9 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 | Events (public) | `sms_sent`, `sms_reply`, `claim`, `field_report` | Written through `onEvent`; `source` = `replay`, `live` or `staff_sim` |
 | Fusion output (public) | `hex_stats`, `household_estimate`, `inspection_candidate`, `metrics`, `model_state` | Rewritten only on material change |
 | No one overlooked (public) | `household_followup`, `unaccounted_queue` | Referral state, closures, ranked outreach |
-| Workflow and demo (public) | `replay_state`, `staff_sim`, `member`, `assignment`, `reply_inbox` | |
+| Workflow and demo (public) | `replay_state`, `staff_sim`, `member`, `assignment`, `reply_inbox`, `adjuster_location`, `adjuster_recommendation` | |
 | Private | `config`, `sim_truth`, `staged_event`, `cell_agg`, `replay_tick`, `staff_contact` | Passcodes, truth, future events, aggregates, schedule, call attempts |
-| Views | `my_member`, `my_assignments` | Per caller |
+| Views | `my_member`, `my_assignments`, `my_recommendations` | Per caller |
 
 ## 8. Architecture
 
@@ -516,7 +533,7 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 |---|---|---|---|
 | Contract and simulators | `shared/types.ts`, `sim/src`, `sim/real` | Offline, Node | Shared types; worlds, events, truth, random disasters |
 | Engine and calibration | `engine/src`, `engine/scripts/calibrate.ts` | Offline; copied into the module by `npm run sync-engine` | Features, inference, intervals, active inspection, learning; leave-one-event-out training and evaluation |
-| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 26 tables, 2 views, 35 reducers |
+| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 28 tables, 3 views, 38 reducers |
 | Owner scripts | `spacetimedb/scripts` | Node | `seed`, `smoke`, `parity`, `bench`, `new-disaster`, `sync-engine` |
 | Claude worker | `spacetimedb/scripts/claude-worker.ts` | Node beside the demo | The one runtime outside the database. It needs outbound HTTP, which reducers cannot make |
 | Client | `client/` on `origin/frontend/app` | Static web | Three screens; subscribes per screen to stay small on 20–30k households |
@@ -528,7 +545,7 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 | Membership | `join_as`, `leave`, `remove_member` | Passcode for staff roles; manager or owner to remove |
 | Policyholder | `submit_sms_reply`, `submit_sms_text_reply`, `submit_raw_reply`, `report_member_missing` | `policyholder_demo`, manager, owner, or reply passcode |
 | Parser | `submit_parsed_reply`, `mark_reply_parsed` | Worker, joined as manager |
-| Field | `submit_field_report` | `adjuster` members only |
+| Field | `submit_field_report`, `update_my_location`, `refresh_recommendations`, `accept_recommendation` | `adjuster` members only |
 | Work | `assign`, `assign_hex`, `update_assignment`, `update_referral`, `close_household` | Manager or owner; `update_assignment` also the assigned adjuster; `close_household` also adjusters |
 
 | Maincloud database | World | Households / cells | Use |
@@ -700,6 +717,8 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 | Q3 | Should a parser failure stay unaccounted until a person reads it? |
 | Q4 | Should `inspection_request` raise a household in the adjuster queue directly (AQ-4)? |
 | Q5 | What does end-to-end latency look like on Maincloud with judges' phones? |
+| Q6 | The Next best list recomputes only on location update, refresh, accept or report, so it can go stale between refreshes as priorities, waits and the queue move. Should the card show its age or prompt a refresh? |
+| Q7 | Nearby adjusters can see the same household until one accepts it. Should lists avoid overlap? |
 
 ## 12. Mapping to the judging criteria
 

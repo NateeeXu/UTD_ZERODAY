@@ -9,6 +9,7 @@ import { isOwner, memberOf, requireAdjuster, requireManager, ROLES, SINGLETON, s
 import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
+import { afterFieldReport, dropFromAllLists, forgetAdjuster, recomputeRecommendations, setAdjusterLocation, stillNeeded } from '../recommend';
 
 function checkDamage(damage: number) {
   if (!Number.isInteger(damage) || damage < 0 || damage > 3) throw new SenderError('damage must be an integer 0..3');
@@ -49,11 +50,13 @@ export const joinAs = spacetimedb.reducer(
     const row = { identity: ctx.sender, role, name: cleanName(name), joinedAt: ctx.timestamp };
     if (ctx.db.member.identity.find(ctx.sender)) ctx.db.member.identity.update(row);
     else ctx.db.member.insert(row);
+    if (role !== 'adjuster') forgetAdjuster(ctx, ctx.sender);
   }
 );
 
 export const leave = spacetimedb.reducer({ name: 'leave' }, ctx => {
   ctx.db.member.identity.delete(ctx.sender);
+  forgetAdjuster(ctx, ctx.sender);
 });
 
 /** Manager/owner housekeeping: remove a member (their open assignments stay; reassign them). */
@@ -62,7 +65,9 @@ export const removeMember = spacetimedb.reducer(
   { identityHex: t.string() },
   (ctx, { identityHex }) => {
     requireManager(ctx);
-    if (!ctx.db.member.identity.delete(parseIdentity(identityHex))) throw new SenderError('not a member');
+    const target = parseIdentity(identityHex);
+    if (!ctx.db.member.identity.delete(target)) throw new SenderError('not a member');
+    forgetAdjuster(ctx, target);
   }
 );
 
@@ -276,6 +281,46 @@ export const submitFieldReport = spacetimedb.reducer(
       if (a.status === 'assigned' && a.adjuster.equals(ctx.sender))
         ctx.db.assignment.id.update({ ...a, status: 'done', updatedAt: ctx.timestamp });
     }
+    afterFieldReport(ctx, ctx.sender, householdId);
+  }
+);
+
+// ----- adjuster "Next best" ----------------------------------------------------------
+
+/** Set the caller's position and rebuild their list. Phones send this on a demo pick or at most about once a minute. */
+export const updateMyLocation = spacetimedb.reducer(
+  { name: 'update_my_location' },
+  { lat: t.f64(), lng: t.f64(), source: t.string() },
+  (ctx, { lat, lng, source }) => {
+    requireAdjuster(ctx);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180)
+      throw new SenderError('lat must be -90..90 and lng -180..180');
+    if (source !== 'demo' && source !== 'gps') throw new SenderError("source must be 'demo' or 'gps'");
+    setAdjusterLocation(ctx, ctx.sender, lat, lng, source);
+    recomputeRecommendations(ctx, ctx.sender);
+  }
+);
+
+export const refreshRecommendations = spacetimedb.reducer({ name: 'refresh_recommendations' }, ctx => {
+  requireAdjuster(ctx);
+  if (!ctx.db.adjusterLocation.identity.find(ctx.sender)) throw new SenderError('set your location first');
+  recomputeRecommendations(ctx, ctx.sender);
+});
+
+/**
+ * Take a task from the caller's own list. If it no longer needs doing the row disappears and the list
+ * refreshes, with no assignment and no error (throwing would roll that refresh back).
+ */
+export const acceptRecommendation = spacetimedb.reducer(
+  { name: 'accept_recommendation' },
+  { householdId: t.string() },
+  (ctx, { householdId }) => {
+    requireAdjuster(ctx);
+    if (![...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)].some(r => r.householdId === householdId))
+      throw new SenderError('not in your Next best list');
+    if (stillNeeded(ctx, householdId)) assignOne(ctx, householdId, ctx.sender);
+    else dropFromAllLists(ctx, householdId);
+    recomputeRecommendations(ctx, ctx.sender);
   }
 );
 
@@ -299,6 +344,7 @@ function assignOne(ctx: Ctx, householdId: string, adjuster: Identity) {
     createdAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
   });
+  dropFromAllLists(ctx, householdId);
 }
 
 function requireAdjusterMember(ctx: Ctx, identityHex: string): Identity {
@@ -463,8 +509,10 @@ export const closeHousehold = spacetimedb.reducer(
       closedBy: reason ? (me?.name ?? 'owner') : '',
     });
     // Closing clears the adjusters' task lists; reopening leaves assignments alone.
-    if (reason)
+    if (reason) {
       for (const a of [...ctx.db.assignment.householdId.filter(householdId)])
         if (a.status === 'assigned') ctx.db.assignment.id.update({ ...a, status: 'done', updatedAt: ctx.timestamp });
+      dropFromAllLists(ctx, householdId);
+    }
   }
 );
