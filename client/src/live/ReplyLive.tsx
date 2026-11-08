@@ -14,6 +14,7 @@ import { reducers, tables } from '../module_bindings/index.ts';
 import type ChatMessageRowDef from '../module_bindings/chat_message_table.ts';
 import { LiveProvider } from './LiveProvider';
 import { initialLiveRegion, type RegionId } from './config';
+import { useVisualViewport } from './useVisualViewport';
 import { ArrowUp, Camera, ChatIcon, ChevronLeft, More, PhoneIcon, Pin, Shield } from './reply/icons';
 import './reply/reply.css';
 
@@ -365,13 +366,15 @@ function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
   children: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useStickToBottom(threadRef, contentRef, scrollKey);
+  useVisualViewport(pageRef); // header on top, composer just above the phone keyboard
   const sending = composer.state === 'sending';
   const canSend = composer.enabled && !sending && composer.text.trim().length > 0;
   return (
-    <div className="rp">
+    <div className="rp" ref={pageRef}>
       <div className="rp-top">
         <header className="rp-head">
           <button type="button" className="rp-close" onClick={() => { if (window.history.length > 1) window.history.back(); }}>
@@ -419,7 +422,7 @@ function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
         <button type="button" className="rp-icon" aria-label="Add a photo (not available in this demo)" aria-disabled="true"><Camera /></button>
         <button type="button" className="rp-icon" aria-label="Share location (not available in this demo)" aria-disabled="true"><Pin /></button>
         <input className="rp-input" value={composer.text} onChange={(e) => composer.setText(e.target.value)} maxLength={MAX_TEXT}
-          placeholder="Message" aria-label="Message" disabled={!composer.enabled} readOnly={sending} enterKeyHint="send" />
+          placeholder="Message" aria-label="Message" disabled={!composer.enabled} enterKeyHint="send" />
         <button type="submit" className={`rp-send${canSend ? ' on' : ''}`} disabled={!canSend} aria-label={sending ? 'Sending' : 'Send'}><ArrowUp /></button>
       </form>
       <footer className="rp-foot">Concept prototype for the State Farm challenge. Not the State Farm app.</footer>

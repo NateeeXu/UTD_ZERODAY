@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useReducer } from 'spacetimedb/react';
 import { reducers } from '../../module_bindings/index.ts';
+import { resetPageScroll, useVisualViewport } from '../useVisualViewport';
 import { useChatThread, type ChatRow, type ImessageRow } from './data';
 import { Icon } from './icons';
 
@@ -60,14 +61,28 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sendSeq = useRef(0); // a late answer to an earlier Send must not unlock a newer one
+  useVisualViewport(pageRef); // header on top, composer just above the keyboard
 
   // Stay at the newest message.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [rows.length, ready]);
+  // ...also when the thread gets shorter (keyboard opens, the box grows, a warning shows), unless scrolled up.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let pinned = true;
+    const onScroll = () => { pinned = el.scrollHeight - el.clientHeight - el.scrollTop < 48; };
+    const ro = new ResizeObserver(() => { if (pinned) el.scrollTop = el.scrollHeight; });
+    ro.observe(el);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener('scroll', onScroll); };
+  }, []);
   // Grow the input up to about four lines.
   useEffect(() => {
     const el = inputRef.current;
@@ -85,24 +100,29 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
     if (!ok) return;
     if (!canSend) { setError('Not sent: offline'); return; }
     const sentText = text;
+    const seq = ++sendSeq.current;
+    const latest = () => sendSeq.current === seq;
     setSending(true);
     setError(null);
-    // A stalled connection can leave the call hanging: after 10 s unlock the box and keep the text.
-    const timer = setTimeout(() => { setSending(false); setError('No response yet. Check the thread before resending.'); }, 10_000);
+    // A stalled connection can leave the call hanging: after 10 s unlock Send and keep the text.
+    const timer = setTimeout(() => { if (latest()) { setSending(false); setError('No response yet. Check the thread before resending.'); } }, 10_000);
     try {
+      // Resolves once the server's reply has put the new chat_message row in the local cache, so the thread
+      // already shows it: nothing else to wait for.
       await send({ householdId, text: body });
-      setText((cur) => (cur === sentText ? '' : cur));
-      setError(null);
+      setText((cur) => (cur === sentText ? '' : cur)); // kept if edited meanwhile
+      if (latest()) setError(null);
     } catch (e) {
-      setError(`Not sent: ${e instanceof Error ? e.message : String(e)}`);
+      if (latest()) setError(`Not sent: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       clearTimeout(timer);
-      setSending(false);
+      if (latest()) setSending(false);
+      resetPageScroll();
     }
   };
 
   return (
-    <div className="adj-page" aria-label={`Messages with ${label}`}>
+    <div className="adj-page adj-chat" ref={pageRef} aria-label={`Messages with ${label}`}>
       <header className="adj-topbar">
         <button type="button" className="adj-circle t44" aria-label="Back" onClick={onBack}><Icon name="back" size={18} stroke={2.2} /></button>
         <div className="center"><strong>Messages</strong><span>{label} · Policyholder</span></div>
@@ -110,7 +130,7 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
       </header>
 
       <div className="adj-thread" ref={scrollRef} aria-live="polite">
-        {!ready && <span className="adj-muted adj-thread-empty">Loading…</span>}
+        {!ready && rows.length === 0 && <span className="adj-muted adj-thread-empty">Loading…</span>}
         {ready && rows.length === 0 && <span className="adj-muted adj-thread-empty">No messages yet.</span>}
         {rows.map((m, i) => {
           const mine = m.sender === 'adjuster' && m.senderName === meName;
@@ -134,7 +154,7 @@ export function ChatScreen({ householdId, label, meName, live, canSend, onBack }
         <span className="adj-caption">No arrival times or payment promises</span>
         <div className="adj-compose-row">
           <textarea
-            ref={inputRef} className="adj-note adj-compose-input" rows={1} maxLength={MAX} value={text} readOnly={sending}
+            ref={inputRef} className="adj-note adj-compose-input" rows={1} maxLength={MAX} value={text}
             placeholder="Message" aria-label={`Message to ${label}`}
             onChange={(e) => { setText(e.target.value); if (error) setError(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); } }}

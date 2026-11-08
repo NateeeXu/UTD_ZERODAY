@@ -281,7 +281,10 @@
 .adj-irow .adj-chips { margin-top: 4px; }
 .adj-irow .stack { display: flex; flex-direction: column; }
 
-/* Message thread */
+/* Message thread. The chat page is pinned to the visible part of the screen (useVisualViewport sets --vv-top and
+   --vv-h), so the iOS keyboard can't push the header off or leave the composer mid-screen after Send. */
+.adj-page.adj-chat { position: fixed; top: var(--vv-top, 0px); bottom: auto; left: 0; right: 0; height: var(--vv-h, 100%); max-width: 480px; margin: 0 auto; }
+.adj-chat[data-kb] .adj-pagefoot { padding-bottom: 10px; } /* the keyboard covers the home indicator */
 .adj-thread { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 6px; background: var(--soft); }
 .adj-thread-empty { align-self: center; margin-top: 24px; }
 .adj-msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 82%; }
