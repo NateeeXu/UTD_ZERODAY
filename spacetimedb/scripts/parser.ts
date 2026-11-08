@@ -13,6 +13,7 @@
 //
 // Scripts only: the SpacetimeDB module must never import this file or @anthropic-ai/sdk.
 import Anthropic from '@anthropic-ai/sdk';
+import { replyLevel } from '../src/notice-template.ts';
 
 export const MODEL = 'claude-sonnet-5-5';
 export const PROMPT_VERSION = 'v3';
@@ -573,12 +574,13 @@ export interface ReducerArgs {
 /**
  * ParsedReply -> submit_parsed_reply args. 'unsure' becomes needs_help with lifeSafety false (customer
  * care calls back; with no concrete need it does not move the estimates, see isCallbackOnly in the module);
- * damage null becomes 255 (unknown); missing_people adds report_member_missing.
+ * damage null becomes 255 (unknown); missing_people adds report_member_missing. A reply that starts with
+ * a 1-4 level from the notice ("3, roof is gone") keeps that level as the damage: it is the sender's own rating.
  */
 export function toReducerArgs(p: ParsedReply, text: string, languageHint = ''): ReducerArgs {
   return {
     safety: p.safety === 'safe' ? 'safe' : 'needs_help',
-    damage: p.damage ?? DAMAGE_UNKNOWN,
+    damage: replyLevel(text)?.damage ?? p.damage ?? DAMAGE_UNKNOWN,
     lifeSafety: p.life_safety,
     needs: p.needs.join(','),
     notHome: p.not_home,

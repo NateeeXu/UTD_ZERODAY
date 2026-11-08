@@ -3,6 +3,7 @@
 // the cell's facilities) and calls the engine's own aggregateCellCounts / estimateCellHouseholds /
 // classifyCell / attachInspectScores, so results match the engine's whole-world estimateAll.
 import type { ModelParams } from './contract';
+import { isCallbackOnly } from './reply';
 import type { CellEstimator, CellInput, CellOutput, HouseholdSignals, PreparedCell, RefsCounters, SourceTrust } from './types';
 import { DEFAULT_CONFIG } from './engine/config.ts';
 import {
@@ -46,12 +47,23 @@ function models(params: ModelParams, trust: SourceTrust): ResolvedModels {
 
 // ----- conversions -----------------------------------------------------------
 
+/**
+ * What the model sees of the replies. A call-back-only reply that describes damage still counts for the
+ * damage; the model has no "safety unknown", so its safety is the earlier reply's, or "no help requested".
+ */
+function engineReply(s: HouseholdSignals): HouseholdSignals['reply'] {
+  const r = s.reply;
+  if (!r || !isCallbackOnly(r) || r.damage === null) return s.evidenceReply;
+  return { ...r, safety: s.evidenceReply?.safety ?? 'safe' };
+}
+
 function toEngineSignals(s: HouseholdSignals): EngineSignals {
+  const reply = engineReply(s);
   return {
     smsSent: s.smsSentT !== null ? 1 : 0,
     firstSmsT: s.smsSentT,
-    reply: s.evidenceReply,
-    replies: s.evidenceReply ? 1 : 0,
+    reply,
+    replies: reply ? 1 : 0,
     claim: s.claim,
     claims: s.claim ? 1 : 0,
     fieldReport: s.field,

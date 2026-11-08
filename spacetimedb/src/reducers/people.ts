@@ -10,6 +10,7 @@ import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
 import { addChat, notifyTaskAccepted } from '../chat';
+import { replyLevel } from '../notice-template';
 import { afterFieldReport, dropFromAllLists, forgetAdjuster, recomputeRecommendations, setAdjusterLocation, stillNeeded } from '../recommend';
 
 function checkDamage(damage: number) {
@@ -201,6 +202,14 @@ export const submitRawReply = spacetimedb.reducer(
     const body = text.trim();
     const len = [...body].length;
     if (len < 1 || len > 500) throw new SenderError('text must be 1..500 characters');
+    const level = replyLevel(body);
+    if (level?.only) {
+      // Just the number from the notice: nothing for Claude to read. It rates the home and says nothing
+      // about people, so it goes in as call-back-only (isCallbackOnly) and marks nobody safe or in danger.
+      smsReply(ctx, { householdId, safety: 'needs_help', damage: level.damage, passcode, text: body, lifeSafety: false, needs: [], notHome: false });
+      addChat(ctx, householdId, 'policyholder', '', body);
+      return;
+    }
     let mine = 0;
     for (const r of ctx.db.replyInbox.householdId.filter(householdId)) if (r.status === 'pending') mine++;
     if (mine >= MAX_PENDING_PER_HOUSEHOLD) throw new SenderError('too many replies waiting for this household, try again shortly');
@@ -320,7 +329,7 @@ export const acceptRecommendation = spacetimedb.reducer(
     const me = requireAdjuster(ctx);
     const row = [...ctx.db.adjusterRecommendation.adjuster.filter(ctx.sender)].find(r => r.householdId === householdId);
     if (!row) throw new SenderError('not in your Next best list');
-    if (stillNeeded(ctx, householdId)) {
+    if (stillNeeded(ctx, householdId, row.kind)) {
       assignOne(ctx, householdId, ctx.sender);
       notifyTaskAccepted(ctx, householdId, row.kind, me.name);
     } else dropFromAllLists(ctx, householdId);
@@ -432,6 +441,8 @@ export const updateAssignment = spacetimedb.reducer(
     if (!a) throw new SenderError('unknown assignment');
     const mine = a.adjuster.equals(ctx.sender);
     if (!mine) requireManager(ctx);
+    if (status === 'assigned' && [...ctx.db.assignment.householdId.filter(a.householdId)].some(o => o.id !== a.id && o.status === 'assigned'))
+      throw new SenderError('this household already has an open assignment');
     ctx.db.assignment.id.update({ ...a, status, updatedAt: ctx.timestamp });
   }
 );

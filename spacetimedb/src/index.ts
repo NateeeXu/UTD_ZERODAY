@@ -39,3 +39,4 @@ export const myRecommendations = spacetimedb.view(
 export * from './reducers/seed';
 export * from './reducers/replay';
 export * from './reducers/people';
+export * from './reducers/disaster';

@@ -41,7 +41,7 @@ Audience: hackathon judges and the team. Repository state described here: backen
 | Reply parser, 800 cases in 6 languages (prompt v1) | Life-safety recall 222/224 (99.1%); false-safe 2/386 (0.5%); valid JSON 800/800 |
 | `submit_field_report` round trip (local server) | 4–5 ms |
 
-**Build state.** The backend is built: 26 tables, 2 views and 35 reducers, plus the engine, simulators, random disasters and Claude worker. The live client is on a branch: manager map, KPIs, outreach and referral panels, severe-damage range, staff switch, a basic adjuster form and a button reply page. It predates the last backend changes, so free-text replies, the delivery-receipt split and the five-screen adjuster app have no screens yet, and two reducer calls need regenerated bindings (R1 in section 11).
+**Build state.** The backend is built: 31 tables, 3 views and 43 reducers, plus the engine, simulators, random disasters and Claude worker. The live client is on a branch: manager map, KPIs, outreach and referral panels, severe-damage range, staff switch, a basic adjuster form and a button reply page. It predates the last backend changes, so free-text replies, the delivery-receipt split and the five-screen adjuster app have no screens yet, and two reducer calls need regenerated bindings (R1 in section 11).
 
 **What we do not claim.** Calibration comes from simulated events, so it shows the pipeline is internally consistent, not that it is accurate in a real hurricane. The honest claim is "no policyholder overlooked", not "no one". We never say the system predicts who is trapped, guarantees anything, or promises a response time.
 
@@ -117,7 +117,7 @@ In the replay, most households with a life-safety need never say so: life-safety
 |---|---|
 | Rescue dispatch, search and rescue | That belongs to 911 and public agencies; State Farm refers, never rescues |
 | Deciding coverage or paying claims | Liability; the app says "don't promise payment" |
-| Real SMS sending or real policy-system integration | Demo uses simulated texts (roadmap) |
+| Real SMS sending or real policy-system integration | Demo uses simulated texts (roadmap). The optional iMessage bridge (TN-4) reaches one demo phone only |
 | Training on real FEMA data | Roadmap |
 | Real login system | Demo uses shared passcodes and role selection |
 | Deep learning models | Out of scope (`docs/BACKGROUND.md`); two logistic models instead |
@@ -375,7 +375,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 
 | ID | Requirement | Pri | Status | Acceptance criteria |
 |---|---|---|---|---|
-| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. CLI only |
+| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. A manager request can also queue one on the dev database for `scripts/disaster-worker.ts` on the demo Mac |
 | RD-2 | Plausible hurricanes | Should | Built | Category drawn 42 / 25 / 19 / 13 / 1% (Cat 1–5), landfall 27.3–28.1° N, surge by category, random local time |
 | RD-3 | Plausible earthquakes | Should | Built | 7 fault traces, weights mostly from the USGS 2014–2043 forecast; magnitude within the fault's range; finite rupture, Atkinson & Wald (2007) intensity |
 | RD-4 | Historical-analog presets | Should | Built | `celia-type-direct-hit`, `harvey-type-stall`, `hanna-type-cat1`, `haywired-m705`, `hayward-1868-night`, `calaveras-north-m686`; named "hypothetical, inspired by" |
@@ -419,10 +419,21 @@ Shift simulation (5 adjusters, 8 h, from t = 24 h, synthetic households, static 
 | NB-2 | Candidates are visits a person still has to make | Should | Built | `unaccounted_queue` with `escalation = 'field_visit'` (welfare) plus `inspection_candidate` (inspection), minus households with an open assignment. A household in both stays welfare |
 | NB-3 | Distance never beats urgency; rules, not an LLM | Must | Built | `recommend-rank.ts`, deterministic; Claude does not rank. Cell priority first: a nearer P1 never beats a P0. Within a priority: value / (drive minutes + 15 min on site), drive = straight-line km × 1.3 road factor at 35 km/h, not routing. Welfare value = 0.5 + 0.5 × min(1, weight × (1 + waitMin / 360)). Inspection value = `inspectScore` × 2 / (2 + verified households in the cell) |
 | NB-4 | The list does not change under the adjuster | Should | Built | Recomputed only on location update, refresh, accept or report; never replaces a task on its own. Assignment, report or closure removes the household from every adjuster's list |
-| NB-5 | One-tap self-assign | Should | Built; UI Spec | `accept_recommendation(householdId)`, adjuster role only. Task no longer needed: row removed and list refreshed, with no assignment and no error |
+| NB-5 | One-tap self-assign | Should | Built; UI Spec | `accept_recommendation(householdId)`, adjuster role only. Task no longer needed: row removed and list refreshed, with no assignment, no notice and no error. Accepting notifies the policyholder (TN-1) |
 | NB-6 | Phone card | Should | Spec | "Next best · 0.4 mi" on top of the task list, reason line ("No reply 14 h", "Inspect · first in area"), one Accept action (`docs/ADJUSTER_APP.md` section 2.7) |
 | NB-7 | Demo start position | Should | Built; UI Spec | Households are synthetic, so the adjuster picks a start on the map (`source = 'demo'`); no real GPS or navigation to a synthetic address. A field report moves a `demo` adjuster to that household; `gps` stays |
 | NB-8 | Adjusters on the manager map | Should | Built; UI Spec | `adjuster_location` + `member` names. The table is public for this; demo only, a real deployment restricts it to managers |
+
+### 6.14 Task notices and chat (TN)
+
+Tells the policyholder who accepted a task and gives the two a thread about it. `chat_message` and `imessage_outbox` are public only because this is a demo without policyholder login; production restricts them. `reset_demo` clears both.
+
+| ID | Requirement | Pri | Status | Acceptance criteria |
+|---|---|---|---|---|
+| TN-1 | Tell the policyholder when an adjuster accepts a task | Should | Built; UI Spec | `accept_recommendation` adds one `chat_message` (`sender = 'system'`) and one `imessage_outbox` row (`queued`). The text names the adjuster, says what they were assigned, says "If anyone is in danger, call 911." and promises no arrival time. No notice when the task was no longer needed, and none for manager assignments (`assign`, `assign_hex`) |
+| TN-2 | Adjuster messages the household | Should | Built; UI Spec | `send_chat_message(householdId, text)`: an adjuster with a non-cancelled assignment on that household, 1–500 chars. "Message" entry on the task and thread behaviour in `docs/ADJUSTER_APP.md` section 2.8 |
+| TN-3 | Typed replies join the thread and still escalate | Must | Built; UI Spec | `submit_raw_reply` also appends the text to `chat_message` and still goes to the Claude parser, so a danger message in chat escalates normally. Replies through `submit_sms_reply` or `submit_parsed_reply` (buttons, parsed text) are not mirrored |
+| TN-4 | Real iMessage to one demo phone, optional | Could | Built; UI Spec | `npm run imessage:bridge` on a Mac sends through Messages.app (Apple has no public API) to the one number in `IMESSAGE_DEMO_TO`; all households are synthetic and no phone number is stored. One-way: iMessage replies are not read, so the text says to reply in the app. Only notices created after it starts, at most 20 per run; `--dry-run` sends nothing. Results through `mark_imessage` (manager or owner). Without the bridge, rows stay `queued` and the UI labels them simulated |
 
 ## 7. Data
 
@@ -489,7 +500,7 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 | Events (public) | `sms_sent`, `sms_reply`, `claim`, `field_report` | Written through `onEvent`; `source` = `replay`, `live` or `staff_sim` |
 | Fusion output (public) | `hex_stats`, `household_estimate`, `inspection_candidate`, `metrics`, `model_state` | Rewritten only on material change |
 | No one overlooked (public) | `household_followup`, `unaccounted_queue` | Referral state, closures, ranked outreach |
-| Workflow and demo (public) | `replay_state`, `staff_sim`, `member`, `assignment`, `reply_inbox`, `adjuster_location`, `adjuster_recommendation` | |
+| Workflow and demo (public) | `replay_state`, `staff_sim`, `member`, `assignment`, `reply_inbox`, `adjuster_location`, `adjuster_recommendation`, `chat_message`, `imessage_outbox` | |
 | Private | `config`, `sim_truth`, `staged_event`, `cell_agg`, `replay_tick`, `staff_contact` | Passcodes, truth, future events, aggregates, schedule, call attempts |
 | Views | `my_member`, `my_assignments`, `my_recommendations` | Per caller |
 
@@ -533,9 +544,10 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 |---|---|---|---|
 | Contract and simulators | `shared/types.ts`, `sim/src`, `sim/real` | Offline, Node | Shared types; worlds, events, truth, random disasters |
 | Engine and calibration | `engine/src`, `engine/scripts/calibrate.ts` | Offline; copied into the module by `npm run sync-engine` | Features, inference, intervals, active inspection, learning; leave-one-event-out training and evaluation |
-| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 28 tables, 3 views, 38 reducers |
-| Owner scripts | `spacetimedb/scripts` | Node | `seed`, `smoke`, `parity`, `bench`, `new-disaster`, `sync-engine` |
-| Claude worker | `spacetimedb/scripts/claude-worker.ts` | Node beside the demo | The one runtime outside the database. It needs outbound HTTP, which reducers cannot make |
+| Module | `spacetimedb/src` (SDK 2.14) | Maincloud | 31 tables, 3 views, 43 reducers |
+| Owner scripts | `spacetimedb/scripts` | Node | `seed`, `smoke`, `parity`, `bench`, `new-disaster`, `disaster-worker`, `sync-engine` |
+| Claude worker | `spacetimedb/scripts/claude-worker.ts` | Node beside the demo | The one required runtime outside the database. It needs outbound HTTP, which reducers cannot make |
+| iMessage bridge (optional) | `spacetimedb/scripts/imessage-bridge.ts` | Node on a Mac beside the demo | Sends task notices through Messages.app to one demo phone (TN-4); one-way |
 | Client | `client/` on `origin/frontend/app` | Static web | Three screens; subscribes per screen to stay small on 20–30k households |
 
 | Reducer group | Reducers | Caller |
@@ -545,7 +557,8 @@ Every real-geography bundle starts its source list with a SYNTHETIC notice.
 | Membership | `join_as`, `leave`, `remove_member` | Passcode for staff roles; manager or owner to remove |
 | Policyholder | `submit_sms_reply`, `submit_sms_text_reply`, `submit_raw_reply`, `report_member_missing` | `policyholder_demo`, manager, owner, or reply passcode |
 | Parser | `submit_parsed_reply`, `mark_reply_parsed` | Worker, joined as manager |
-| Field | `submit_field_report`, `update_my_location`, `refresh_recommendations`, `accept_recommendation` | `adjuster` members only |
+| Notices | `mark_imessage` | Manager or owner; the iMessage bridge joins as manager |
+| Field | `submit_field_report`, `update_my_location`, `refresh_recommendations`, `accept_recommendation`, `send_chat_message` | `adjuster` members only; `send_chat_message` also needs a non-cancelled assignment on the household |
 | Work | `assign`, `assign_hex`, `update_assignment`, `update_referral`, `close_household` | Manager or owner; `update_assignment` also the assigned adjuster; `close_household` also adjusters |
 
 | Maincloud database | World | Households / cells | Use |
@@ -654,7 +667,7 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 
 | Area | Rule | Enforcement | Status |
 |---|---|---|---|
-| Who is contacted | Existing customers only, through the phone on the policy. Consent and applicable rules must be checked before any real send | Product design; demo texts are simulated | Built (demo) |
+| Who is contacted | Existing customers only, through the phone on the policy. Consent and applicable rules must be checked before any real send | Product design; demo texts are simulated, and the optional iMessage bridge sends to one demo phone only | Built (demo) |
 | Location | No tracking of strangers' phones. WEA is run through FEMA's IPAWS and needs authorized senders | Non-goal | n/a |
 | Data sent to the LLM | Reply text only. No age, disability, medical, coverage, address or identity fields | `buildRequest` in `scripts/parser.ts` | Built |
 | Sensitive attributes in the model | Race, ethnicity and income are not features; income is at most a post-hoc fairness audit | `FEATURE_NAMES` | Built |
@@ -666,6 +679,7 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 | Passcodes | Staff and reply passcodes in the private `config` table. Default values work on local only. Maincloud uses private values. Reply passcode may travel in the QR link because it only allows replies | `seed.ts`, reducers | Built |
 | Abuse limits | At most 5 pending replies per household and 500 total | `submit_raw_reply` | Built |
 | Demo auth and public `household` table | Roles are self-assigned with shared passcodes; anyone with the staff passcode can become a manager. `household` is public only because it is synthetic | Production needs OIDC and per-role views | Limitation |
+| Public `chat_message` and `imessage_outbox` | Public only because this demo has no policyholder login. Neither table stores a phone number | Production restricts both tables | Limitation |
 | Licences | OSM credited wherever data is shown; OSM-derived data stays ODbL; Esri attribution kept | Map and docs | Branch |
 | Fairness | `vulnerableAccountedRate` compared with `accountedRate`; vulnerable is defined by functional need, not identity | `metrics`, Accounting card | Branch |
 
@@ -676,6 +690,7 @@ On Maincloud: `step_replay(240)` about 1 s; Bay Area `jump_to(1440)` about 4 s. 
 | Needs-help report filed | "Referral created" and "Call 911 now if anyone is in danger." |
 | Life-safety report not sent | "Not delivered — call 911 directly" |
 | Peril not covered | "Flood not covered · refer to FEMA / NFIP · don't promise payment" (and wind, quake variants) |
+| Task accepted, notice to the policyholder | One template (`spacetimedb/src/notice-template.ts`): "Adjuster {name} has been assigned to {task}.", damage levels 1 minor or none, 2 moderate, 3 severe, 4 not sure, then "If anyone is in danger, call 911." |
 | Never | "help is on the way", promised arrival times, "predicts who is trapped", "guarantees" |
 | Prompt rule | "Never promise help, arrival times or coverage." |
 | Eligibility wording | Temporary housing is reviewed for eligibility; it depends on the loss being covered and on the policy |
@@ -739,7 +754,7 @@ The repository has no verbatim rubric. The criteria below are the team's reading
 | Requirement or interest | Saviu's answer | Evidence |
 |---|---|---|
 | Public GitHub repository | `NateeeXu/UTD_ZERODAY`, no secrets committed | `.gitignore`, section 10 |
-| Most of the backend on Spacetime | Event ingest, permissions, fusion, accounting, simulated staff, replay clock and metrics all run in reducers. Only the LLM call sits outside | Section 8 |
+| Most of the backend on Spacetime | Event ingest, permissions, fusion, accounting, simulated staff, replay clock and metrics all run in reducers. Only the LLM call and the optional iMessage bridge sit outside | Section 8 |
 | Not just a message channel | `onEvent` → fusion in the same transaction; `parity.ts` matches the offline engine | FE-4, FE-5 |
 | Real-time, multi-user | Manager, adjuster and policyholder screens subscribe to the same tables; three databases, one module | Section 8, MD-1 |
 | Scale | 30,000 households, 611 cells; tick median 9 ms and field report 5 ms locally | Section 9.6 |

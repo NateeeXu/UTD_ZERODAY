@@ -34,6 +34,8 @@ SELECT * FROM household_followup WHERE household_id = X
 SELECT * FROM field_report       WHERE household_id = X   -- 发送状态机的查重要用
 SELECT * FROM sms_sent           WHERE household_id = X
 SELECT * FROM sms_reply          WHERE household_id = X
+SELECT * FROM chat_message       WHERE household_id = X   -- Message 会话（2.8）
+SELECT * FROM imessage_outbox    WHERE household_id = X   -- 接单通知的 iMessage 状态（2.8）
 SELECT * FROM hex WHERE hex = H;  SELECT * FROM hex_stats WHERE hex = H
 SELECT * FROM facility WHERE id = <household.nearestSchoolId>
 SELECT * FROM member WHERE identity = <assignment.assignedBy>
@@ -112,6 +114,7 @@ SELECT * FROM member WHERE identity = <assignment.assignedBy>
    - 地址行：有 `household.address` 就显示（待后端）。没有就显示 "Near {facility.name}"（来自 `nearestSchoolId`），下一行只写距离 "1.2 mi"。
    - "Access: {household.accessNote}"（待后端）；没有这个字段就整行隐藏。
    - "Phone on file" 旁边放一个 "Call" 按钮。合成数据没有号码，点了弹 toast "Demo household: no real number"。`phoneOnFile = false` 时显示 "No phone on file · try emergency contact"，不显示按钮。
+   - "Message" 按钮：打开这一户的会话（见 2.8）。不依赖 `phoneOnFile`，没有号码时也显示。
 5. **WHY YOU'RE HERE**：客户端按模板拼**一行**短语，用 " · " 连接，不写句子，不用 `hex_stats.reason` 原文。
    - Welfare check：`No reply {h} h · {灾害} · {原因}`，例如 "No reply 14 h · hurricane winds · likely home"。
    - Property inspection：`{灾害} · inspect the house`，例如 "Hurricane winds · inspect the house"。
@@ -307,9 +310,48 @@ Purpose: suggest one task from where the adjuster is, without waiting for a mana
 - After a report, a `demo` adjuster moves to that household and the list is rebuilt from there. A `gps` position stays.
 - Assignment, report or closure removes the household from every adjuster's list.
 - Accept on a task that is no longer needed: the row goes and the list refreshes, with no assignment and no error. Show no error; the card moves to the new top row.
+- Accept also tells the policyholder who was assigned (2.8). A task that was no longer needed and a manager's assignment send no notice.
 - Distance is not routing: `distanceKm` is straight line and `etaMin` applies a road factor. "Go to area" (2.2) is unchanged.
 
 Data: `SELECT * FROM my_recommendations`; `SELECT * FROM adjuster_location WHERE identity = <me>`.
+
+### 2.8 Message
+
+Purpose: let the adjuster and the policyholder talk about one task inside the app. Field details: `SPACETIME_API.md` section 4 (`chat_message`, `imessage_outbox`).
+
+**Entry**
+- "Message" on Home, in the address block (2.2). It opens this household's thread.
+- Shown on every task in `my_assignments` that is not `cancelled`, including done tasks: messaging still works after the visit.
+
+**Thread**
+- All `chat_message` rows for the household, oldest first (sort by `id`). New rows arrive through the subscription; no system notification and no message text in a toast.
+- Sender label: `senderName` for `system` ("Automated assistant") and `adjuster`; "Policyholder" for `policyholder`, whose `senderName` is empty.
+- Accepted through Next best: the thread starts with the notice from `spacetimedb/src/notice-template.ts`, which names the adjuster, asks for a 1-4 damage level and ends with the 911 line.
+- Assigned by a manager: no notice, so the thread can be empty: "No messages yet".
+- The notice gives no arrival time. Keep it that way in any copy around it (principle 2 in section 1).
+
+**iMessage status** (one tag on the notice, from the household's latest `imessage_outbox` row)
+
+| `status` | Tag |
+|---|---|
+| `queued` | "iMessage simulated" |
+| `sent` | "iMessage sent" |
+| `failed` | "iMessage failed" |
+
+- Without the bridge (`SPACETIME_API.md` section 9) rows stay `queued`, so `queued` must always read as simulated. Show no phone number; the tables hold none.
+- Only the accept notice goes out by iMessage. Messages the adjuster types stay in the app.
+
+**Composer**
+- One text box and "Send" → `sendChatMessage({ householdId, text })`. 1–500 characters after trimming; Send is disabled when empty or over the limit.
+- Clear the box only when the Promise resolves. On rejection keep the text and show the backend message as is.
+- This is not the report outbox (section 3): no local queue and no auto-retry. Send is disabled when `isActive = false`.
+
+**Policyholder replies**
+- Text typed on the reply page appears as a `policyholder` row (`submit_raw_reply`). It still goes to the Claude parser, so a danger message escalates normally and the 2.6 banner shows once it is parsed. The thread itself does not detect danger.
+- Button replies are not in the thread; they show only through 2.6.
+- iMessage replies are not read, so the iMessage asks the policyholder to reply in the app.
+
+Data: `SELECT * FROM chat_message WHERE household_id = X`; `SELECT * FROM imessage_outbox WHERE household_id = X`.
 
 ## 3. 发送状态机
 

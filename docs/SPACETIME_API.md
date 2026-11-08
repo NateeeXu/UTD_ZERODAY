@@ -214,6 +214,7 @@ node scripts/smoke.ts --db triage-loop-ca      # end-to-end check: roles, replay
 | `node scripts/parity.ts --db <db> --file <bundle> --t 1440 --reports 25 [--step 60]` | Database vs. the engine's offline `estimateAll` on the same events |
 | `node scripts/bench.ts --db <db> [--speed 30] [--cadence 60]` | Reducer timings (tick, full recompute, jump, field report); leaves the database reset |
 | `npm run typecheck` | Type-check the module and the scripts |
+| `npm run imessage:bridge` | Optional, Mac only: send new task notices as real iMessages to one demo phone (section 9). `npm run imessage:bridge -- --dry-run` prints them and sends nothing |
 | `spacetime logs -s local triage-loop-ca -f` | Follow module logs (rejected reducer calls show up as ERROR lines) |
 | `spacetime sql -s local triage-loop-ca "SELECT * FROM metrics"` | Ad-hoc SQL (run it outside `spacetimedb/` for names other than `triage-loop`; the owner can read private tables) |
 
@@ -439,6 +440,22 @@ const inspectionValue = (inspectScore * 2) / (2 + verifiedHouseholdsInCell);
 - Replies and simulated staff do not touch the list; `accept_recommendation` catches those cases.
 - `join_as` with another role, `leave` and `remove_member` delete the adjuster's location and list. `reset_demo` clears both tables.
 
+### `chat_message`: conversation per household
+`id` (u64 PK), `householdId`, `sender` (`adjuster` / `policyholder` / `system`), `senderName` (the adjuster's member name; `Automated assistant` for `system`; `''` for `policyholder`), `text`, `createdAt`. Three writers: the notice below, `send_chat_message` and `submit_raw_reply`. Replies through `submit_sms_reply`, `submit_sms_text_reply` or `submit_parsed_reply` (buttons, and the worker's parse of a typed reply) add no row. Public only because this demo has no policyholder login; production restricts it. Cleared with the demo state.
+
+### `imessage_outbox`: iMessage notices
+`id` (u64 PK), `householdId`, `text`, `status` (`queued` / `sent` / `failed`), `error` (`''`, or why the send failed, truncated to 200), `createdAt`, `updatedAt`. No phone number is stored. Rows stay `queued` unless `scripts/imessage-bridge.ts` (section 9) is running, so **the UI must label `queued` rows as simulated**. Public only because this demo has no policyholder login; production restricts it. Cleared with the demo state.
+
+**Notice on accept:** when `accept_recommendation` creates the assignment, the same transaction adds one `chat_message` (`sender = 'system'`) and one `imessage_outbox` row (`queued`).
+- Both use the one template in `spacetimedb/src/notice-template.ts`: who was assigned, a 1-4 home damage question (1 minor or none, 2 moderate, 3 severe, 4 not sure), safety, whereabouts and needs, then the 911 line.
+- In the app it says `Reply here`. By iMessage it says `Open the Saviu app and reply`, because iMessage replies are not read.
+- A reply that is only `1`-`4` skips the parser and is stored as `damage` 1, 2, 3 or unknown, with no statement about the people (call-back-only). A reply that starts with a level (`3, roof is gone`) goes to the parser and keeps that level as its damage.
+- `{task}` is `inspect your home` (`kind = 'inspection'`) or `check on your household` (`welfare`). Neither text promises an arrival time.
+- No notice when the task was no longer needed, and none for manager assignments (`assign`, `assign_hex`).
+
+### `disaster_request`: the "New random disaster" button
+`id` (u64 PK), `region` (`tx` hurricane / `ca` earthquake), `status` (`queued` / `running` / `done` / `failed`), `error` (`''`, or why it failed), `requestedBy`, `createdAt`, `updatedAt`. At most one row: the current or latest request. Survives `wipe_world` and `reset_demo`, because the load it asks for runs them. `scripts/disaster-worker.ts` (section 9) does the work; with no worker a request stays `queued` until cancelled.
+
 ### `reply_inbox`: raw free-text replies for the Claude parser worker
 `id` (u64 PK), `householdId`, `text` (1–500 chars, trimmed), `language` (hint: `household.primaryLanguage`, `''` if none), `status` (`pending` / `parsed` / `failed`), `receivedAt`, `parsedAt` (option timestamp, unset while pending), `error` (`''`; `review: <reasons>` = parsed but a person should look; `parser: <code>; fallback submitted` = Claude failed and the reply went in as "needs help, a person calls back"; `submit: <message>` = the reducer rejected it). The reply page writes it with `submit_raw_reply` (no Anthropic key in the browser) and can watch its own row; `scripts/claude-worker.ts` turns each pending row into `submit_parsed_reply` (docs/CLAUDE_PARSER.md). Cleared with the demo state.
 
@@ -465,7 +482,7 @@ Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damag
 | `submit_sms_reply` | householdId, safety (`safe`/`needs_help`), damage (0–3), passcode (`''` if joined) | `policyholder_demo` / `manager` member, owner, or anyone with the reply passcode | Inserts an `sms_reply` at the current sim minute (and an `sms_sent` if that household was never texted), then recomputes the cell |
 | `submit_sms_text_reply` | householdId, safety, damage, text (≤ 1000 chars), language, passcode | same | Same, and stores the original free-text reply + language (safety/damage are its parsed values) |
 | `submit_parsed_reply` | householdId, safety (`safe`/`needs_help`), damage (0–3, 255 = unknown), lifeSafety, needs (comma-separated subset of `medical,power_for_device,shelter,water_food,transport,inspection,other`), notHome, text, language, passcode | same | The full parse of a free-text reply (the Claude worker calls it as a manager). See docs/CLAUDE_PARSER.md |
-| `submit_raw_reply` | householdId, text (1–500 chars after trimming), passcode | same | Free-text reply page: stores the raw text in `reply_inbox` (`pending`) for the Claude worker. At most 5 pending rows per household and 500 in total |
+| `submit_raw_reply` | householdId, text (1–500 chars after trimming), passcode | same | Free-text reply page: stores the raw text in `reply_inbox` (`pending`) for the Claude worker. At most 5 pending rows per household and 500 in total. Also appends the text to `chat_message` (`sender = 'policyholder'`); the worker still parses it, so a danger message in chat escalates normally |
 | `mark_reply_parsed` | id (u64), status (`parsed` / `failed` / `pending` = re-queue), error (truncated to 500) | manager / owner | Worker bookkeeping on `reply_inbox` (sets `parsedAt`) |
 | `submit_field_report` | householdId, safety (`safe`/`needs_help`/`unsure`), damage (0–3, or **255 = house not assessed**), note (≤ 500 chars; **required, ≥ 3 chars, with 255**, e.g. `unsafe to enter`, `no access: flooded`, `dark, no power`), memberMissing (bool) | **`adjuster` members only** | Inserts a `field_report`, recomputes the cell and completes the adjuster's assignment. Damage 0–3: the household becomes verified, neighbours get the engine's residual update, the report feeds the trust batch. Damage 255: `damageKnown = false`; `safety` still accounts the people (`safe` / `needs_help`), the house stays unverified and in the inspection queue, no trust update; a later people-only report keeps the earlier assessed damage. `memberMissing = true`: someone is unaccounted for on site (same as `report_member_missing`; keeps an open referral) |
 | `assign` | householdId, adjusterIdentityHex | manager / owner | New `assigned` row; cancels another adjuster's open assignment for that household |
@@ -473,15 +490,20 @@ Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damag
 | `update_assignment` | id (u64), status | the assigned adjuster, or manager / owner | Set `assigned` / `done` / `cancelled` |
 | `update_my_location` | lat, lng, source (`demo` / `gps`) | **`adjuster` members only** | Sets the caller's `adjuster_location` and rebuilds their "Next best" list |
 | `refresh_recommendations` | none | **`adjuster` members only** | Rebuilds the caller's list. Rejects with `set your location first` when there is no position |
-| `accept_recommendation` | householdId | **`adjuster` members only** | Self-assigns a household from the caller's list and rebuilds the list. If the task is no longer needed, removes the row and refreshes the list, with no assignment and no error. Rejects with `not in your Next best list` for any other household |
+| `accept_recommendation` | householdId | **`adjuster` members only** | Self-assigns a household from the caller's list, notifies the policyholder (`chat_message` plus a queued `imessage_outbox` row, see section 4) and rebuilds the list. If the task is no longer needed, removes the row and refreshes the list, with no assignment, no notice and no error. Rejects with `not in your Next best list` for any other household |
+| `send_chat_message` | householdId, text (1–500 chars after trimming) | **`adjuster` members only**, with a non-cancelled assignment on that household | Appends a `chat_message` (`sender = 'adjuster'`). Also works after the visit (`done`). In the app only, never sent by iMessage. Rejects with `only the assigned adjuster can message this household` |
+| `mark_imessage` | id (u64), status (`sent` / `failed`), error (truncated to 200) | manager / owner | Delivery result from `scripts/imessage-bridge.ts`: sets `status`, `error` and `updatedAt` on `imessage_outbox` |
+| `request_new_disaster` | region (`tx` / `ca`) | manager / owner | Queues one random disaster. Rejected while another is `queued` or `running`. Replaces the previous finished row. |
+| `cancel_disaster_request` | — | manager / owner | Deletes a `queued` request. Rejected once it is `running`. |
+| `update_disaster_request` | id (u64), status, error (truncated to 200) | owner | Worker only. Allowed: `queued` to `running` or `failed`; `running` to `done` or `failed`. |
 | `remove_member` | identityHex | manager / owner | Housekeeping |
 | `start_replay` | speed (sim min per second, 0 < speed ≤ 1440) | manager / owner | Starts or resumes the 1-second tick (also changes speed). Suggested: 30 (72 h in 2.4 min) |
 | `set_speed` | speed | manager / owner | Change speed only |
 | `pause_replay` | — | manager / owner | Stops ticking (no scheduled calls while paused) and recomputes every cell, so a paused map equals the engine exactly |
 | `step_replay` | minutes (0 < m ≤ 1440) | manager / owner | Advance the clock by `minutes` exactly like one tick (works while paused; good for a "step" button) |
-| `jump_to` | minutes (0–horizon) | manager / owner | Forward: release everything due at once. **Backward: resets the demo** (drops live replies, field reports, assignments) and replays up to `minutes`. Always ends with a full recompute |
+| `jump_to` | minutes (0–horizon) | manager / owner | Forward: release everything due at once. **Backward: resets the demo** (drops live replies, field reports, assignments, chat and iMessage notices) and replays up to `minutes`. Always ends with a full recompute |
 | `set_recompute_cadence` | minutes (0–4320) | manager / owner | Full-recompute cadence of the running replay (default 60). Larger worlds at high speed: 120–180 |
-| `reset_demo` | — | manager / owner | Clear all events, estimates and assignments, rewind to t = 0, recompute (members and cadence are kept) |
+| `reset_demo` | — | manager / owner | Clear all events, estimates, assignments, `chat_message` and `imessage_outbox`, rewind to t = 0, recompute (members and cadence are kept) |
 | `recompute_all` | — | manager / owner | Recount every counter from the event tables and recompute every cell (repair tool) |
 | `refresh_metrics` | — | manager / owner | Rescore the holdout set now |
 | `set_passcodes` | staffPasscode, replyPasscode | owner | Demo passcodes (≥ 4 chars) |
@@ -536,6 +558,8 @@ SELECT * FROM household_estimate WHERE household_id = 'ca-live-h020813'
 SELECT * FROM hex_stats WHERE hex = '88283460b5fffff'            -- context for the card (reason)
 SELECT * FROM sms_reply WHERE household_id = 'ca-live-h020813'   -- contact history (with text)
 SELECT * FROM claim WHERE household_id = 'ca-live-h020813'
+SELECT * FROM chat_message WHERE household_id = 'ca-live-h020813'     -- Message thread
+SELECT * FROM imessage_outbox WHERE household_id = 'ca-live-h020813'  -- status of the accept notice
 SELECT * FROM facility WHERE id = '<household.nearestSchoolId>'  -- reunification / shelter point
 ```
 Re-subscribe when `my_assignments` changes. The form calls `submit_field_report`. Show CMIST flags (`age75`, `disability`, `noVehicle`, `limitedEnglish` + `primaryLanguage`, `mobileHome`) and coverage (`policyType`, `windCovered`, `floodPolicy`, `earthquakeEndorsement`) on the card.
@@ -547,16 +571,20 @@ const updateLocation = useReducer(reducers.updateMyLocation);    // updateLocati
 const refresh = useReducer(reducers.refreshRecommendations);     // refresh()
 const accept = useReducer(reducers.acceptRecommendation);        // accept({ householdId })
 ```
+Message thread (docs/ADJUSTER_APP.md section 2.8): `useReducer(reducers.sendChatMessage)`, called with `{ householdId, text }`. Sort `chat_message` rows by `id`.
+
 The manager map uses `useTable(tables.adjusterLocation)` with `member` names.
 
 **Policyholder SMS page** (QR code, e.g. `/reply?db=triage-loop-ca&h=ca-live-h000552&code=<reply passcode>`)
 ```sql
 SELECT * FROM household WHERE id = 'ca-live-h000552'
 SELECT * FROM sms_reply WHERE household_id = 'ca-live-h000552'
+SELECT * FROM chat_message WHERE household_id = 'ca-live-h000552'
 ```
 - The simulator assumes an English-only check-in text (limited-English households reply less). Outreach in `household.primaryLanguage` is a roadmap item; replies can already be in any language.
 - SAFE / HELP and 0–3 call `submit_sms_reply(householdId, safety, damage, code)`.
 - A free-text reply calls `submit_raw_reply(householdId, text, code)`; the Claude worker (`npm run worker`) parses it into `submit_parsed_reply` within a few seconds. Watch `SELECT * FROM reply_inbox WHERE household_id = '…'` for its status.
+- The thread with the assigned adjuster is `chat_message`. A typed reply uses the same `submit_raw_reply`, which appends it to the thread and still reaches the Claude worker, so a danger message escalates normally. Button replies are not mirrored.
 - The reply lands on the manager map within one round trip.
 
 ## 7. Minimal client code
@@ -643,6 +671,9 @@ spacetime logs -s maincloud <db-name> -f
 - Keep the local server as the offline fallback (same commands with `-s local`).
 - The parser worker / field-report change adds columns (`field_report.damageKnown`, `household_followup.closureNote`) and a table (`reply_inbox`): republish existing databases with `--delete-data=always` and reseed.
 - Claude parser worker: runs on a laptop next to the demo, not in Spacetime. Put `ANTHROPIC_API_KEY` in `spacetimedb/.env` (gitignored, never in the frontend) and run `npm run worker` (reads `SPACETIME_HOST` / `SPACETIME_DB` / `STAFF_PASSCODE` from `.env`; one worker per world database, `--db <name>`). See docs/CLAUDE_PARSER.md.
+- Task notices add two tables (`chat_message`, `imessage_outbox`) and two reducers: republish each database and regenerate the client bindings.
+- iMessage bridge (optional): runs on a Mac next to the demo, not in Spacetime, and sends task notices through Messages.app, because Apple has no public API. All households are synthetic, so every notice goes to the one recipient in `IMESSAGE_DEMO_TO` (`spacetimedb/.env`, gitignored); the database holds no phone number. Run `npm run imessage:bridge` (reads `SPACETIME_HOST` / `SPACETIME_DB` / `STAFF_PASSCODE` from `.env` and joins as a manager; one process per world database, `npm run imessage:bridge -- --db <name>`). One-way: iMessage replies are not read, so the text says to reply in the app. It sends only notices created after it starts, at most 20 per run; later rows stay `queued`. `--dry-run` prints what it would send, sends nothing and marks nothing. Each send is recorded with `mark_imessage`.
+- Random disaster worker (optional): runs on a Mac next to the demo, because the generator reads `data/real` and loading needs the owner token. Run `npm run disaster:worker -- --host wss://maincloud.spacetimedb.com --db triage-loop-nateeexu-dev` in `spacetimedb/`. On Maincloud it refuses every database except dev, and only runs requests made after it starts.
 
 ## 10. Limits and measured costs
 

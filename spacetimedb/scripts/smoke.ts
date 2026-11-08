@@ -199,6 +199,22 @@ async function main() {
     check('call-back-only reply goes to customer care without raising pNeedsHelp', e1?.escalation === 'assistance' && (e1?.pNeedsHelp ?? 1) <= help0 + 0.05, `${e1?.escalation}, pNeedsHelp ${help0.toFixed(3)} -> ${e1?.pNeedsHelp.toFixed(3)}`);
   }
 
+  const unused = [...db.household.iter()].filter(h => h.hex !== target.hex && h.hex !== other?.hex && h.hex !== callback?.hex && !h.holdout && h.phoneOnFile);
+  const parsed = (householdId: string, a: { safety: string; damage: number; lifeSafety: boolean; text: string }) =>
+    outsider.conn.reducers.submitParsedReply({ householdId, needs: '', notHome: false, language: 'en', passcode: REPLY_PASSCODE, ...a });
+  const [danger, roof] = unused;
+  if (danger && roof) {
+    await parsed(danger.id, { safety: 'needs_help', damage: 255, lifeSafety: true, text: 'my husband is trapped' });
+    await sleep(300);
+    await parsed(danger.id, { safety: 'needs_help', damage: 255, lifeSafety: false, text: 'does my policy cover this?' });
+    await sleep(300);
+    check('a later coverage question keeps the emergency referral', est(danger.id)?.escalation === 'emergency_referral', est(danger.id)?.escalation);
+    const severe0 = est(roof.id)?.pSevere ?? 1;
+    await parsed(roof.id, { safety: 'needs_help', damage: 2, lifeSafety: false, text: 'roof half gone, does my policy cover it?' });
+    await sleep(300);
+    check('a call-back-only reply still counts its damage', (est(roof.id)?.pSevere ?? 0) > severe0, `pSevere ${severe0.toFixed(3)} -> ${est(roof.id)?.pSevere.toFixed(3)}`);
+  }
+
   // ----- field reports: house not assessed, missing member, documented closure -----
   const reported = new Set([...db.fieldReport.iter()].map(r => r.householdId));
   const spare = [...db.household.iter()]
@@ -340,6 +356,9 @@ async function main() {
     const notice = notices()[0];
     check('accept posts one in-app notice and queues one iMessage', chat().filter(c => c.sender === 'system').length === 1 && notices().length === 1 && notice.status === 'queued', `${chat().length} chat, ${notices().length} iMessage`);
     check('notices name the adjuster, say call 911 and promise no arrival', [...chat(), ...notices()].every(m => m.text.includes('has been assigned') && m.text.includes('call 911') && !/on the way|arriv|minutes|soon/i.test(m.text)), notice?.text ?? '');
+    const inAppNotice = chat().find(c => c.sender === 'system');
+    check('both notices carry the 1-4 damage levels', [inAppNotice, notice].every(m => /1 - Minor[\s\S]*2 - Moderate[\s\S]*3 - Severe[\s\S]*4 - Not sure/.test(m?.text ?? '')));
+    check('the iMessage sends people to the app, the in-app notice takes the reply', !!notice?.text.includes('Open the Saviu app') && !!inAppNotice?.text.includes('Reply here'));
     await adjuster.conn.reducers.sendChatMessage({ householdId: top.householdId, text: '  Checking in, is everyone OK?  ' });
     await sleep(300);
     check('assigned adjuster can chat (trimmed)', chat().some(c => c.sender === 'adjuster' && c.text === 'Checking in, is everyone OK?'));
@@ -349,6 +368,26 @@ async function main() {
     await outsider.conn.reducers.submitRawReply({ householdId: top.householdId, text: 'we are OK, thanks', passcode: REPLY_PASSCODE });
     await sleep(300);
     check('typed policyholder reply appears in the chat', chat().some(c => c.sender === 'policyholder' && c.text === 'we are OK, thanks'));
+
+    // A bare 1-4 from the notice rates the home without Claude and says nothing about the people.
+    await subscribe(manager.conn, ['SELECT * FROM sms_reply']);
+    const pendingInbox = () => [...db.replyInbox.iter()].filter(r => r.householdId === top.householdId && r.status === 'pending').length;
+    const latestReply = () => [...db.smsReply.iter()].filter(r => r.householdId === top.householdId).sort((x, y) => (x.id < y.id ? 1 : -1))[0];
+    const replyLevelOf = async (text: string) => {
+      await outsider.conn.reducers.submitRawReply({ householdId: top.householdId, text, passcode: REPLY_PASSCODE });
+      await sleep(300);
+    };
+    const inboxBefore = pendingInbox();
+    const helpBefore = metrics()?.helpReplies ?? 0;
+    await replyLevelOf('3');
+    const severe = latestReply();
+    check('reply "3" records damage 3 without the parser', severe?.damage === 3 && severe.damageKnown && severe.text === '3' && pendingInbox() === inboxBefore, JSON.stringify({ damage: severe?.damage, inbox: pendingInbox() }));
+    check('reply "3" is not life safety and not a help request', severe?.lifeSafety === false && severe.needs === '' && metrics()?.helpReplies === helpBefore);
+    check('reply "3" appears in the chat', chat().some(c => c.sender === 'policyholder' && c.text === '3'));
+    await replyLevelOf('4.');
+    check('reply "4." records damage as unknown', latestReply()?.text === '4.' && latestReply()?.damageKnown === false);
+    await replyLevelOf('3 people trapped upstairs');
+    check('a count is not a level: "3 people trapped" goes to the parser', pendingInbox() === inboxBefore + 1 && latestReply()?.text === '4.');
     if (notice) {
       await expectReject('outsider mark_imessage', outsider.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' }));
       await manager.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' });
@@ -366,7 +405,45 @@ async function main() {
       `${locBefore?.lat.toFixed(5)},${locBefore?.lng.toFixed(5)} -> ${locAfter?.lat.toFixed(5)},${locAfter?.lng.toFixed(5)}, source ${locAfter?.source}`
     );
     check('reported household is not back on the recomputed list', !recs().some(r => r.householdId === top.householdId), `${recs().length} rows`);
+
+    const next = recs()[0];
+    if (next) {
+      await adjuster.conn.reducers.acceptRecommendation({ householdId: next.householdId });
+      await sleep(300);
+      await adjuster.conn.reducers.submitFieldReport({ householdId: next.householdId, safety: 'safe', damage: 255, note: 'smoke test: no access', memberMissing: false });
+      await sleep(300);
+      check('a visited house stays off the list even when it could not be assessed', !recs().some(r => r.householdId === next.householdId), `${recs().length} rows`);
+    }
   }
+
+  // "New random disaster" button: the reducers only queue; scripts/disaster-worker.ts does the work.
+  await subscribe(manager.conn, ['SELECT * FROM disaster_request']);
+  const disasterRows = () => [...manager.conn.db.disasterRequest.iter()];
+  await expectReject('disaster request by adjuster', adjuster.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await expectReject('disaster request by outsider', outsider.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await expectReject('disaster request with unknown region', manager.conn.reducers.requestNewDisaster({ region: 'mars' }));
+  await manager.conn.reducers.requestNewDisaster({ region: 'ca' });
+  let dr = disasterRows();
+  check('disaster request queued', dr.length === 1 && dr[0].status === 'queued' && dr[0].requestedBy === 'Smoke Manager', JSON.stringify(dr.map(r => r.status)));
+  await expectReject('second disaster request while one is open', manager.conn.reducers.requestNewDisaster({ region: 'tx' }));
+  await expectReject('disaster status from a manager', manager.conn.reducers.updateDisasterRequest({ id: dr[0].id, status: 'running', error: '' }));
+  await expectReject('disaster queued straight to done', owner.conn.reducers.updateDisasterRequest({ id: dr[0].id, status: 'done', error: '' }));
+  await manager.conn.reducers.cancelDisasterRequest({});
+  check('queued disaster request cancelled', disasterRows().length === 0);
+  await manager.conn.reducers.requestNewDisaster({ region: 'tx' });
+  const running = disasterRows()[0];
+  await owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'running', error: '' });
+  await expectReject('cancel while the disaster is loading', manager.conn.reducers.cancelDisasterRequest({}));
+  await expectReject('disaster request while one is loading', manager.conn.reducers.requestNewDisaster({ region: 'ca' }));
+  await owner.conn.reducers.resetDemo({});
+  await sleep(300);
+  check('disaster request survives reset_demo', disasterRows()[0]?.status === 'running');
+  await owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'done', error: '' });
+  await expectReject('cancelled or finished request cannot restart', owner.conn.reducers.updateDisasterRequest({ id: running.id, status: 'running', error: '' }));
+  await manager.conn.reducers.requestNewDisaster({ region: 'ca' });
+  dr = disasterRows();
+  check('new request replaces the finished one', dr.length === 1 && dr[0].status === 'queued' && dr[0].id !== running.id);
+  await manager.conn.reducers.cancelDisasterRequest({});
 
   const mEnd = metrics();
   console.log('\nfinal metrics:', pick(mEnd, ['fieldReports', 'verifiedHouseholds', 'verifiedCoverage', 'p0Cells', 'p1Cells', 'p2Cells', 'needsVerificationCells', 'trustHazard', 'trustSms', 'trustClaims', 'trustUpdates', 'engine']));

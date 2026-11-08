@@ -631,6 +631,23 @@ export const imessageOutbox = table(
 );
 
 /**
+ * The manager's "New random disaster" button. At most one row: the current or latest request.
+ * scripts/disaster-worker.ts does the work. Not part of the demo state, so it survives the wipe it asks for.
+ */
+export const disasterRequest = table(
+  { name: 'disaster_request', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    region: t.string(), // 'tx' (hurricane) | 'ca' (earthquake)
+    status: t.string(), // 'queued' | 'running' | 'done' | 'failed'
+    error: t.string(),
+    requestedBy: t.string(),
+    createdAt: t.timestamp(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+/**
  * Raw free-text replies waiting for the Claude parser worker (scripts/claude-worker.ts), so the reply
  * page never needs the Anthropic key. Written by submit_raw_reply; the worker parses each pending row,
  * calls submit_parsed_reply and then mark_reply_parsed. Cleared with the demo state.
@@ -787,6 +804,7 @@ const spacetimedb = schema({
   adjusterRecommendation,
   chatMessage,
   imessageOutbox,
+  disasterRequest,
   replyInbox,
 });
 export default spacetimedb;
