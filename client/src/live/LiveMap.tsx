@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { cellToBoundary, cellToLatLng } from 'h3-js';
 import type { FacilityRow, HexStatsRow } from './rows';
-import { COLOR, LOD_ZOOM, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
+import { COLOR, LOD_ZOOM, cellSetKey, intensity, pulsingCells, tooltipHtml, unitsFor, type MapMode, type MapUnit } from './mapModel';
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
 
@@ -15,7 +15,7 @@ interface Props {
   selected: string | null;              // res-8 hex or res-7 district id
   onSelect: (unit: MapUnit) => void;
   flash: { hex: string; key: number } | null; // a fresh live event landed here
-  fitKey: string;                       // refit when this changes (region switch)
+  fitKey: string;                       // refit when this changes (region switch, new world)
   padRight?: number;
   padLeft?: number;                     // px covered by the left rail, for fitBounds
   onResChange?: (res: 7 | 8) => void;
@@ -94,10 +94,11 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
   const map = useRef<L.Map | null>(null);
   const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup } | null>(null);
   // Polygons are kept and restyled in place; rebuilt only when the level of detail changes.
-  const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; kids: number }> } | null>(null);
+  const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; shape: MapUnit['shape'] }> } | null>(null);
   const unitById = useRef(new Map<string, MapUnit>());
   const ringKey = useRef('');
-  const fitted = useRef<string | null>(null);
+  const fitted = useRef<{ key: string; cells: string } | null>(null);
+  const touched = useRef(false); // the user moved the map since the last automatic fit
   const [zoom, setZoom] = useState(0);
   const cb = useRef({ onSelect, labelFor, onResChange });
   cb.current = { onSelect, labelFor, onResChange };
@@ -123,9 +124,17 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     };
     const stopWheel = smoothWheelZoom(m);
     m.on('zoomend', () => setZoom(m.getZoom()));
+    const box = m.getContainer();
+    const touch = () => { touched.current = true; };
+    box.addEventListener('pointerdown', touch);
+    box.addEventListener('wheel', touch, { passive: true });
+    box.addEventListener('keydown', touch);
     map.current = m;
     return () => {
       stopWheel();
+      box.removeEventListener('pointerdown', touch);
+      box.removeEventListener('wheel', touch);
+      box.removeEventListener('keydown', touch);
       m.remove();
       map.current = null;
       fitted.current = null;
@@ -134,16 +143,22 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     };
   }, []);
 
-  // Fit once per region when its cells first arrive.
+  // Fit when a region or world first shows cells. While its cell set keeps changing (a new disaster
+  // is seeded in batches), refit until the user moves the map themselves.
+  const setKey = useMemo(() => cellSetKey(cells), [cells]);
   useEffect(() => {
     const m = map.current;
-    if (!m || !cells.length || fitted.current === fitKey) return;
+    if (!m || !cells.length) return;
+    const f = fitted.current;
+    const sameKey = f !== null && f.key === fitKey;
+    if (f !== null && sameKey && (f.cells === setKey || touched.current)) return;
+    if (!sameKey) touched.current = false;
     const b = L.latLngBounds(cells.flatMap((c) => cellToBoundary(c.hex) as [number, number][]));
     m.invalidateSize();
     m.fitBounds(b, { paddingTopLeft: [padLeft, 24], paddingBottomRight: [padRight, 24], animate: false });
-    fitted.current = fitKey;
+    fitted.current = { key: fitKey, cells: setKey };
     setZoom(m.getZoom());
-  }, [cells, fitKey, padRight, padLeft]);
+  }, [cells, setKey, fitKey, padRight, padLeft]);
 
   const ready = zoom > 0;
   const res: 7 | 8 = zoom < LOD_ZOOM ? 7 : 8;
@@ -179,12 +194,13 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
           if (now) cb.current.onSelect(now);
         });
         poly.addTo(g.cells);
-        cur.byId.set(id, { poly, kids: u.kids.length });
+        cur.byId.set(id, { poly, shape: u.shape });
         continue;
       }
-      if (have.kids !== u.kids.length) {
+      // Cached geometry is shared by reference, so a new object means a different child set.
+      if (have.shape !== u.shape) {
         have.poly.setLatLngs(u.shape as L.LatLngExpression[][]);
-        have.kids = u.kids.length;
+        have.shape = u.shape;
       }
       have.poly.setStyle(style);
       const tip = have.poly.getTooltip();

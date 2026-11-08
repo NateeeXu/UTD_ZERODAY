@@ -578,3 +578,21 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .p2-list > li + li { margin-top: 4px; }
 .p2-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .p2-body[hidden], .p2-pane[hidden] { display: none; }
+
+/* Scenario name (world.name) in the top bar. It changes when a new disaster is loaded; long
+   "inspired by …" preset names truncate, the full name is in the tooltip. */
+.manager .brand.stacked { flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; flex: 0 1 auto; flex-wrap: nowrap; }
+.brand-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; max-width: 100%; }
+.brand-line strong { flex-shrink: 0; }
+.brand-line .scenario { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: min(480px, 34vw); padding-left: 10px; border-left: 1px solid var(--line); }
+.brand.stacked > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* New disaster: brief reconnect screen, then a status chip while the world is seeded. */
+.world-swap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; text-align: center; background: var(--surface); }
+.world-swap b { font-size: 20px; max-width: 640px; }
+.toast.loading { border-color: var(--line); }
+.toast.loading .dot { background: var(--muted); animation: loading-dot 1.2s ease-in-out infinite; }
+@keyframes loading-dot { 50% { opacity: 0.25; } }
+.detail-body .range-note { margin: 6px 20px 0; }
+.modal .check { align-items: flex-start; color: var(--muted); }
+.modal .check input { margin-top: 2px; flex-shrink: 0; }

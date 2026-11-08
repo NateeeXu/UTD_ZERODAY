@@ -4,13 +4,13 @@ import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './config';
 import { LiveMap } from './LiveMap';
-import { JoinDialog, rememberedName } from './JoinDialog';
+import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, RANK, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import { CAUSE, COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
@@ -32,14 +32,18 @@ export function ManagerLive() {
   );
 }
 
-// Shared top bar: product label, region switcher, right-hand slot.
-export function RegionHeader({ region, onRegion, fictional, children }: {
-  region: RegionConfig; onRegion: (r: RegionConfig) => void; fictional: boolean; children?: ReactNode;
+// Shared top bar: product label, current scenario (world.name, which changes when a new disaster is
+// loaded), region switcher, right-hand slot.
+export function RegionHeader({ region, onRegion, fictional, scenario, children }: {
+  region: RegionConfig; onRegion: (r: RegionConfig) => void; fictional: boolean; scenario?: string; children?: ReactNode;
 }) {
   return (
     <header className="topbar">
-      <div className="brand">
-        <strong>Triage Loop</strong>
+      <div className="brand stacked">
+        <div className="brand-line">
+          <strong>Triage Loop</strong>
+          {scenario && <span className="scenario" title={scenario}>{scenario}</span>}
+        </div>
         <span className="muted small">
           {fictional ? 'Synthetic exercise · fictional town · no real customer data' : 'Synthetic exercise · real geography and census data · no real customer data'}
         </span>
@@ -63,12 +67,12 @@ export function RegionHeader({ region, onRegion, fictional, children }: {
 
 function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (r: RegionConfig) => void }) {
   const [cells] = useTable(tables.hexStats);
-  const [worldRows] = useTable(tables.world);
+  const [worldRows, worldReady] = useTable(tables.world);
   const [replayRows] = useTable(tables.replayState);
-  const [metricsRows] = useTable(tables.metrics);
+  const [metricsRows, metricsReady] = useTable(tables.metrics);
   const [facilities] = useTable(tables.facility);
   const [members] = useTable(tables.member);
-  const [myMember] = useTable(tables.myMember);
+  const [myMember, memberReady] = useTable(tables.myMember);
   const [candidates] = useTable(tables.inspectionCandidate);
   const [assignments] = useTable(tables.assignment);
 
@@ -100,6 +104,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const metrics = metricsRows[0];
   const me = myMember[0];
   const isManager = me?.role === 'manager';
+  const rejoining = useAutoRejoin('manager', region.db ?? undefined, !!me, memberReady);
   const fictional = world ? !world.region : false; // until `world` arrives, assume real geography (never invent names)
 
   const [joining, setJoining] = useState(false);
@@ -109,7 +114,9 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [showFacilities, setShowFacilities] = useState(false);
   const [res, setRes] = useState<7 | 8>(7);
 
-  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cells.length, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Rebuilt only when the cell set itself changes (not on every stats tick).
+  const cellKey = useMemo(() => cellSetKey(cells), [cells]);
+  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cellKey, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
   const labelFor = useCallback((u: MapUnit) => (u.res === 7 ? labeler.district(u.id) : labeler.cell(u.id)), [labeler]);
 
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
@@ -225,14 +232,26 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   }), [focus, smsReplies, fieldReports, claims]);
   const simMinutes = replay?.simMinutes ?? 0;
 
+  // A new disaster is being loaded: the world row is gone (wiped) or present but not counted yet
+  // (metrics.households is recounted by reset_demo, the last seeding step).
+  const loading = !worldReady
+    ? null
+    : !world
+      ? 'Waiting for the next scenario…'
+      : metricsReady && (!metrics || metrics.households === 0)
+        ? `Loading ${world.name} · ${cells.length.toLocaleString()} areas so far`
+        : null;
+
   return (
     <div className="manager live">
-      <RegionHeader region={region} onRegion={onRegion} fictional={fictional}>
+      <RegionHeader region={region} onRegion={onRegion} fictional={fictional} scenario={world?.name}>
         <QrButton household={qrHousehold} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
         {me ? (
           <span className="small">{me.role === 'manager' ? 'Manager' : me.role} · <b>{me.name}</b></span>
+        ) : rejoining ? (
+          <span className="small muted">Rejoining…</span>
         ) : (
           <button className="btn" onClick={() => setJoining(true)}>{rememberedName(region.db ?? undefined, 'manager') ? 'Rejoin as manager' : 'Join as manager'}</button>
         )}
@@ -247,7 +266,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           selected={focus?.hex ?? sel?.id ?? null}
           onSelect={selectUnit}
           flash={flash}
-          fitKey={region.id}
+          fitKey={`${region.id}|${world?.eventId ?? ''}`}
           padLeft={420}
           padRight={40}
           onResChange={setRes}
@@ -291,6 +310,12 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             </label>
             <span className="glass-chip muted" title="Zoom in for neighborhoods (res 8)">{res === 7 ? 'Districts' : 'Neighborhoods'}</span>
           </div>
+          {loading && (
+            <div className="toast loading" role="status">
+              <span className="dot" />
+              <span>{loading}</span>
+            </div>
+          )}
           {toast && (
             <div className="toast" key={toast.key} role="status">
               <span className="dot" />
@@ -451,10 +476,13 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
       <div className="detail-body">
         {unit.r && <p className="reason">{unit.res === 7 && <b>Most urgent neighborhood: </b>}{unit.r}</p>}
         <div className="readout">
-          <span title={`Point estimate ${unit.ex.toFixed(1)}; 90% range`}><b>{severeRange(unit)}</b>homes severely damaged</span>
+          <span title="90% range from the simulation"><b>{severeRange(unit)}</b>homes severely damaged</span>
           <span><b>{unit.rep}/{unit.sent}</b>SMS replied</span>
           <span><b>{unit.cl}</b>claims</span>
         </div>
+        {Number.isFinite(unit.lo) && Number.isFinite(unit.hi) && (
+          <p className="small muted range-note">90% range · point estimate ~{unit.ex.toFixed(1)}, for reference</p>
+        )}
         {unit.sc && (
           <p className="small silence-line">Silent area ({pct(unit.si)} of expected replies missing) · {CAUSE[unit.sc] ?? unit.sc}</p>
         )}

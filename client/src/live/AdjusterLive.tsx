@@ -3,11 +3,11 @@ import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { initialLiveRegion } from './config';
-import { JoinDialog } from './JoinDialog';
+import { JoinDialog, useAutoRejoin } from './JoinDialog';
 import { makeLabeler } from './labels';
 import { useEstimatesById, useHouseholdsById } from './hooks';
 import { makeKidsNote } from './accounting';
-import { prio, RANK } from './mapModel';
+import { cellSetKey, prio, RANK } from './mapModel';
 import type { HouseholdRow } from './rows';
 import { CLOSURES, DAMAGE, PeopleProperty, contactHistory } from './household';
 import { fmtT, homeLabel, pct } from '../format';
@@ -25,7 +25,7 @@ type Safety = 'safe' | 'needs_help' | 'unsure';
 // close_household reasons (CLOSURES): unreachable_after_visit requires an assignment first (backend rule).
 
 function AdjusterScreen() {
-  const [myMember] = useTable(tables.myMember);
+  const [myMember, memberReady] = useTable(tables.myMember);
   const [mine] = useTable(tables.myAssignments);
   const [cells] = useTable(tables.hexStats);
   const [candidates] = useTable(tables.inspectionCandidate);
@@ -33,6 +33,8 @@ function AdjusterScreen() {
   const [replayRows] = useTable(tables.replayState);
   const [facilities] = useTable(tables.facility);
   const me = myMember[0];
+  const db = useMemo(() => initialLiveRegion().db ?? undefined, []);
+  const rejoining = useAutoRejoin('adjuster', db, !!me, memberReady);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const assignedIdsAll = useMemo(() => mine.map((a) => a.householdId), [mine]);
@@ -40,7 +42,8 @@ function AdjusterScreen() {
   const cellBy = useMemo(() => new Map(cells.map((c) => [c.hex, c])), [cells]);
   const kidsNote = useMemo(() => makeKidsNote(facilities, cellBy, !!worldRows[0]?.schoolHours), [facilities, cellBy, worldRows]);
   const fictional = worldRows[0] ? !worldRows[0].region : false;
-  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cells.length, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cellKey = useMemo(() => cellSetKey(cells), [cells]);
+  const labeler = useMemo(() => makeLabeler(cells.map((c) => c.hex), fictional), [cellKey, fictional]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assigned = useMemo(
     () => [...mine].filter((a) => a.status !== 'cancelled').sort((a, b) => Number(a.status !== 'assigned') - Number(b.status !== 'assigned') || (estimateBy.get(b.householdId)?.inspectScore ?? 0) - (estimateBy.get(a.householdId)?.inspectScore ?? 0)),
@@ -61,8 +64,8 @@ function AdjusterScreen() {
     return (
       <div className="phone">
         <header className="phone-top"><strong>Field tasks</strong><ConnectionBadge /></header>
-        <p className="muted pad">Join as an adjuster to see your assigned homes.</p>
-        <JoinDialog role="adjuster" db={initialLiveRegion().db ?? undefined} onDone={() => undefined} />
+        <p className="muted pad">{rejoining ? 'Rejoining as adjuster…' : 'Join as an adjuster to see your assigned homes.'}</p>
+        {!rejoining && <JoinDialog role="adjuster" db={db} onDone={() => undefined} />}
       </div>
     );
   }

@@ -78,8 +78,8 @@ function ReplyThread({ householdId, code }: { householdId: string; code: string 
         {safety === 'needs_help' && (
           <Bubble from="them">
             {missing
-              ? 'We will refer this to 911 / local emergency services. If anyone is in immediate danger, call 911 now.'
-              : 'We will refer this to 911 / local emergency services. If you are in immediate danger, call 911 now.'}
+              ? 'Referred to 911 / local agencies. If anyone is in immediate danger, call 911 now.'
+              : 'Referred to 911 / local agencies. If you are in immediate danger, call 911 now.'}
           </Bubble>
         )}
         {step !== 'safety' && !missing && <Bubble from="them">How bad is the damage? Reply 0 (none), 1 (minor), 2 (severe), 3 (can't stay there).</Bubble>}

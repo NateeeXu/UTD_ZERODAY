@@ -21,5 +21,6 @@ export default __t.row({
   adjusterId: __t.string().name("adjuster_id"),
   safety: __t.string(),
   damage: __t.u8(),
+  damageKnown: __t.bool().name("damage_known"),
   note: __t.string(),
 });

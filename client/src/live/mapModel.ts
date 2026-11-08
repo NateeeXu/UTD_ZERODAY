@@ -54,8 +54,21 @@ export interface MapUnit {
   center: [number, number];
 }
 
+// Order-independent key for a set of cells (count + sum of string hashes). The cell set is not fixed:
+// a new disaster replaces the world, and seeding streams hexes in batches of 500.
+export function cellSetKey(cells: readonly { hex: string }[]): string {
+  let sum = 0;
+  for (const c of cells) {
+    let h = 0;
+    for (let i = 0; i < c.hex.length; i++) h = (h * 31 + c.hex.charCodeAt(i)) | 0;
+    sum = (sum + h) | 0;
+  }
+  return `${cells.length}:${sum >>> 0}`;
+}
+
 // Geometry never changes for a given set of cells, so cache it: the replay recomputes units every
-// second and cellsToMultiPolygon over every district is the expensive part.
+// second and cellsToMultiPolygon over every district is the expensive part. District keys include
+// the exact child set, so a new world never reuses an old outline.
 const shapeCache = new Map<string, { shape: MapUnit['shape']; center: [number, number] }>();
 function cachedGeom(key: string, make: () => { shape: MapUnit['shape']; center: [number, number] }) {
   let g = shapeCache.get(key);
@@ -91,7 +104,7 @@ export function unitsFor(cells: readonly HexStatsRow[], res: 7 | 8): MapUnit[] {
       RANK[prio(b.priority)] < RANK[prio(a.priority)] || (b.priority === a.priority && b.severity > a.severity) ? b : a);
     const needs = kids.some((k) => k.verification === 'needs_verification' && k.priority === top.priority);
     const silentKid = kids.reduce((a, b) => (b.silence * b.hazard > a.silence * a.hazard ? b : a));
-    const geom = cachedGeom(`${id}:${kids.length}`, () => {
+    const geom = cachedGeom(`${id}:${cellSetKey(kids)}`, () => {
       const centers = kids.map((k) => cellToLatLng(k.hex));
       return {
         shape: cellsToMultiPolygon(kids.map((k) => k.hex)) as [number, number][][][],

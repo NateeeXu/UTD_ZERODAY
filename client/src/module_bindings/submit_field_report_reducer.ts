@@ -15,4 +15,5 @@ export default {
   safety: __t.string(),
   damage: __t.u8(),
   note: __t.string(),
+  memberMissing: __t.bool(),
 };
