@@ -14,4 +14,5 @@ export default {
   enabled: __t.bool(),
   callsPerHour: __t.u32(),
   visitsPerHour: __t.u32(),
+  inspectionsPerHour: __t.u32(),
 };

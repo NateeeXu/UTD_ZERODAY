@@ -60,6 +60,7 @@ import SetStaffSimReducer from "./set_staff_sim_reducer.ts";
 import StartReplayReducer from "./start_replay_reducer.ts";
 import StepReplayReducer from "./step_replay_reducer.ts";
 import SubmitFieldReportReducer from "./submit_field_report_reducer.ts";
+import SubmitParsedReplyReducer from "./submit_parsed_reply_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
@@ -402,6 +403,7 @@ const reducersSchema = __reducers(
   __reducerSchema("start_replay", StartReplayReducer),
   __reducerSchema("step_replay", StepReplayReducer),
   __reducerSchema("submit_field_report", SubmitFieldReportReducer),
+  __reducerSchema("submit_parsed_reply", SubmitParsedReplyReducer),
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
   __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),
