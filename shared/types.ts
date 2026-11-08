@@ -26,12 +26,14 @@ export interface HexCell {
   tractGeoid?: string;      // 重叠最多的人口普查区
   daytimeWorkers?: number;  // LODES：在这个格子里上班的人数
   residentWorkers?: number; // LODES：住在这个格子里的在职人数
+  k12Enrollment?: number;   // 这个格子里中小学的在校学生总数（NCES）
+  collegeEnrollment?: number; // 这个格子里大学的在校学生总数
 }
 
 // v2：真实设施（学校常作为避难所）
 export interface Facility {
   id: string;
-  kind: 'school' | 'hospital' | 'shelter' | 'fire_station' | 'mast';
+  kind: 'school' | 'university' | 'hospital' | 'shelter' | 'fire_station' | 'mast';
   name: string;
   lat: number;
   lng: number;
@@ -65,6 +67,11 @@ export interface Household {
   limitedEnglish?: boolean;        // 英语能力有限
   primaryLanguage?: string;        // 外联短信用的语言，也是自由文本回复的语言。代码：en es zh vi tl ko fr de ru ar other-ie other-api other
   mobileHome?: boolean;            // 住移动房屋，风灾下最脆弱
+  // v2 学生与住房（按普查区真实比例抽样）
+  policyType?: 'homeowners' | 'renters' | 'condo'; // 租户只保财物和临时住宿，房屋结构由房东的保险负责
+  schoolAgeChildren?: number;      // 5–17 岁孩子人数
+  collegeStudent?: boolean;        // 大学生住户（常为租户、无车、离家）
+  nearestSchoolId?: string;        // 最近学校的 Facility.id，用于家庭团聚信息和避难所转介
 }
 
 export interface World {
@@ -81,6 +88,7 @@ export interface World {
   dataSources?: string[];   // 真实数据来源和许可说明
   horizonMinutes?: number;  // 事件时长，缺省为 4320（72 小时）
   eventLocalHour?: number;  // 灾害发生时的当地小时（0–23），决定 awayDaytime 是否起作用
+  eventWeekday?: boolean;   // 是否工作日：上课时间 + 工作日 = 孩子在学校
 }
 
 // 真实情况。只有模拟器知道；引擎只在训练（回测事件）和评估（留出家庭）时读取。
