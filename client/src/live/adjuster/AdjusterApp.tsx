@@ -1,7 +1,7 @@
 // Adjuster phone (docs/ADJUSTER_APP.md): Tasks, Home, Go to area, Field report, Report sent, Can't make contact.
 // Areas, never house points: the households are synthetic but their coordinates fall on real streets, so
 // the phone shows the H3 cell and routes to its center inside the app (no external map app).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { cellToLatLng } from 'h3-js';
 import { reducers, tables } from '../../module_bindings/index.ts';
@@ -23,6 +23,7 @@ import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget }
 import { Icon, needIcon } from './icons';
 import { useStickySheet } from './sheetState';
 import { useBackgroundLocation } from './location';
+import { useSheetDrag } from './sheetDrag';
 import './adjuster.css';
 
 interface Task {
@@ -716,48 +717,11 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
   // Sheet: 'peek' = one line so the map shows, 'next' = Next best + Next up, 'all' = the whole list.
   const [sheet, setSheet] = useStickySheet();
   const expanded = sheet === 'all';
-  const up = () => setSheet((s) => (s === 'peek' ? 'next' : 'all'));
-  const down = () => setSheet((s) => (s === 'all' ? 'next' : 'peek'));
-  // Smooth height change into and out of peek (FLIP): remember the height after every render and,
-  // when the sheet enters or leaves peek, animate from that height to the new one.
+  // Drag the handle (or the peek sheet) and the top edge follows the finger; release snaps to peek / next / all.
   const sheetRef = useRef<HTMLElement>(null);
-  const lastH = useRef(0);
-  const prevSheet = useRef(sheet);
-  useLayoutEffect(() => {
-    const el = sheetRef.current;
-    if (!el) return;
-    const was = prevSheet.current;
-    prevSheet.current = sheet;
-    const from = lastH.current;
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (was !== sheet && (was === 'peek' || sheet === 'peek') && from > 0 && !still) {
-      const to = el.offsetHeight;
-      el.style.transition = 'none';
-      el.style.overflow = 'hidden';
-      el.style.height = `${from}px`;
-      void el.offsetHeight; // apply the start height before animating
-      el.style.transition = 'height 320ms cubic-bezier(0.2, 0.8, 0.2, 1)';
-      el.style.height = `${to}px`;
-      let finished = false;
-      const done = (e?: TransitionEvent) => {
-        // transitionend bubbles up from children (the list's own animation): only the sheet's height counts.
-        if (e && (e.target !== el || e.propertyName !== 'height')) return;
-        if (finished) return;
-        finished = true;
-        el.removeEventListener('transitionend', done);
-        el.style.height = ''; el.style.transition = ''; el.style.overflow = '';
-        lastH.current = el.offsetHeight;
-      };
-      el.addEventListener('transitionend', done);
-      setTimeout(() => done(), 450);
-      lastH.current = to;
-    } else if (!el.style.height) {
-      lastH.current = el.offsetHeight;
-    }
-  });
+  const sheetDrag = useSheetDrag(sheetRef, sheet, setSheet);
   const [whyOpen, setWhyOpen] = useState(false);
   const showBest = hasStart && !!nextBest;
-  const drag = useRef<{ y: number; moved: boolean } | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const all = useMemo(() => [...open, ...done], [open, done]);
   // The card shows the task picked on the map, else the next one up.
@@ -802,21 +766,10 @@ function TasksView({ open, done, me, hasStart, regionCenter, meName, sim, badge,
       </header>
       <span className="adj-demo adj-glass">Demo data: areas, not addresses</span>
 
-      <section ref={sheetRef} className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : ''}`} aria-label="Tasks">
+      <section ref={sheetRef} className={`adj-sheet adj-glass${sheet === 'peek' ? ' peek' : sheet === 'all' ? ' all' : ''}`} aria-label="Tasks" {...sheetDrag}>
         <button
           type="button" className="adj-handle" aria-expanded={sheet !== 'peek'}
           aria-label={sheet === 'peek' ? 'Show tasks' : expanded ? 'Show next up only' : 'Show all tasks'}
-          onPointerDown={(e) => { drag.current = { y: e.clientY, moved: false }; e.currentTarget.setPointerCapture(e.pointerId); }}
-          onPointerMove={(e) => {
-            const d = drag.current;
-            if (!d) return;
-            const dy = e.clientY - d.y;
-            // One step per swipe: up peek → next → all, down all → next → peek.
-            if (d.moved) return;
-            if (dy < -24) { up(); d.moved = true; }
-            else if (dy > 24) { down(); d.moved = true; }
-          }}
-          onPointerUp={() => { const d = drag.current; drag.current = null; if (d && !d.moved) setSheet((s) => (s === 'next' ? 'all' : 'next')); }}
           onClick={(e) => { if (e.detail === 0) setSheet((s) => (s === 'next' ? 'all' : 'next')); }}
         ><span /></button>
 
