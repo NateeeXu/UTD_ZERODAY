@@ -14,14 +14,13 @@ const HAZARD_INK = '#1e2a3a';
 export type FitTarget = { target: 'cells' | 'cone'; n: number };
 
 type FacilityKind = 'school' | 'university' | 'hospital';
-// Letter badges so the kind reads without hovering: H = hospital (green square), S = school and
-// U = university (blue circles). Same look as FacilityKey in the toggle chip.
-export const FACILITY_GLYPH: Record<FacilityKind, string> = { hospital: 'H', school: 'S', university: 'U' };
+// Shape and colour carry the kind: hospital = green square, school = blue dot, university = larger
+// blue dot. Same look as FacilityKey in the toggle chip.
 function facilityIcon(kind: FacilityKind): L.DivIcon {
-  const size = kind === 'university' ? 20 : 16;
+  const size = kind === 'university' ? 13 : 10;
   return L.divIcon({
     className: `fac-icon fac-${kind}`,
-    html: FACILITY_GLYPH[kind],
+    html: '',
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -369,10 +368,10 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
 
 /** Toggle-chip label that doubles as the map key for the facility icons. */
 export function FacilityKey() {
-  const badge = (k: FacilityKind) => <i className={`fac-icon fac-${k}`} aria-hidden>{FACILITY_GLYPH[k]}</i>;
+  const badge = (k: FacilityKind) => <i className={`fac-icon fac-${k}`} aria-hidden />;
   return (
     <span className="fac-key">
-      {badge('school')}{badge('university')} Schools &amp; universities · {badge('hospital')} Hospitals
+      {badge('school')} Schools · {badge('hospital')} Hospitals
     </span>
   );
 }
