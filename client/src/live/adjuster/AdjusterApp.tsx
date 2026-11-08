@@ -35,6 +35,7 @@ interface Task {
   hexRow?: HexRow;
   priority: Priority;
   type: D.TaskType;
+  job: D.Job;
   district: string;
   miles: number | null;
   replies: SmsReplyRow[];
@@ -98,19 +99,8 @@ function LiveBadge({ state, unsent, className = '' }: { state: LiveState; unsent
   );
 }
 
-function useGeolocation(): D.LatLng | null {
-  const [pos, setPos] = useState<D.LatLng | null>(null);
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-    const id = navigator.geolocation.watchPosition(
-      (p) => setPos([p.coords.latitude, p.coords.longitude]),
-      () => setPos(null), // denied or unavailable: no error on screen
-      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 20_000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
-  return pos;
-}
+// "Next best" row (docs/ADJUSTER_APP.md section 2.7): the caller's own recommendations.
+export type NextBest = { householdId: string; rank: number; priority: string; distanceKm: number; reason: string };
 
 function Field({ meName }: { meName: string }) {
   const conn = useSpacetimeDB();
@@ -119,8 +109,15 @@ function Field({ meName }: { meName: string }) {
   const [cells] = useTable(tables.hexStats);
   const [worldRows] = useTable(tables.world);
   const [replayRows] = useTable(tables.replayState);
-  const [facilities] = useTable(tables.facility);
   const [members] = useTable(tables.member);
+  // Demo start position and the "Next best" list. No real GPS in the demo: a default start near the
+  // middle of the region, and the adjuster can tap the map to move it.
+  const [locRows, locReady] = useTable(tables.adjusterLocation);
+  const [facilities] = useTable(tables.facility);
+  const [recRows] = useTable(tables.myRecommendations);
+  const updateLocation = useReducer(reducers.updateMyLocation);
+  const refreshRecs = useReducer(reducers.refreshRecommendations);
+  const acceptRec = useReducer(reducers.acceptRecommendation);
   const world = worldRows[0];
   const sim = replayRows[0]?.simMinutes ?? 0;
   const fictional = world ? !world.region : false;
@@ -170,7 +167,8 @@ function Field({ meName }: { meName: string }) {
   }, [showToast]);
   const outbox = useOutbox({ submit, isActive: conn.isActive, myCount, onSent });
 
-  // ---- Position: real GPS when it is inside the disaster region, else a simulated staging point ----
+  // ---- Position: the demo start in adjuster_location (source 'demo'). Until one is saved, the default
+  // start is the facility nearest the middle of the region (a staging point), else the middle itself.
   const regionCenter = useMemo<D.LatLng | null>(() => {
     if (!cells.length) return null;
     let la = 0;
@@ -192,10 +190,62 @@ function Field({ meName }: { meName: string }) {
     }
     return best ?? regionCenter;
   }, [regionCenter, facilities]);
-  const gps = useGeolocation();
-  const gpsInRegion = !!(gps && regionCenter && D.milesBetween(gps, regionCenter) < 60);
-  const mePos: D.LatLng | null = gpsInRegion ? gps : staging;
-  const simulated = !gpsInRegion && !!staging;
+  const myLoc = myId ? locRows.find((r) => r.identity.isEqual(myId)) : undefined;
+  const savedPos = useMemo<D.LatLng | null>(
+    () => (myLoc && myLoc.source === 'demo' ? [myLoc.lat, myLoc.lng] : null),
+    [myLoc?.lat, myLoc?.lng, myLoc?.source], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const mePos = savedPos ?? staging;
+  const hasStart = !!mePos;
+  const isDefaultStart = !!staging && (!savedPos || (savedPos[0] === staging[0] && savedPos[1] === staging[1]));
+  // The card is the row with the lowest rank (rows of taken tasks disappear; the rest keep their ranks).
+  const nextBest: NextBest | null = useMemo(() => {
+    if (!recRows.length) return null;
+    const r = [...recRows].sort((a, b) => a.rank - b.rank)[0];
+    return { householdId: r.householdId, rank: r.rank, priority: r.priority, distanceKm: r.distanceKm, reason: r.reason };
+  }, [recRows]);
+
+  const setStart = useCallback(async (lat: number, lng: number) => {
+    try {
+      await updateLocation({ lat, lng, source: 'demo' });
+      showToast('Start set');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e));
+    }
+  }, [updateLocation, showToast]);
+  const refreshNow = useCallback(async () => {
+    try {
+      await refreshRecs();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e));
+    }
+  }, [refreshRecs, showToast]);
+  const acceptBest = useCallback(async () => {
+    if (!nextBest) return;
+    try {
+      await acceptRec({ householdId: nextBest.householdId });
+      showToast('Task added');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e));
+    }
+  }, [acceptRec, nextBest, showToast]);
+
+  // Rebuild "Next best" when the Tasks page opens (and after a reconnect). Never on a timer.
+  const onTasks = route.name === 'tasks';
+  const refreshRef = useRef(refreshRecs);
+  refreshRef.current = refreshRecs;
+  const hasStartRef = useRef(hasStart);
+  hasStartRef.current = hasStart;
+  useEffect(() => {
+    if (onTasks && conn.isActive && hasStartRef.current) refreshRef.current().catch(() => undefined);
+  }, [onTasks, conn.isActive]);
+  // Save the default start once, so "Next best" can rank from it (update_my_location rebuilds the list).
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !conn.isActive || !locReady || myLoc || !staging) return;
+    seeded.current = true;
+    updateLocation({ lat: staging[0], lng: staging[1], source: 'demo' }).catch(() => undefined);
+  }, [conn.isActive, locReady, myLoc, staging, updateLocation]);
 
   // ---- Tasks ----
   const unsentIds = useMemo(() => new Set(outbox.items.map((i) => i.householdId)), [outbox.items]);
@@ -211,7 +261,7 @@ function Field({ meName }: { meName: string }) {
       const cell = cellBy.get(a.hex);
       return {
         a, id, hex: a.hex, open: a.status === 'assigned', number: 0, label: homeLabel(id),
-        hh: householdBy.get(id), est, cell, hexRow: hexBy.get(a.hex), priority: prio(cell?.priority ?? 'P2'), type,
+        hh: householdBy.get(id), est, cell, hexRow: hexBy.get(a.hex), priority: prio(cell?.priority ?? 'P2'), type, job: D.jobFor(est, type),
         district: labeler.district(a.hex), miles: mePos ? D.milesBetween(mePos, D.cellCenter(a.hex)) : null,
         replies, reports, sent, followup, silent: D.silentHours(est, sim, replies, sent),
         banner: D.taskBanner({ a, replies, reports, followup, me: myId, type }), unsent: unsentIds.has(id),
@@ -270,7 +320,7 @@ function Field({ meName }: { meName: string }) {
     if (!t) return <Fallback onBack={() => setRoute({ name: 'tasks' })} />;
     const prefill = route.prefillOp ? sentRecs[route.prefillOp]?.form : undefined;
     const target: ReportTarget = {
-      householdId: t.id, hex: t.hex, assignmentId: String(t.a.id), label: t.label, type: t.type,
+      householdId: t.id, hex: t.hex, assignmentId: String(t.a.id), label: t.label, type: t.type, job: t.job,
       policy: D.policyOf(t.hh), hazardType: world?.hazardType, hh: t.hh, cell: t.cell,
     };
     const item = route.opId ? outbox.items.find((i) => i.opId === route.opId) : undefined;
@@ -333,10 +383,10 @@ function Field({ meName }: { meName: string }) {
         </span>
         <section className="adj-float-card adj-glass" aria-label="Distance">
           <div>
-            <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'Location off'}</div>
-            <span className="adj-sub">to the center of {t.district} · {t.label}</span>
+            <div className="adj-big">{t.miles != null ? D.fmtMiles(t.miles) : 'No start set'}</div>
+            <span className="adj-sub">{t.miles != null ? `to the center of ${t.district} · ${t.label}` : 'Set your start on the Tasks map'}</span>
           </div>
-          <span className="adj-caption">Demo data: area, not an address{simulated ? ' · simulated position' : ''}</span>
+          <span className="adj-caption">Demo data: area, not an address</span>
           <button type="button" className="adj-btn dark block" onClick={() => setRoute({ name: 'home', id: t.id })}>Open home</button>
         </section>
         {toastEl}
@@ -387,7 +437,8 @@ function Field({ meName }: { meName: string }) {
   return (
     <div className="adj">
       <TasksView
-        open={open} done={done} me={mePos} simulated={simulated} meName={whoAmI} sim={sim} badge={badge}
+        open={open} done={done} me={mePos} hasStart={hasStart} isDefaultStart={isDefaultStart} regionCenter={regionCenter} meName={whoAmI} sim={sim} badge={badge}
+        nextBest={nextBest} onSetStart={setStart} onAccept={() => void acceptBest()} onRefresh={() => void refreshNow()}
         bannerFor={bannerFor} myId={myId}
         onOpen={(id) => setRoute({ name: 'home', id })}
         onGo={(id) => setRoute({ name: 'goto', id })}
@@ -446,7 +497,7 @@ function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
   onOpen: () => void; onDismiss: () => void; onSkip: () => void;
 }) {
   const needs = D.listNeeds(t.hh);
-  const sub = t.open ? [t.type === 'Property inspection' ? 'Property inspection' : null, ...needs].filter(Boolean).join(' · ') || t.district : null;
+  const sub = t.open ? [t.job !== 'Visit' ? D.JOB_LABEL[t.job] : null, ...needs].filter(Boolean).join(' · ') || t.district : null;
   const tag = t.open ? null : doneTag(t);
   const mine = t.reports.filter((r) => myId && r.ingestedBy.isEqual(myId));
   const reportedAt = mine.length ? Math.max(...mine.map((r) => r.t)) : null;
@@ -471,12 +522,17 @@ function TaskCard({ t, myId, banner, onOpen, onDismiss, onSkip }: {
 }
 
 // ---- Screen 1: Tasks ----
-function TasksView({ open, done, me, simulated, meName, sim, badge, bannerFor, myId, onOpen, onGo, onDismiss, onSkip }: {
-  open: Task[]; done: Task[]; me: D.LatLng | null; simulated: boolean; meName: string; sim: number; badge: React.ReactNode;
+function TasksView({ open, done, me, hasStart, isDefaultStart, regionCenter, meName, sim, badge, bannerFor, myId, nextBest, onSetStart, onAccept, onRefresh, onOpen, onGo, onDismiss, onSkip }: {
+  open: Task[]; done: Task[]; me: D.LatLng | null; hasStart: boolean; isDefaultStart: boolean; regionCenter: D.LatLng | null; meName: string; sim: number; badge: React.ReactNode;
   bannerFor: (t: Task) => D.Banner | null; myId?: Parameters<typeof D.taskBanner>[0]['me'];
+  nextBest: NextBest | null; onSetStart: (lat: number, lng: number) => void; onAccept: () => void; onRefresh: () => void;
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Picking a start: only before the region has loaded (no default yet), or after "Move start".
+  const [moving, setMoving] = useState(false);
+  const picking = !hasStart || moving;
+  const showBest = hasStart && !!nextBest;
   const drag = useRef<{ y: number; moved: boolean } | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const all = useMemo(() => [...open, ...done], [open, done]);
@@ -502,7 +558,13 @@ function TasksView({ open, done, me, simulated, meName, sim, badge, bannerFor, m
 
   return (
     <>
-      <PhoneMap areas={areas} me={me} route={route} fitKey={fitKey} padTop={150} padBottom={expanded ? 520 : 330} onAreaClick={pickArea} />
+      <PhoneMap
+        areas={areas} me={me} route={route} fitKey={fitKey} padTop={150}
+        padBottom={(expanded ? 520 : 330) + (showBest ? 110 : 0)}
+        fallbackCenter={regionCenter}
+        onAreaClick={picking ? undefined : pickArea}
+        onMapClick={picking ? ([lat, lng]) => { onSetStart(lat, lng); setMoving(false); } : undefined}
+      />
       <header className="adj-header adj-glass">
         <div>
           <strong>Field tasks</strong>
@@ -510,7 +572,16 @@ function TasksView({ open, done, me, simulated, meName, sim, badge, bannerFor, m
         </div>
         {badge}
       </header>
-      <span className="adj-demo adj-glass">Demo data: areas, not addresses{simulated ? ' · simulated position' : ''}</span>
+      {picking ? (
+        <div className="adj-pick" role="status">
+          <span>Tap the map to set your start</span>
+          {hasStart && <button type="button" className="adj-link small" onClick={() => setMoving(false)}>Cancel</button>}
+        </div>
+      ) : (
+        <span className="adj-demo adj-glass">
+          Demo data: areas, not addresses{isDefaultStart ? ' · default start' : ''} · <button type="button" className="adj-link small" onClick={() => setMoving(true)}>Move start</button>
+        </span>
+      )}
 
       <section className="adj-sheet adj-glass" aria-label="Tasks">
         <button
@@ -527,6 +598,18 @@ function TasksView({ open, done, me, simulated, meName, sim, badge, bannerFor, m
           onClick={(e) => { if (e.detail === 0) setExpanded((x) => !x); }}
         ><span /></button>
 
+        {showBest && nextBest && (
+          <article className="adj-card adj-best" aria-label="Next best">
+            <span className={`adj-p ${prio(nextBest.priority)}`}>{prio(nextBest.priority)}</span>
+            <span className="adj-best-main">
+              <b>Next best · {D.fmtMiles(nextBest.distanceKm * 0.621371)}</b>
+              <span>{nextBest.reason}</span>
+            </span>
+            <button type="button" className="adj-iconbtn" aria-label="Refresh suggestions" onClick={onRefresh}><Icon name="refresh" size={18} stroke={2} /></button>
+            <button type="button" className="adj-btn dark small" onClick={onAccept}>Accept</button>
+          </article>
+        )}
+
         {next ? (
           <>
             <div className="adj-rowhead">
@@ -539,7 +622,7 @@ function TasksView({ open, done, me, simulated, meName, sim, badge, bannerFor, m
               <div className="adj-next">
                 <div className="adj-badges">
                   <span className={`adj-p ${next.priority}`}>{next.priority}</span>
-                  <span className="adj-pill">{next.type}</span>
+                  <span className="adj-pill">{D.JOB_LABEL[next.job]}</span>
                   {next.silent != null && <span className="adj-pill fill">Silent {next.silent} h</span>}
                   {!next.open && <span className={`adj-tag ${doneTag(next).tone}`}>{doneTag(next).text}</span>}
                   {next.unsent && <span className="adj-tag amber">Unsent</span>}
@@ -622,7 +705,7 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="adj-badges">
             <span className={`adj-p ${t.priority}`}>{t.priority}</span>
-            <span className="adj-pill">{t.type}</span>
+            <span className="adj-pill">{D.JOB_LABEL[t.job]}</span>
             {t.silent != null && <span className="adj-pill fill">Silent {t.silent} h</span>}
           </div>
           <div>
@@ -632,8 +715,8 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
         </div>
 
         <div className="adj-highlight">
-          <Icon name={t.type === 'Welfare check' ? 'bell' : 'search'} size={24} />
-          <span><b>{why.title}</b><span>{why.body}</span></span>
+          <Icon name={D.isRemote(t.job) ? 'phone' : t.type === 'Welfare check' ? 'bell' : 'search'} size={24} />
+          <span><b>{D.isRemote(t.job) ? D.JOB_TITLE[t.job] : why.title}</b><span>{why.body}</span></span>
         </div>
 
         <div className="adj-rows">
@@ -674,7 +757,7 @@ function HomeView({ t, total, me, live, unsent, hazardType, subline, banner, onB
 
       <footer className="adj-footer">
         <button type="button" className="adj-link" onClick={onClose}>Can't make contact?</button>
-        <button type="button" className="adj-btn dark" style={{ height: 50, padding: '0 22px', fontSize: 16 }} onClick={onReport}>Start field report</button>
+        <button type="button" className="adj-btn dark" style={{ height: 50, padding: '0 22px', fontSize: 16 }} onClick={onReport}>{D.isRemote(t.job) ? 'Report result' : 'Start field report'}</button>
       </footer>
     </>
   );

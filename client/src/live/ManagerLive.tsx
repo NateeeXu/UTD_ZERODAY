@@ -15,7 +15,7 @@ import { CAUSE, COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMo
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
-import { HouseholdPanel, reportDamage, useLogContact, type Outcome } from './household';
+import { HouseholdPanel, reportDamage } from './household';
 import { SevereCard } from './SevereCard';
 import { homeLabel, pct } from '../format';
 import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
@@ -74,6 +74,15 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const [metricsRows, metricsReady] = useTable(tables.metrics);
   const [facilities] = useTable(tables.facility);
   const [members] = useTable(tables.member);
+  // Adjuster positions for the map (demo starts picked on the phones); names from member.
+  const [adjusterLocations] = useTable(tables.adjusterLocation);
+  const adjusterPins = useMemo(() => {
+    const names = new Map(members.map((m) => [m.identity.toHexString(), m.name]));
+    return adjusterLocations.map((l) => {
+      const id = l.identity.toHexString();
+      return { id, name: names.get(id) ?? 'Adjuster', lat: l.lat, lng: l.lng };
+    });
+  }, [adjusterLocations, members]);
   const [myMember, memberReady] = useTable(tables.myMember);
   const [candidates] = useTable(tables.inspectionCandidate);
   const [assignments] = useTable(tables.assignment);
@@ -222,9 +231,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
     setFocus({ id, hex });
   };
 
-  // A manager records a contact made outside the text system (submit_parsed_reply).
-  const logContact = useLogContact((label) => notify('Contact logged', label), (err) => notify('Could not log contact', err));
-  const onLog = (id: string, o: Outcome, how: string) => (isManager ? void logContact(id, o, how) : setJoining(true));
 
   // Household panel data: the manager already subscribes to every reply / claim / field report.
   const focusIds = useMemo(() => (focus ? [focus.id] : []), [focus]);
@@ -277,6 +283,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
           mode={mapMode}
           hazard={hazard}
           fitTo={fitTo}
+          adjusters={adjusterPins}
         />
 
         <div className="left-rail">
@@ -291,7 +298,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             kidsNote={kidsNote}
             onSelectHex={selectFromHex}
             onOpen={openHousehold}
-            onLog={onLog}
             onAssignHousehold={doAssignHousehold}
             sentTo={sentTo}
             adjusterUrl={adjusterUrl}
@@ -377,7 +383,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               canAssign={adjusters.length > 0}
               adjusterUrl={adjusterUrl}
               onAssign={doAssignHousehold}
-              onLog={onLog}
               onClose={() => setFocus(null)}
               noteFor={kidsNote}
             />

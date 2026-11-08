@@ -107,61 +107,53 @@ export function contactHistory(s: HouseholdSignals) {
   ].sort((a, b) => a.t - b.t);
 }
 
-// A manager records a contact made outside the text system (phone, emergency contact) with
-// submit_parsed_reply. damage 255 = the contact did not describe the home.
-type Outcome = { label: string; safety: 'safe' | 'needs_help'; lifeSafety: boolean; notHome: boolean; needs: string; danger?: boolean };
-const OUTCOMES: Outcome[] = [
-  { label: 'Reached · safe at home', safety: 'safe', lifeSafety: false, notHome: false, needs: '' },
-  { label: 'Reached · safe, not at home', safety: 'safe', lifeSafety: false, notHome: true, needs: '' },
-  { label: 'Needs customer care', safety: 'needs_help', lifeSafety: false, notHome: false, needs: 'other' },
-  { label: 'Danger now → refer to 911', safety: 'needs_help', lifeSafety: true, notHome: false, needs: '', danger: true },
+// The manager never contacts policyholders: every next step is a task for an adjuster, and the result
+// comes back with the adjuster's report. The recommended step follows the household's escalation.
+export type Channel = 'resend' | 'call' | 'locate';
+const CHANNELS: { key: Channel; label: string }[] = [
+  { key: 'resend', label: 'Resend text' },
+  { key: 'call', label: 'Call' },
+  { key: 'locate', label: 'Locate' },
 ];
-
-export function useLogContact(onDone: (msg: string) => void, onError: (msg: string) => void) {
-  const submit = useReducer(reducers.submitParsedReply);
-  return async (householdId: string, o: Outcome, how: string) => {
-    try {
-      await submit({
-        householdId, safety: o.safety, damage: 255, lifeSafety: o.lifeSafety, needs: o.needs, notHome: o.notHome,
-        text: `[${how}, logged by manager] ${o.label}`, language: 'en', passcode: '',
-      });
-      onDone(o.label);
-    } catch (e) {
-      onError(e instanceof Error ? e.message : String(e));
-    }
-  };
+export function channelFor(escalation: string | undefined): Channel | null {
+  if (escalation === 'sms_resend') return 'resend';
+  if (escalation === 'agent_call' || escalation === 'recheck') return 'call'; // re-checks are phone first
+  if (escalation === 'locate') return 'locate';
+  return null;
 }
 
-// Inline actions under a queue row or on the household panel.
-export function ContactActions({ householdId, how, prompt, canAssign, adjusterUrl, onAssign, onLog }: {
+// Inline "send an adjuster" choices under a queue row or on the household panel.
+export function ContactActions({ householdId, note, recommended, canAssign, adjusterUrl, onSend }: {
   householdId: string;
-  how: string; // "agent call", "emergency contact", ... (stored with the logged contact)
-  prompt?: string;
+  note?: string; // context before the choices, e.g. "No reply yet."
+  recommended: Channel | null;
   canAssign: boolean;
   adjusterUrl: string;
-  onAssign: (householdId: string) => void;
-  onLog: (householdId: string, o: Outcome, how: string) => void;
+  onSend: (householdId: string, channel: Channel) => void;
 }) {
   return (
     <div className="contact-actions">
-      <span className="small muted">{prompt ?? `Log the result of the ${how}:`}</span>
-      <div className="ca-buttons">
-        {OUTCOMES.map((o) => (
-          <button key={o.label} className={`btn small-btn${o.danger ? ' danger' : ''}`} onClick={() => onLog(householdId, o, how)}>{o.label}</button>
-        ))}
-      </div>
-      <span className="small muted">
-        Or send someone:{' '}
-        {canAssign
-          ? <button className="link small" onClick={() => onAssign(householdId)}>Send adjuster</button>
-          : <a className="link small" href={adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>}
-      </span>
+      <span className="small muted">{note ? `${note} ` : ''}Send an adjuster to:</span>
+      {canAssign ? (
+        <div className="ca-steps">
+          {CHANNELS.map((c) => (
+            <button key={c.key} type="button" className={`btn small-btn ca-step${c.key === recommended ? ' on' : ''}`} onClick={() => onSend(householdId, c.key)}>
+              {c.label}{c.key === recommended && <span className="ca-rec">Recommended</span>}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span className="small muted">
+          No adjuster online yet. <a className="link small" href={adjusterUrl} target="_blank" rel="noreferrer">Open adjuster screen ↗</a>
+        </span>
+      )}
+      <span className="small muted">The result fills in from their report.</span>
     </div>
   );
 }
 
 // Manager: one household in the right rail (opened from a queue or request row).
-export function HouseholdPanel({ householdId, household, est, replies, reports, claims, label, fictional, sentTo, canAssign, adjusterUrl, onAssign, onLog, onClose, noteFor }: {
+export function HouseholdPanel({ householdId, household, est, replies, reports, claims, label, fictional, sentTo, canAssign, adjusterUrl, onAssign, onClose, noteFor }: {
   householdId: string;
   household: HouseholdRow | undefined;
   est: HouseholdEstimateRow | undefined;
@@ -174,13 +166,11 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
   canAssign: boolean;
   adjusterUrl: string;
   onAssign: (householdId: string) => void;
-  onLog: (householdId: string, o: Outcome, how: string) => void;
   onClose: () => void;
   noteFor?: (h: HouseholdRow | undefined) => string | null;
 }) {
   const [followRows] = useTable(useMemo(() => tables.householdFollowup.where((r) => r.householdId.eq(householdId)), [householdId]));
   const followup = followRows[0];
-  const [logging, setLogging] = useState(false);
   const signals: HouseholdSignals = { est, replies, reports, claims, followup };
   const history = contactHistory(signals);
   const flags = riskFlags(household);
@@ -211,11 +201,9 @@ export function HouseholdPanel({ householdId, household, est, replies, reports, 
         ) : (
           <p className="muted small">{household?.phoneOnFile === false ? 'No phone on file.' : 'Texted, no reply yet.'}</p>
         )}
-        {est && !est.accounted && (
-          <>
-            <button className="btn small-btn" onClick={() => setLogging((v) => !v)}>{logging ? 'Hide' : 'Log a contact'}</button>
-            {logging && <ContactActions householdId={householdId} how="contact" canAssign={canAssign} adjusterUrl={adjusterUrl} onAssign={onAssign} onLog={onLog} />}
-          </>
+        {est && !est.accounted && !sentTo && (
+          <ContactActions householdId={householdId} recommended={channelFor(est.escalation)} canAssign={canAssign} adjusterUrl={adjusterUrl}
+            onSend={(id) => onAssign(id)} />
         )}
         <h3 className="eyebrow divider">Close without contact</h3>
         <CloseHousehold householdId={householdId} followup={followup} reports={reports} />
@@ -291,4 +279,3 @@ export function CloseHousehold({ householdId, followup, reports }: {
   );
 }
 
-export type { Outcome };

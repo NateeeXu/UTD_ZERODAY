@@ -10,7 +10,7 @@ import { tables } from '../module_bindings/index.ts';
 import { useHouseholdsById } from './hooks';
 import { ReferralList, RequestList } from './ReferralsPanel';
 import { ESCALATION, fmtHM, riskFlags } from './accounting';
-import { ContactActions, type Outcome } from './household';
+import { ContactActions, channelFor } from './household';
 import { prio, type Priority } from './mapModel';
 import type { HexStatsRow, HouseholdRow, MemberRow, MetricsRow, SmsReplyRow } from './rows';
 import type { Labeler } from './labels';
@@ -42,7 +42,6 @@ interface Props {
   onSelectHex: (hex: string) => void;
   onOpen: (householdId: string, hex: string) => void;
   onAssignHousehold: (householdId: string) => void;
-  onLog: (householdId: string, o: Outcome, how: string) => void;
   sentTo: Map<string, string>;          // householdId → adjuster name (open assignment)
   adjusterUrl: string;
   adjusters: readonly MemberRow[];
@@ -62,13 +61,15 @@ const ORDER: Priority[] = ['P0', 'P1', 'P2'];
 
 // One button per escalation step. Texts, calls and emergency-contact calls happen outside this app,
 // so their button records the result; a visit is sent from here.
-const STEP_ACTION: Record<string, { label: string; how: string; prompt: string; visit?: boolean }> = {
-  sms_sent: { label: 'Text sent', how: 'contact', prompt: 'Check-in text sent. Log a contact made another way:' },
-  sms_resend: { label: 'Resend text', how: 'resent text', prompt: 'No reply yet. Resend the text, then log the result:' },
-  agent_call: { label: 'Call', how: 'agent call', prompt: 'Log the result of the agent call:' },
-  field_visit: { label: 'Send adjuster', how: 'visit', prompt: 'A visit is due:', visit: true },
-  recheck: { label: 'Re-check', how: 'welfare check', prompt: 'Daily welfare check (last contact over 24 h ago). Log the result:' },
-  locate: { label: 'Locate', how: 'emergency-contact call', prompt: 'House inspected, nobody seen. Log the emergency-contact call:' },
+// The manager never contacts policyholders: each step sends an adjuster a task, and the result fills in
+// from their report. A visit is sent straight from the row; the others open "Send an adjuster to:".
+const STEP_ACTION: Record<string, { label: string; visit?: boolean; note?: string }> = {
+  sms_sent: { label: 'Text sent', note: 'Check-in text sent.' },
+  sms_resend: { label: 'Resend text', note: 'No reply yet.' },
+  agent_call: { label: 'Call', note: 'Still no reply.' },
+  field_visit: { label: 'Send adjuster', visit: true },
+  recheck: { label: 'Re-check', note: 'Last contact over 24 h ago.' },
+  locate: { label: 'Locate', note: 'House inspected, nobody seen.' },
 };
 
 // Per-viewer memory of the panel (tab, sub-tab, sort, open): a convenience, so it may be missing.
@@ -227,9 +228,8 @@ export function OutreachPanel(p: Props) {
                           )}
                       </div>
                       {isOpen && a && (
-                        <ContactActions householdId={q.householdId} how={a.how} prompt={a.prompt} canAssign={p.adjusters.length > 0} adjusterUrl={p.adjusterUrl}
-                          onAssign={(id) => { setExpanded(null); p.onAssignHousehold(id); }}
-                          onLog={(id, o, how) => { setExpanded(null); p.onLog(id, o, how); }} />
+                        <ContactActions householdId={q.householdId} note={a.note} recommended={channelFor(q.escalation)} canAssign={p.adjusters.length > 0} adjusterUrl={p.adjusterUrl}
+                          onSend={(id) => { setExpanded(null); p.onAssignHousehold(id); }} />
                       )}
                     </li>
                   );

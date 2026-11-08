@@ -34,6 +34,7 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcceptRecommendationReducer from "./accept_recommendation_reducer.ts";
 import AssignReducer from "./assign_reducer.ts";
 import AssignHexReducer from "./assign_hex_reducer.ts";
 import CloseHouseholdReducer from "./close_household_reducer.ts";
@@ -45,6 +46,7 @@ import MarkReplyParsedReducer from "./mark_reply_parsed_reducer.ts";
 import PauseReplayReducer from "./pause_replay_reducer.ts";
 import RecomputeAllReducer from "./recompute_all_reducer.ts";
 import RefreshMetricsReducer from "./refresh_metrics_reducer.ts";
+import RefreshRecommendationsReducer from "./refresh_recommendations_reducer.ts";
 import RemoveMemberReducer from "./remove_member_reducer.ts";
 import ReportMemberMissingReducer from "./report_member_missing_reducer.ts";
 import ResetDemoReducer from "./reset_demo_reducer.ts";
@@ -66,12 +68,15 @@ import SubmitRawReplyReducer from "./submit_raw_reply_reducer.ts";
 import SubmitSmsReplyReducer from "./submit_sms_reply_reducer.ts";
 import SubmitSmsTextReplyReducer from "./submit_sms_text_reply_reducer.ts";
 import UpdateAssignmentReducer from "./update_assignment_reducer.ts";
+import UpdateMyLocationReducer from "./update_my_location_reducer.ts";
 import UpdateReferralReducer from "./update_referral_reducer.ts";
 import WipeWorldReducer from "./wipe_world_reducer.ts";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import AdjusterLocationRow from "./adjuster_location_table.ts";
+import AdjusterRecommendationRow from "./adjuster_recommendation_table.ts";
 import AssignmentRow from "./assignment_table.ts";
 import ClaimRow from "./claim_table.ts";
 import FacilityRow from "./facility_table.ts";
@@ -87,6 +92,7 @@ import MetricsRow from "./metrics_table.ts";
 import ModelStateRow from "./model_state_table.ts";
 import MyAssignmentsRow from "./my_assignments_table.ts";
 import MyMemberRow from "./my_member_table.ts";
+import MyRecommendationsRow from "./my_recommendations_table.ts";
 import ReplayStateRow from "./replay_state_table.ts";
 import ReplyInboxRow from "./reply_inbox_table.ts";
 import SmsReplyRow from "./sms_reply_table.ts";
@@ -99,6 +105,34 @@ import WorldRow from "./world_table.ts";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  adjusterLocation: __table({
+    name: 'adjuster_location',
+    indexes: [
+      { accessor: 'identity', name: 'adjuster_location_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'adjuster_location_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, AdjusterLocationRow),
+  adjusterRecommendation: __table({
+    name: 'adjuster_recommendation',
+    indexes: [
+      { accessor: 'adjuster', name: 'adjuster_recommendation_adjuster_idx_btree', algorithm: 'btree', columns: [
+        'adjuster',
+      ] },
+      { accessor: 'householdId', name: 'adjuster_recommendation_household_id_idx_btree', algorithm: 'btree', columns: [
+        'householdId',
+      ] },
+      { accessor: 'id', name: 'adjuster_recommendation_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'adjuster_recommendation_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, AdjusterRecommendationRow),
   assignment: __table({
     name: 'assignment',
     indexes: [
@@ -393,10 +427,18 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyMemberRow),
+  myRecommendations: __table({
+    name: 'my_recommendations',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyRecommendationsRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("accept_recommendation", AcceptRecommendationReducer),
   __reducerSchema("assign", AssignReducer),
   __reducerSchema("assign_hex", AssignHexReducer),
   __reducerSchema("close_household", CloseHouseholdReducer),
@@ -408,6 +450,7 @@ const reducersSchema = __reducers(
   __reducerSchema("pause_replay", PauseReplayReducer),
   __reducerSchema("recompute_all", RecomputeAllReducer),
   __reducerSchema("refresh_metrics", RefreshMetricsReducer),
+  __reducerSchema("refresh_recommendations", RefreshRecommendationsReducer),
   __reducerSchema("remove_member", RemoveMemberReducer),
   __reducerSchema("report_member_missing", ReportMemberMissingReducer),
   __reducerSchema("reset_demo", ResetDemoReducer),
@@ -429,6 +472,7 @@ const reducersSchema = __reducers(
   __reducerSchema("submit_sms_reply", SubmitSmsReplyReducer),
   __reducerSchema("submit_sms_text_reply", SubmitSmsTextReplyReducer),
   __reducerSchema("update_assignment", UpdateAssignmentReducer),
+  __reducerSchema("update_my_location", UpdateMyLocationReducer),
   __reducerSchema("update_referral", UpdateReferralReducer),
   __reducerSchema("wipe_world", WipeWorldReducer),
 );

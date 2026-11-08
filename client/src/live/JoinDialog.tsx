@@ -3,12 +3,19 @@ import { useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 
 // Self-assigned demo role. The passcode is typed here and sent to `join_as`. It is never in the code,
-// env or bundle. With "Remember on this device" (on by default) it is kept in this browser's
-// localStorage only, so the screen can call `join_as` again by itself whenever its membership is gone
-// (a database rebuild deletes the member table; the identity token survives, the role does not).
+// env or bundle. Only when "Remember on this device" is ticked (off by default) is it kept in this
+// browser's localStorage, so the screen can call `join_as` again by itself whenever its membership is
+// gone (a database rebuild deletes the member table; the identity token survives, the role does not).
 // The display name is remembered per database so rejoining by hand is quick too.
 const joinedKey = (db: string, role: string) => `triage-joined-${role}-${db}`;
-const savedKey = (role: string) => `triage-staff-login-${role}`;
+const savedKey = (role: string) => `triage-staff-login-v2-${role}`;
+// Passcodes saved under the old default (Remember was on unless unticked) are dropped once, so a
+// passcode stays on a device only if someone chose to keep it under the opt-in rule.
+try {
+  for (const r of ['manager', 'adjuster']) localStorage.removeItem(`triage-staff-login-${r}`);
+} catch {
+  /* storage blocked */
+}
 type Role = 'manager' | 'adjuster';
 type Saved = { name: string; passcode: string };
 
@@ -127,7 +134,7 @@ export function JoinDialog({ role, db, onDone, onCancel }: { role: Role; db?: st
   const remembered = rememberedName(db, role);
   const [name, setName] = useState(remembered ?? readSaved(role)?.name ?? '');
   const [passcode, setPasscode] = useState('');
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false); // opt-in: never keep the staff passcode by default
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { taken } = useTakenNames();

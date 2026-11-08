@@ -25,6 +25,27 @@ export function taskType(est: HouseholdEstimateRow | undefined): TaskType {
   return !est.accounted || WELFARE_STEPS.has(s) || s.startsWith('referral_') ? 'Welfare check' : 'Property inspection';
 }
 
+// ---- The job the manager sent: follows the household's escalation step ----
+// (assignments carry no job type yet, so the phone reads the current step: a step that moves on while the
+// task waits shows the newer job)
+export type Job = 'Resend text' | 'Call' | 'Locate' | 'Visit' | 'Inspect';
+export function jobFor(est: HouseholdEstimateRow | undefined, type: TaskType): Job {
+  const s = est?.escalation ?? '';
+  if (s === 'sms_resend') return 'Resend text';
+  if (s === 'agent_call' || s === 'recheck') return 'Call';
+  if (s === 'locate') return 'Locate';
+  return type === 'Property inspection' ? 'Inspect' : 'Visit';
+}
+/** Jobs done from the phone, without seeing the house. */
+export const isRemote = (j: Job) => j === 'Resend text' || j === 'Call' || j === 'Locate';
+export const JOB_LABEL: Record<Job, string> = {
+  'Resend text': 'Resend text', Call: 'Call', Locate: 'Locate', Visit: 'Welfare visit', Inspect: 'Property inspection',
+};
+export const JOB_TITLE: Record<Job, string> = {
+  'Resend text': 'Resend the check-in text', Call: 'Call them', Locate: 'Call the emergency contact',
+  Visit: 'Knock first', Inspect: 'Inspect the house',
+};
+
 // ---- Silence ----
 export function silentHours(est: HouseholdEstimateRow | undefined, simMinutes: number, replies: readonly SmsReplyRow[], sent: readonly SmsSentRow[]): number | null {
   if (!est || est.accounted) return null;

@@ -15,7 +15,7 @@ export interface MapArea {
   pill?: 'dark' | 'light' | 'done';
 }
 
-export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey, className, onAreaClick }: {
+export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey, className, onAreaClick, onMapClick, fallbackCenter }: {
   areas: MapArea[];
   me?: LatLng | null;
   route?: LatLng[];
@@ -26,9 +26,15 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
   className?: string;
   /** Tap an area (outline or pin) to select it. */
   onAreaClick?: (hex: string) => void;
+  /** Tap anywhere on the map (e.g. to set the demo start position). */
+  onMapClick?: (at: LatLng) => void;
+  /** Where to look when there is nothing to fit (no areas, no position yet). */
+  fallbackCenter?: LatLng | null;
 }) {
   const clickRef = useRef(onAreaClick);
   clickRef.current = onAreaClick;
+  const mapClickRef = useRef(onMapClick);
+  mapClickRef.current = onMapClick;
   const clickable = !!onAreaClick;
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -42,6 +48,7 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     m.setView([27.8, -97.4], 11);
+    m.on('click', (e: L.LeafletMouseEvent) => mapClickRef.current?.([e.latlng.lat, e.latlng.lng]));
     const ro = new ResizeObserver(() => m.invalidateSize());
     ro.observe(el.current);
     return () => {
@@ -87,8 +94,11 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
       lastFit.current = fitKey;
       const b = L.latLngBounds(pts);
       m.fitBounds(b, { paddingTopLeft: [24, padTop], paddingBottomRight: [24, padBottom], maxZoom: 15, animate: false });
+    } else if (lastFit.current !== fitKey && fallbackCenter) {
+      lastFit.current = fitKey;
+      m.setView(fallbackCenter, 11, { animate: false });
     }
-  }, [areas, me, route, fitKey, padTop, padBottom, clickable]);
+  }, [areas, me, route, fitKey, padTop, padBottom, clickable, fallbackCenter]);
 
   return <div ref={el} className={className ?? 'adj-map'} aria-label="Map of task areas" role="img" />;
 }

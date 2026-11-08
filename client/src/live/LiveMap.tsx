@@ -41,6 +41,20 @@ interface Props {
   mode?: MapMode;
   hazard?: HazardGeometry | null;       // the disaster itself (world.hazardGeometryJson)
   fitTo?: FitTarget | null;             // explicit fit request: forecast cone, or back to the cells
+  adjusters?: readonly AdjusterPin[];   // adjuster positions (adjuster_location, names from member)
+}
+
+export type AdjusterPin = { id: string; name: string; lat: number; lng: number };
+// Blue name pill, the same blue as the "you" dot on the adjuster phone. Names are user input: text only.
+function adjusterIcon(name: string): L.DivIcon {
+  const el = document.createElement('span');
+  el.textContent = name;
+  Object.assign(el.style, {
+    position: 'absolute', transform: 'translate(-50%, -50%)', whiteSpace: 'nowrap', padding: '3px 9px',
+    borderRadius: '999px', background: '#2b5fb4', color: '#fff', border: '2px solid #fff',
+    font: '600 12px Inter, system-ui, sans-serif', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+  });
+  return L.divIcon({ className: 'adjuster-pin', html: el, iconSize: [0, 0] });
 }
 
 // Leaflet internals used for smooth wheel zoom (same calls its own pinch-zoom handler makes).
@@ -110,10 +124,10 @@ function smoothWheelZoom(m: L.Map): () => void {
   };
 }
 
-export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority', hazard = null, fitTo = null }: Props) {
+export function LiveMap({ cells, facilities, showFacilities, labelFor, selected, onSelect, flash, fitKey, padRight = 24, padLeft = 24, onResChange, mode = 'priority', hazard = null, fitTo = null, adjusters }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
-  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup; hazard: L.LayerGroup } | null>(null);
+  const groups = useRef<{ cells: L.LayerGroup; rings: L.LayerGroup; sel: L.LayerGroup; fac: L.LayerGroup; hazard: L.LayerGroup; adj: L.LayerGroup } | null>(null);
   const lastFitN = useRef(0);
   // Polygons are kept and restyled in place; rebuilt only when the level of detail changes.
   const polys = useRef<{ res: 7 | 8; byId: Map<string, { poly: L.Polygon; shape: MapUnit['shape'] }> } | null>(null);
@@ -143,6 +157,7 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
       sel: L.layerGroup().addTo(m),
       fac: L.layerGroup(),
       hazard: L.layerGroup().addTo(m),
+      adj: L.layerGroup().addTo(m),
     };
     const stopWheel = smoothWheelZoom(m);
     m.on('zoomend', () => setZoom(m.getZoom()));
@@ -346,6 +361,16 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     if (showFacilities) g.fac.addTo(m);
     else g.fac.remove();
   }, [facilities, showFacilities]);
+
+  // Adjuster positions (demo starts picked on the phones). Markers (z 600), so they sit above the hexes.
+  useEffect(() => {
+    const g = groups.current;
+    if (!g) return;
+    g.adj.clearLayers();
+    for (const a of adjusters ?? []) {
+      L.marker([a.lat, a.lng], { icon: adjusterIcon(a.name), keyboard: false, interactive: false, title: '' }).addTo(g.adj);
+    }
+  }, [adjusters]);
 
   // Short black pulse where a live event (SMS reply / field report) just landed.
   useEffect(() => {

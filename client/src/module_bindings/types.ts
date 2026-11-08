@@ -10,6 +10,31 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const AdjusterLocation = __t.object("AdjusterLocation", {
+  identity: __t.identity(),
+  lat: __t.f64(),
+  lng: __t.f64(),
+  source: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type AdjusterLocation = __Infer<typeof AdjusterLocation>;
+
+export const AdjusterRecommendation = __t.object("AdjusterRecommendation", {
+  id: __t.u64(),
+  adjuster: __t.identity(),
+  rank: __t.u8(),
+  householdId: __t.string(),
+  hex: __t.string(),
+  kind: __t.string(),
+  priority: __t.string(),
+  score: __t.f64(),
+  distanceKm: __t.f64(),
+  etaMin: __t.f64(),
+  reason: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type AdjusterRecommendation = __Infer<typeof AdjusterRecommendation>;
+
 export const Assignment = __t.object("Assignment", {
   id: __t.u64(),
   householdId: __t.string(),
@@ -391,6 +416,9 @@ export type MyAssignments = __Infer<typeof MyAssignments>;
 
 export const MyMember = __t.object("MyMember", {});
 export type MyMember = __Infer<typeof MyMember>;
+
+export const MyRecommendations = __t.object("MyRecommendations", {});
+export type MyRecommendations = __Infer<typeof MyRecommendations>;
 
 export const ReplayState = __t.object("ReplayState", {
   id: __t.u32(),

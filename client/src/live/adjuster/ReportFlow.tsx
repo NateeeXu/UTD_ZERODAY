@@ -18,10 +18,24 @@ export interface ReportTarget {
   assignmentId: string | null;
   label: string;
   type: D.TaskType;
+  job: D.Job;
   policy: D.Policy;
   hazardType?: string;
   hh?: HouseholdRow;
   cell?: HexStatsRow;
+}
+
+// Demo build: never dials (docs/ADJUSTER_APP.md). A real deployment would use <a href="tel:911">.
+function Call911({ className }: { className: string }) {
+  const [tapped, setTapped] = useState(false);
+  return (
+    <>
+      <button type="button" className={className} onClick={() => setTapped(true)}>
+        <Icon name="phone" size={19} stroke={2.2} />Call 911 now
+      </button>
+      {tapped && <span className="adj-notice" role="status">Demo only. No call placed.</span>}
+    </>
+  );
 }
 
 const PEOPLE: { v: PeoplePick; label: string }[] = [
@@ -54,12 +68,14 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
     return () => clearInterval(id);
   }, [item]);
 
-  const covered = target.policy !== 'renters';
+  // A call, a resent text or an emergency-contact call can't see the house: it stays not assessed.
+  const remote = D.isRemote(target.job);
+  const covered = target.policy !== 'renters' && !remote;
   const na = covered && damageChoice === 'na';
   const homeOk = !covered || (na ? !!reason && userNote.trim().length >= 3 : damageChoice != null || target.type === 'Welfare check');
   const ready = pick != null && homeOk && !item;
   const gaps = covered && target.hh && damageChoice && damageChoice !== 'na' && damageChoice !== '0' ? D.coverageGaps(target.hh, target.hazardType) : [];
-  const title = mode === 'update' ? 'Update' : mode === 'correction' ? 'Correction' : 'Field report';
+  const title = mode === 'update' ? 'Update' : mode === 'correction' ? 'Correction' : remote ? 'Report result' : 'Field report';
 
   const toggleQuick = (label: string) => {
     const tag = `${label}. `;
@@ -70,7 +86,8 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
     if (!ready || !pick) return;
     let damage: number;
     let prefix: string | null = null;
-    if (!covered) { damage = NOT_ASSESSED; prefix = "Not assessed: renter, building is the landlord's"; }
+    if (remote) { damage = NOT_ASSESSED; prefix = `Not assessed: ${target.job.toLowerCase()}, no visit`; }
+    else if (!covered) { damage = NOT_ASSESSED; prefix = "Not assessed: renter, building is the landlord's"; }
     else if (na) { damage = NOT_ASSESSED; prefix = `Not assessed: ${reason}`; }
     else if (damageChoice == null) { damage = NOT_ASSESSED; prefix = 'Not assessed: welfare check'; }
     else damage = Number(damageChoice);
@@ -100,13 +117,13 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
           <h2>People</h2>
           <div className="adj-grid2">
             {PEOPLE.map((o) => (
-              <button key={o.v} type="button" className="adj-tile" aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.label}</button>
+              <button key={o.v} type="button" className="adj-tile" aria-pressed={pick === o.v} onClick={() => setPick(o.v)}>{o.v === 'nobody' && remote ? 'No answer' : o.label}</button>
             ))}
           </div>
           {pick === 'needs_help' && (
             <div className="adj-danger">
               <p><b>Anyone in danger? Call 911 yourself.</b><br />This report is a referral, not a dispatch.</p>
-              <a className="adj-btn red" href="tel:911"><Icon name="phone" size={19} stroke={2.2} />Call 911 now</a>
+              <Call911 className="adj-btn red" />
               <label className="adj-check">
                 <input type="checkbox" checked={alsoMissing} onChange={(e) => setAlsoMissing(e.target.checked)} />
                 Someone is also missing
@@ -116,7 +133,7 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
           {pick === 'missing' && (
             <div className="adj-danger">
               <p><b>Someone missing? Call 911 to report it.</b><br />This report opens a referral, not a search.</p>
-              <a className="adj-btn red" href="tel:911"><Icon name="phone" size={19} stroke={2.2} />Call 911 now</a>
+              <Call911 className="adj-btn red" />
             </div>
           )}
         </section>
@@ -146,7 +163,9 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
               {gaps.map((g) => <p key={g} className="adj-warn">{g}</p>)}
             </>
           ) : (
-            <div className="adj-na"><b>Not applicable</b><span className="adj-muted">No home coverage</span></div>
+            remote
+              ? <div className="adj-na"><b>Not assessed</b><span className="adj-muted">{target.job} · no visit</span></div>
+              : <div className="adj-na"><b>Not applicable</b><span className="adj-muted">No home coverage</span></div>
           )}
         </section>
 
@@ -167,7 +186,7 @@ export function ReportScreen({ target, mode, prefill, item, live, onBack, onSend
         {watchdog && (
           <div className="adj-watchdog" role="alert">
             <b>Not delivered — call 911</b>
-            <a className="adj-btn block" href="tel:911"><Icon name="phone" size={19} stroke={2.2} />Call 911 now</a>
+            <Call911 className="adj-btn block" />
           </div>
         )}
         {!item && <button type="button" className="adj-btn dark block" disabled={!ready} onClick={send}>Send report</button>}
