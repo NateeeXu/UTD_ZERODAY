@@ -11,7 +11,8 @@ import { QrButton } from './LiveQrCard';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
-import { CAUSE, COLOR, RANK, cellSetKey, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import { CAUSE, COLOR, RANK, cellSetKey, driverLine, prio, severeRange, unitsFor, type MapMode, type MapUnit, type Priority } from './mapModel';
+import './cell-detail.css';
 import { AccountingCard, makeKidsNote } from './accounting';
 import { OutreachPanel, type FeedItem } from './OutreachPanel';
 import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows';
@@ -426,6 +427,8 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
               openAssignments={openAssignments}
               assignedHomes={assignedHomes}
               onOpenHousehold={openHousehold}
+              cellLabel={labeler.cell}
+              onSelectCell={selectFromHex}
               onAssign={doAssign}
               onClose={() => setSelected(null)}
               canAssign={isManager}
@@ -506,7 +509,7 @@ function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
 type AssignedHome = { householdId: string; hex: string; status: string; adjuster: string; at: number };
 const ASSIGNED_SHOWN = 8;
 
-export function CellDetail({ unit, label, households, candidates, openAssignments, assignedHomes = [], onOpenHousehold, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
+export function CellDetail({ unit, label, households, candidates, openAssignments, assignedHomes = [], onOpenHousehold, cellLabel, onSelectCell, onAssign, onClose, canAssign, adjusterName, adjusterUrl, readOnly = false, fictional = false, noteFor }: {
   unit: MapUnit;
   label: string;
   households: Map<string, HouseholdRow>;
@@ -514,6 +517,8 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   openAssignments: Map<string, number>;
   assignedHomes?: readonly AssignedHome[];
   onOpenHousehold?: (householdId: string, hex: string) => void;
+  cellLabel?: (hex: string) => string;   // "District 14 · 3"
+  onSelectCell?: (hex: string) => void;  // open that neighborhood's panel
   onAssign: (hex: string) => void;
   onClose: () => void;
   canAssign: boolean;
@@ -533,6 +538,9 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
   const homes = assignedHomes.filter((a) => kidHexes.has(a.hex))
     .sort((a, b) => Number(a.status !== 'assigned') - Number(b.status !== 'assigned') || b.at - a.at);
   const doneCount = homes.filter((a) => a.status !== 'assigned').length;
+  // The neighborhood that sets a district's priority (same rule as unitsFor).
+  const topKid = unit.kids.reduce((a, b) =>
+    RANK[prio(b.priority)] < RANK[prio(a.priority)] || (b.priority === a.priority && b.severity > a.severity) ? b : a);
   return (
     <aside className="card detail">
       <div className="detail-head">
@@ -550,7 +558,22 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
         </span>
       </div>
       <div className="detail-body">
-        {unit.r && <p className="reason">{unit.res === 7 && <b>Most urgent neighborhood: </b>}{unit.r}</p>}
+        {/* Only the neighborhood number up front; the engine's reasoning is one tap away (and in the decision trace). */}
+        {unit.res === 7 && cellLabel && (
+          <p className="nb-line">
+            Most urgent neighborhood:{' '}
+            {onSelectCell
+              ? <button type="button" className="link nb-link" onClick={() => onSelectCell(topKid.hex)}>{cellLabel(topKid.hex)}</button>
+              : <b>{cellLabel(topKid.hex)}</b>}
+          </p>
+        )}
+        {unit.r && (
+          <details className="why">
+            <summary>Why {unit.p}</summary>
+            <p className="why-plain">{driverLine(unit)}</p>
+            <p className="why-full">{unit.r}</p>
+          </details>
+        )}
         <div className="readout">
           <span title="90% range from the simulation"><b>{severeRange(unit)}</b>homes severely damaged</span>
           <span><b>{unit.rep}/{unit.sent}</b>SMS replied</span>

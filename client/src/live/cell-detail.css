@@ -1,0 +1,11 @@
+/* Area panel (CellDetail): the neighborhood line and the collapsed "Why" with the engine's reason. */
+.detail-body .nb-line { margin: 14px 20px 4px; font-size: 13.5px; color: #555; }
+.detail-body .nb-line .nb-link { font: inherit; font-weight: 700; color: #111; text-decoration: underline; text-underline-offset: 2px; }
+.detail-body .why { margin: 4px 20px 10px; font-size: 13px; }
+.detail-body > .why:first-child { margin-top: 14px; }
+.why summary { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; color: #555; font-weight: 600; cursor: pointer; list-style: none; }
+.why summary::-webkit-details-marker { display: none; }
+.why summary::before { content: '▸'; font-size: 11px; }
+.why[open] summary::before { content: '▾'; }
+.why-plain { margin: 2px 0 6px; color: #111; }
+.why-full { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--soft); color: #555; line-height: 1.45; }
