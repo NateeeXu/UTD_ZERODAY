@@ -1,8 +1,11 @@
-/* Live-event toast (ManagerLive): to the right of the queue panel (p2), level with its top.
-   .p2-slot wraps the panel and takes over its flex sizing in the left rail (selectors are more
-   specific than styles.css, which loads after this file). */
-.left-rail > .p2-slot { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 0 0 auto; }
-.left-rail > .p2-slot:has(> .p2.open) { flex: 1 1 auto; }
-.left-rail > .p2-slot > .p2 { flex: 1 1 auto; }
-.left-rail > .p2-slot > .p2:not(.open) { flex: 0 0 auto; }
-.left-rail > .p2-slot > .toast { position: absolute; top: 0; left: calc(100% + 16px); z-index: 1; pointer-events: none; }
+/* Live-event toast (ManagerLive): last item in the map-chips row, to the right of the
+   Priority / Unaccounted pill. Same height as the chips; never wraps onto a second line. */
+.manager.live .map-chips > .toast {
+  padding: 0 14px; min-height: 40px; pointer-events: none;
+  /* Stays on the pills' line whenever 240 px are free, shortening the detail with an ellipsis. */
+  flex: 1 1 240px; min-width: 0; max-width: max-content;
+}
+.manager.live .map-chips > .toast > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
+/* Keep the tools row clear of the right rail (380 px + 16 px gutter + 16 px gap): when the toast
+   doesn't fit beside the pills it drops to a second line under them instead of running under the rail. */
+.manager.live div.overlay.map-tools { right: 412px; }

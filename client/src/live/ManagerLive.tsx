@@ -316,8 +316,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
 
         <div className="left-rail">
           <AccountingCard metrics={metrics} />
-          {/* The live-event toast sits just right of the queue panel (p2), level with its top. */}
-          <div className="p2-slot">
           <OutreachPanel
             simMinutes={simMinutes}
             cellBy={cellBy}
@@ -338,14 +336,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             canAct={isManager}
             onNeedJoin={() => setJoining(true)}
           />
-          {toast && (
-            <div className="toast" key={toast.key} role="status">
-              <span className="dot" />
-              <span><b>{toast.title}</b> · {toast.detail}</span>
-              <span className="muted">just now</span>
-            </div>
-          )}
-          </div>
         </div>
 
         <div className="overlay map-tools">
@@ -359,6 +349,14 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
                 onClick={() => setFitTo((f) => ({ target: f?.target === 'cone' ? 'cells' : 'cone', n: (f?.n ?? 0) + 1 }))}>
                 {coneShown ? 'Back to affected areas' : 'Show forecast cone'}
               </button>
+            )}
+            {/* Live-event toast: last in the chips row, right of the shading pill (and the cone button). */}
+            {toast && (
+              <div className="toast" key={toast.key} role="status">
+                <span className="dot" />
+                <span><b>{toast.title}</b> · {toast.detail}</span>
+                <span className="muted">just now</span>
+              </div>
             )}
           </div>
           {loading && (
@@ -374,10 +372,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             <span key={p}><i style={{ background: COLOR[p] }} /><b>{counts[p]}</b> {p}</span>
           ))}
           <span className="muted">{mapMode === 'unaccounted' ? 'stronger = more not heard from' : 'fainter = less confident'}</span>
-          <span className="muted">
-            <svg width="14" height="13" aria-hidden><polygon points="7,1 13,4 13,9.5 7,12.5 1,9.5 1,4" fill="none" stroke={COLOR.P0} strokeWidth="2" /></svg>
-            silent high-hazard
-          </span>
           {hazard?.kind === 'hurricane' && (
             <span className="muted hazard-key" title={hasCone(hazard) ? `Forecast cone issued ${hazard.cone.issuedHoursBeforeLandfall} h before landfall` : undefined}>
               <svg width="18" height="10" aria-hidden><line x1="1" y1="5" x2="17" y2="5" stroke="#1e2a3a" strokeWidth="2" strokeDasharray="4 3" /></svg>
