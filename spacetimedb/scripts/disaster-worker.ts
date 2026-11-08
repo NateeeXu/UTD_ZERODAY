@@ -1,9 +1,10 @@
 // Runs the manager's "New random disaster" button from this Mac. The generator reads data/real and
 // loading needs the owner token, so neither can happen in the browser or in a reducer.
-// On Maincloud it only accepts the dev database, so a stray click cannot replace a demo region.
-// Only requests made after the worker starts are run; older unfinished ones are marked failed.
+// A demo region is only replaceable while a worker runs for it, so stop the worker to lock that map.
+// A region's database only takes its own kind of disaster. Only requests made after the worker starts
+// are run; older unfinished ones are marked failed. One worker per database.
 //
-//   node --env-file=.env scripts/disaster-worker.ts --host wss://maincloud.spacetimedb.com --db triage-loop-nateeexu-dev
+//   node --env-file=.env scripts/disaster-worker.ts --host wss://maincloud.spacetimedb.com --db triage-loop-nateeexu-tx
 //
 // Without --env-file the local server is used.
 import { spawn } from 'node:child_process';
@@ -12,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { connect, DB, errText, HOST, ownerToken, subscribe } from './lib.ts';
 import type { DisasterRequest } from '../bindings/types.ts';
 
-const DEV_DB = 'triage-loop-nateeexu-dev';
+const MAINCLOUD_DBS = ['triage-loop-nateeexu-dev', 'triage-loop-nateeexu-tx', 'triage-loop-nateeexu-ca'];
+const ONLY_REGION = DB.endsWith('-tx') ? 'tx' : DB.endsWith('-ca') ? 'ca' : null; // the sandbox takes either
 const IS_LOCAL = /\/\/(127\.0\.0\.1|localhost)\b/.test(HOST);
 const TIMEOUT_MS = 15 * 60_000;
 const LOADER = resolve(dirname(fileURLToPath(import.meta.url)), 'new-disaster.ts');
@@ -35,8 +37,8 @@ function load(region: string): Promise<void> {
 }
 
 async function main() {
-  if (!IS_LOCAL && DB !== DEV_DB) {
-    console.error(`Refusing to run on ${DB}: on Maincloud this worker only replaces ${DEV_DB}.`);
+  if (!IS_LOCAL && !MAINCLOUD_DBS.includes(DB)) {
+    console.error(`Refusing to run on ${DB}: on Maincloud this worker only replaces ${MAINCLOUD_DBS.join(', ')}.`);
     process.exit(1);
   }
   const { conn } = await connect(ownerToken());
@@ -46,6 +48,11 @@ async function main() {
   let chain = Promise.resolve();
 
   async function handle(row: DisasterRequest) {
+    if (ONLY_REGION && row.region !== ONLY_REGION) {
+      log(`#${row.id} refused: ${row.region} disaster requested on ${DB}`);
+      await update(row.id, 'failed', `This map only loads ${ONLY_REGION === 'tx' ? 'hurricanes' : 'earthquakes'}.`);
+      return;
+    }
     try {
       await update(row.id, 'running');
     } catch (e) {

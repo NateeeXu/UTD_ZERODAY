@@ -375,7 +375,7 @@ Priority: Must / Should / Could. Thresholds are the values in code (`engine/src/
 
 | ID | Requirement | Pri | Status | Acceptance criteria |
 |---|---|---|---|---|
-| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. A manager request can also queue one on the dev database for `scripts/disaster-worker.ts` on the demo Mac |
+| RD-1 | New event on demand | Should | Built | `scripts/new-disaster.ts --region tx/ca --db <db>`; generation about 1 s, Bay Area load about a minute. A manager request can also queue one for `scripts/disaster-worker.ts` on the demo Mac, while that map's worker runs |
 | RD-2 | Plausible hurricanes | Should | Built | Category drawn 42 / 25 / 19 / 13 / 1% (Cat 1–5), landfall 27.3–28.1° N, surge by category, random local time |
 | RD-3 | Plausible earthquakes | Should | Built | 7 fault traces, weights mostly from the USGS 2014–2043 forecast; magnitude within the fault's range; finite rupture, Atkinson & Wald (2007) intensity |
 | RD-4 | Historical-analog presets | Should | Built | `celia-type-direct-hit`, `harvey-type-stall`, `hanna-type-cat1`, `haywired-m705`, `hayward-1868-night`, `calaveras-north-m686`; named "hypothetical, inspired by" |
