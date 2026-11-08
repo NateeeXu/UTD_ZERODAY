@@ -1,9 +1,17 @@
 // Policyholder "Disaster check-in" page (QR target): #/reply?h=<householdId>&code=<reply passcode>. No login.
 // Mobile first (390×844), safe areas, 44 px targets. One red token (--brand-red) for small accents only;
 // the one large red area is the full-width Call 911 after "Need help". Styles: ./reply/reply.css.
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+//
+// The thread is this household's chat_message rows (subscribed by householdId, sorted by id): automatic
+// notices, the assigned adjuster and the policyholder's typed replies. submit_raw_reply writes the typed
+// reply into chat_message itself, so typed text is never added locally. Quick replies go through
+// submit_parsed_reply, which does not write chat_message, so they keep a local bubble placed after the
+// last chat row that existed when the chip was tapped.
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
+import type { Infer } from 'spacetimedb';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
+import type ChatMessageRowDef from '../module_bindings/chat_message_table.ts';
 import { LiveProvider } from './LiveProvider';
 import { initialLiveRegion, type RegionId } from './config';
 import { ArrowUp, Camera, ChatIcon, ChevronLeft, More, PhoneIcon, Pin, Shield } from './reply/icons';
@@ -22,7 +30,13 @@ const CHIPS: { id: ChipId; label: string; safety: 'safe' | 'needs_help'; lifeSaf
   { id: 'away', label: 'Safe, not home', safety: 'safe', lifeSafety: false, notHome: true },
 ];
 
-type Out = { id: number; text: string; chip?: ChipId; status: 'sending' | 'sent' | 'failed' };
+type ChatRow = Infer<typeof ChatMessageRowDef>;
+// A quick reply (local only). after = id of the newest chat row when it was sent, for its place in the thread.
+type ChipOut = { key: number; chip: ChipId; text: string; status: 'sending' | 'sent' | 'failed'; after: bigint };
+type SendState = 'idle' | 'sending' | 'failed';
+// Where "Received." goes: under a quick-reply bubble, or under the chat row that a typed reply produced.
+type Received = { chip: number } | { text: string; after: bigint };
+type Item = { kind: 'row'; row: ChatRow } | { kind: 'chip'; m: ChipOut };
 
 function readCode(): string {
   try {
@@ -46,6 +60,9 @@ function fmtWhen(d: Date): string {
   if (d.toDateString() === new Date().toDateString()) return `Today ${time}`;
   return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }
+
+const byId = (a: ChatRow, b: ChatRow) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const isPasscodeError = (err: unknown) => /passcode/i.test(err instanceof Error ? err.message : String(err));
 
 // Let the page draw under the notch / home indicator (safe-area paddings in reply.css), for this route only.
 function useViewportFitCover() {
@@ -75,6 +92,7 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
   const [rows, ready] = useTable(useMemo(() => tables.household.where((r) => r.id.eq(householdId)), [householdId]));
   const [worldRows] = useTable(tables.world);
   const [sentRows] = useTable(useMemo(() => tables.smsSent.where((r) => r.householdId.eq(householdId)), [householdId]));
+  const [chatRows] = useTable(useMemo(() => tables.chatMessage.where((r) => r.householdId.eq(householdId)), [householdId]));
   const submitParsed = useReducer(reducers.submitParsedReply);
   const submitRaw = useReducer(reducers.submitRawReply);
 
@@ -89,24 +107,56 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
     [sentRows],
   );
 
+  const chat = useMemo(() => [...chatRows].sort(byId), [chatRows]);
+  const lastChatId = chat.length ? chat[chat.length - 1].id : 0n;
+  const lastChat = useRef(0n); // read by send handlers, which may run from an older render (passcode sheet)
+  useEffect(() => {
+    lastChat.current = lastChatId;
+  }, [lastChatId]);
+
   const [code, setCode] = useState(() => urlCode || readCode());
   const [sheet, setSheet] = useState(false);
   const pending = useRef<((c: string) => void) | null>(null);
-  const [out, setOut] = useState<Out[]>([]);
+  const [chips, setChips] = useState<ChipOut[]>([]);
   const [text, setText] = useState('');
-  const nextId = useRef(1);
-  const end = useRef<HTMLDivElement>(null);
+  const [send, setSend] = useState<SendState>('idle');
+  const [received, setReceived] = useState<Received | null>(null);
+  const nextKey = useRef(1);
 
-  const chipSending = out.find((m) => m.chip && m.status === 'sending')?.chip ?? null;
-  const chipDone = out.some((m) => m.chip && m.status === 'sent');
-  const helpSent = out.some((m) => m.chip === 'help' && m.status === 'sent');
-  const lastSent = [...out].reverse().find((m) => m.status === 'sent')?.id;
+  const chipSending = chips.find((m) => m.status === 'sending')?.chip ?? null;
+  const chipDone = chips.some((m) => m.status === 'sent');
+  const helpSent = chips.some((m) => m.chip === 'help' && m.status === 'sent');
 
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [out]);
+  // One chronological thread: chat rows by id, each quick-reply bubble after the row that was newest when it
+  // was sent. A quick reply that is still sending shows as its red chip, not as a bubble.
+  const items = useMemo(() => {
+    const local = chips
+      .filter((m) => m.status !== 'sending')
+      .sort((a, b) => (a.after === b.after ? a.key - b.key : a.after < b.after ? -1 : 1));
+    const list: Item[] = [];
+    let i = 0;
+    for (const row of chat) {
+      while (i < local.length && local[i].after < row.id) list.push({ kind: 'chip', m: local[i++] });
+      list.push({ kind: 'row', row });
+    }
+    while (i < local.length) list.push({ kind: 'chip', m: local[i++] });
+    return list;
+  }, [chat, chips]);
 
-  const setStatus = (id: number, status: Out['status']) => setOut((list) => list.map((m) => (m.id === id ? { ...m, status } : m)));
+  const receivedRow = useMemo(() => {
+    if (!received || !('text' in received)) return null;
+    return chat.find((r) => r.sender === 'policyholder' && r.id > received.after && r.text === received.text)?.id ?? null;
+  }, [chat, received]);
+
+  // Page scrolls to the newest message whenever this changes (a new row, e.g. an adjuster's message arriving
+  // while the page is open, a quick reply's status, a send starting). '' until there is a message.
+  const lastItem = items[items.length - 1];
+  const scrollKey = lastItem
+    ? [lastItem.kind === 'row' ? `r${lastItem.row.id}` : `c${lastItem.m.key}${lastItem.m.status}`, items.length, send, chipSending, receivedRow,
+        received && 'chip' in received ? received.chip : ''].join('|')
+    : '';
+
+  const patchChip = (key: number, p: Partial<ChipOut>) => setChips((list) => list.map((m) => (m.key === key ? { ...m, ...p } : m)));
 
   // Every send carries the reply passcode; with none yet, the sheet asks for it first and then sends.
   const withCode = (run: (c: string) => void) => {
@@ -115,43 +165,61 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
     setSheet(true);
   };
 
-  const deliver = (m: Out, c: string) => {
-    setStatus(m.id, 'sending');
-    const chip = m.chip && CHIPS.find((x) => x.id === m.chip);
-    const call = chip
-      ? submitParsed({ householdId, safety: chip.safety, damage: 255, lifeSafety: chip.lifeSafety, needs: '', notHome: chip.notHome, text: chip.label, language: 'en', passcode: c })
-      : submitRaw({ householdId, text: m.text, passcode: c });
-    call
-      .then(() => setStatus(m.id, 'sent'))
+  // A wrong or missing passcode: forget it and ask again; saving retries the send.
+  const askAgain = (retry: (c: string) => void) => {
+    writeCode('');
+    setCode('');
+    pending.current = retry;
+    setSheet(true);
+  };
+
+  const deliverChip = (m: ChipOut, c: string) => {
+    patchChip(m.key, { status: 'sending', after: lastChat.current });
+    const chip = CHIPS.find((x) => x.id === m.chip)!;
+    submitParsed({ householdId, safety: chip.safety, damage: 255, lifeSafety: chip.lifeSafety, needs: '', notHome: chip.notHome, text: chip.label, language: 'en', passcode: c })
+      .then(() => {
+        patchChip(m.key, { status: 'sent' });
+        setReceived({ chip: m.key });
+      })
       .catch((err) => {
-        setStatus(m.id, 'failed');
-        // A wrong or missing passcode: forget it and ask again; saving retries this message.
-        if (/passcode/i.test(err instanceof Error ? err.message : String(err))) {
-          writeCode('');
-          setCode('');
-          pending.current = (c2) => deliver(m, c2);
-          setSheet(true);
-        }
+        patchChip(m.key, { status: 'failed' });
+        if (isPasscodeError(err)) askAgain((c2) => deliverChip(m, c2));
       });
   };
 
   const tapChip = (id: ChipId) =>
     withCode((c) => {
-      const m: Out = { id: nextId.current++, text: CHIPS.find((x) => x.id === id)!.label, chip: id, status: 'sending' };
-      setOut((list) => [...list.filter((x) => !(x.chip && x.status === 'failed')), m]);
-      deliver(m, c);
+      const m: ChipOut = { key: nextKey.current++, text: CHIPS.find((x) => x.id === id)!.label, chip: id, status: 'sending', after: lastChat.current };
+      setChips((list) => [...list.filter((x) => x.status !== 'failed'), m]);
+      deliverChip(m, c);
     });
 
-  const sendText = (e: FormEvent) => {
-    e.preventDefault();
+  // Typed text stays in the composer until the server has it; its chat_message row then appears in the thread.
+  const deliverText = (t: string, c: string) => {
+    setSend('sending');
+    const after = lastChat.current;
+    submitRaw({ householdId, text: t, passcode: c })
+      .then(() => {
+        setSend('idle');
+        setText((cur) => (cur.trim() === t ? '' : cur));
+        setReceived({ text: t, after });
+      })
+      .catch((err) => {
+        setSend('failed');
+        if (isPasscodeError(err)) askAgain((c2) => deliverText(t, c2));
+      });
+  };
+
+  const sendText = (e?: FormEvent) => {
+    e?.preventDefault();
     const t = text.trim().slice(0, MAX_TEXT);
-    if (!t || !known) return;
-    withCode((c) => {
-      const m: Out = { id: nextId.current++, text: t, status: 'sending' };
-      setOut((list) => [...list, m]);
-      setText('');
-      deliver(m, c);
-    });
+    if (!t || !known || send === 'sending') return;
+    withCode((c) => deliverText(t, c));
+  };
+
+  const editText = (v: string) => {
+    setText(v);
+    if (send === 'failed') setSend('idle');
   };
 
   const saveCode = (v: string) => {
@@ -166,8 +234,9 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
   return (
     <Page
       helpSent={helpSent}
+      scrollKey={scrollKey}
       onAddCode={() => { pending.current = null; setSheet(true); }}
-      composer={{ text, setText, onSubmit: sendText, enabled: known }}
+      composer={{ text, setText: editText, onSubmit: sendText, onRetry: () => sendText(), enabled: known, state: send }}
       sheet={sheet && <PasscodeSheet onSave={saveCode} onClose={() => { pending.current = null; setSheet(false); }} />}
     >
       {bad ? (
@@ -189,44 +258,118 @@ function CheckIn({ householdId, urlCode, place }: { householdId: string; urlCode
               ))}
             </div>
           )}
-          {out.map((m) =>
-            // A quick reply shows as a bubble once it has gone (or failed); while sending, its chip turns red.
-            m.chip && m.status === 'sending' ? null : (
-              <div key={m.id} className={`rp-out ${m.status}`}>
-                  <div className="rp-bubble me">{m.text}</div>
-                  {m.status === 'failed' && (
-                    <button type="button" className="rp-retry" onClick={() => withCode((c) => deliver(m, c))}>Not sent. Try again.</button>
+          <div className="rp-log" role="log" aria-label="Messages">
+            {items.map((it) =>
+              it.kind === 'row' ? (
+                <ChatBubble key={`r${it.row.id}`} row={it.row} received={it.row.id === receivedRow} />
+              ) : (
+                <div key={`c${it.m.key}`} className={`rp-out ${it.m.status}`}>
+                  <div className="rp-bubble me">{it.m.text}</div>
+                  {it.m.status === 'failed' && (
+                    <button type="button" className="rp-retry" onClick={() => withCode((c) => deliverChip(it.m, c))}>Not sent. Try again.</button>
                   )}
-                  {m.status === 'sent' && m.id === lastSent && <span className="rp-status" aria-live="polite">Received.</span>}
-              </div>
-            ),
-          )}
+                  {it.m.status === 'sent' && received && 'chip' in received && received.chip === it.m.key && (
+                    <span className="rp-status" aria-live="polite">Received.</span>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
         </>
       )}
-      <div ref={end} />
     </Page>
+  );
+}
+
+// system -> "Automated assistant" and adjuster -> their name, both on the left with a label; policyholder on the right.
+function ChatBubble({ row, received }: { row: ChatRow; received: boolean }) {
+  if (row.sender === 'policyholder') {
+    return (
+      <div className="rp-out">
+        <div className="rp-bubble me">{row.text}</div>
+        {received && <span className="rp-status" aria-live="polite">Received.</span>}
+      </div>
+    );
+  }
+  const from = row.sender === 'adjuster' ? row.senderName.trim() || 'Adjuster' : 'Automated assistant';
+  return (
+    <div className="rp-msg">
+      <span className="rp-from">{from}</span>
+      <div className="rp-bubble them">{row.text}</div>
+    </div>
   );
 }
 
 // No household id in the link: same frame, no connection needed.
 function BadLinkPage() {
   return (
-    <Page helpSent={false} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), enabled: false }}>
+    <Page helpSent={false} composer={{ text: '', setText: () => undefined, onSubmit: (e) => e.preventDefault(), onRetry: () => undefined, enabled: false, state: 'idle' }}>
       <p className="rp-note" role="alert">{BAD_LINK}</p>
     </Page>
   );
 }
 
+type Composer = {
+  text: string;
+  setText: (v: string) => void;
+  onSubmit: (e: FormEvent) => void;
+  onRetry: () => void;
+  enabled: boolean;
+  state: SendState;
+};
+
+// Keeps the thread on its newest message: jumps there when the first messages load, glides there when `key`
+// changes, and stays there through later layout changes (web font swap, the help band, the phone keyboard)
+// unless the reader has scrolled up.
+function useStickToBottom(thread: RefObject<HTMLElement | null>, content: RefObject<HTMLElement | null>, key: string | undefined) {
+  const pinned = useRef(true);
+  const autoUntil = useRef(0); // while our own smooth scroll runs, its scroll events don't unpin
+  const loaded = useRef(false);
+  useEffect(() => {
+    const t = thread.current;
+    const c = content.current;
+    if (!t || !c) return;
+    const onScroll = () => {
+      if (performance.now() < autoUntil.current) return;
+      pinned.current = t.scrollHeight - t.clientHeight - t.scrollTop < 48;
+    };
+    const ro = new ResizeObserver(() => {
+      if (pinned.current || performance.now() < autoUntil.current) t.scrollTop = t.scrollHeight;
+    });
+    ro.observe(t);
+    ro.observe(c);
+    t.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      ro.disconnect();
+      t.removeEventListener('scroll', onScroll);
+    };
+  }, [thread, content]);
+  useEffect(() => {
+    const t = thread.current;
+    if (!t || key === undefined) return;
+    const smooth = loaded.current && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (key) loaded.current = true;
+    pinned.current = true;
+    autoUntil.current = smooth ? performance.now() + 800 : 0;
+    t.scrollTo({ top: t.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }, [thread, key]);
+}
+
 // Call 911 is visual only in this demo: it never dials and shows no message.
-function Page({ helpSent, onAddCode, composer, sheet, children }: {
+function Page({ helpSent, scrollKey, onAddCode, composer, sheet, children }: {
   helpSent: boolean;
+  scrollKey?: string;
   onAddCode?: () => void;
-  composer: { text: string; setText: (v: string) => void; onSubmit: (e: FormEvent) => void; enabled: boolean };
+  composer: Composer;
   sheet?: ReactNode;
   children: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
-  const canSend = composer.enabled && composer.text.trim().length > 0;
+  const threadRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useStickToBottom(threadRef, contentRef, scrollKey);
+  const sending = composer.state === 'sending';
+  const canSend = composer.enabled && !sending && composer.text.trim().length > 0;
   return (
     <div className="rp">
       <div className="rp-top">
@@ -260,15 +403,24 @@ function Page({ helpSent, onAddCode, composer, sheet, children }: {
         </div>
       )}
 
-      <main className="rp-thread">{children}</main>
+      <main className="rp-thread" ref={threadRef}>
+        <div className="rp-thread-in" ref={contentRef}>{children}</div>
+      </main>
 
-      <form className="rp-composer" onSubmit={composer.onSubmit}>
+      {/* Typed reply state, just above the composer: "Sending…" while the server has not answered, or a retry. */}
+      <div className="rp-compose-note" role="status">
+        {sending && <span className="rp-status">Sending…</span>}
+        {composer.state === 'failed' && (
+          <button type="button" className="rp-retry" onClick={composer.onRetry}>Not sent. Try again.</button>
+        )}
+      </div>
+      <form className="rp-composer" onSubmit={composer.onSubmit} aria-busy={sending}>
         {/* Visual only in this demo: no camera or location permission prompts. */}
         <button type="button" className="rp-icon" aria-label="Add a photo (not available in this demo)" aria-disabled="true"><Camera /></button>
         <button type="button" className="rp-icon" aria-label="Share location (not available in this demo)" aria-disabled="true"><Pin /></button>
         <input className="rp-input" value={composer.text} onChange={(e) => composer.setText(e.target.value)} maxLength={MAX_TEXT}
-          placeholder="Message" aria-label="Message" disabled={!composer.enabled} enterKeyHint="send" />
-        <button type="submit" className={`rp-send${canSend ? ' on' : ''}`} disabled={!canSend} aria-label="Send"><ArrowUp /></button>
+          placeholder="Message" aria-label="Message" disabled={!composer.enabled} readOnly={sending} enterKeyHint="send" />
+        <button type="submit" className={`rp-send${canSend ? ' on' : ''}`} disabled={!canSend} aria-label={sending ? 'Sending' : 'Send'}><ArrowUp /></button>
       </form>
       <footer className="rp-foot">Concept prototype for the State Farm challenge. Not the State Farm app.</footer>
       {sheet}
