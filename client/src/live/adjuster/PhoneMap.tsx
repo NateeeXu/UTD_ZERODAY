@@ -67,7 +67,7 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
     g.clearLayers();
     const pts: L.LatLngExpression[] = [];
     if (route && route.length > 1) {
-      L.polyline(route, { color: '#222', weight: 3, dashArray: '1 8', lineCap: 'round', interactive: false }).addTo(g);
+      L.polyline(route, { color: '#222', weight: 2.5, dashArray: '1 8', lineCap: 'round', interactive: false }).addTo(g);
     }
     for (const a of areas) {
       const ring = cellToBoundary(a.hex) as LatLng[];
@@ -76,7 +76,7 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
       if (clickable) poly.on('click', () => clickRef.current?.(a.hex));
       if (a.pill) {
         const inner = a.pill === 'done'
-          ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
+          ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'
           : (a.label ?? '');
         const pin = L.marker(cellCenter(a.hex), {
           icon: L.divIcon({ className: 'adj-pin', html: `<span class="${a.pill}">${inner}</span>`, iconSize: [0, 0] }),
@@ -86,8 +86,7 @@ export function PhoneMap({ areas, me, route, padTop = 80, padBottom = 40, fitKey
       }
     }
     if (me) {
-      L.circleMarker(me, { radius: 15, stroke: false, fillColor: '#2b5fb4', fillOpacity: 0.18, interactive: false }).addTo(g);
-      L.circleMarker(me, { radius: 7, color: '#fff', weight: 2.5, fillColor: '#2b5fb4', fillOpacity: 1, interactive: false }).addTo(g);
+      L.circleMarker(me, { radius: 6, color: '#fff', weight: 2.5, fillColor: '#2f7bf6', fillOpacity: 1, interactive: false }).addTo(g);
       pts.push(me);
     }
     if (lastFit.current !== fitKey && pts.length) {
