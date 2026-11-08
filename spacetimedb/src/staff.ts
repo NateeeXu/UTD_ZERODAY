@@ -138,6 +138,13 @@ function locationAt(truth: { location: string; returnMin: number; damage: number
   return loc;
 }
 
+/** A phone on file whose texts were not all reported undelivered (an undelivered text = phone dead, off or lost: call the emergency contact). */
+function phoneWorks(ctx: Ctx, hh: { id: string; phoneOnFile: boolean }): boolean {
+  if (!hh.phoneOnFile) return false;
+  const rows = [...ctx.db.smsSent.householdId.filter(hh.id)];
+  return rows.length === 0 || rows.some((r) => r.delivered);
+}
+
 /** Self-reported damage: the truth, off by one level 25% of the time (deterministic). */
 function noisyDamage(householdId: string, at: number, damage: Damage): Damage {
   const r = rand01(`${householdId}:${at}:dmg`);
@@ -261,7 +268,7 @@ function staffStep(ctx: Ctx, at: number) {
     calls++;
     const pReach = viaContact
       ? REACH.emergencyContact
-      : (hh.phoneOnFile ? REACH.phone : REACH.noPhone) *
+      : (phoneWorks(ctx, hh) ? REACH.phone : REACH.noPhone) *
         (safety === 'needs_help' ? REACH.needsHelp : 1) *
         (hh.limitedEnglish ? REACH.limitedEnglish : 1) *
         (damage === 3 ? REACH.destroyed : 1);

@@ -23,7 +23,7 @@ const FAC_REQ: Shape = { id: 'string', kind: 'string', name: 'string', lat: 'num
 const FAC_OPT: Shape = { enrollment: 'number', capacity: 'number' };
 const TRUTH: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string', needType: 'string', location: 'string' };
 const EV: Record<string, [Shape, Shape]> = {
-  sms_sent: [{ kind: 'string', t: 'number', householdId: 'string' }, {}],
+  sms_sent: [{ kind: 'string', t: 'number', householdId: 'string' }, { delivered: 'boolean' }],
   sms_reply: [{ kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number|null', lifeSafety: 'boolean', needs: 'object', notHome: 'boolean', channel: 'string' }, { text: 'string', language: 'string' }],
   claim: [{ kind: 'string', t: 'number', householdId: 'string', peril: 'string', reportedDamage: 'number' }, {}],
   field_report: [{ kind: 'string', t: 'number', householdId: 'string', adjusterId: 'string', safety: 'string', damage: 'number' }, {}],

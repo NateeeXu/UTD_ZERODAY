@@ -38,6 +38,8 @@ export default __t.row({
   assistanceRequests: __t.u32().name("assistance_requests"),
   inspectionRequests: __t.u32().name("inspection_requests"),
   locateDue: __t.u32().name("locate_due"),
+  undeliveredUnaccounted: __t.u32().name("undelivered_unaccounted"),
+  deliveredNoReply: __t.u32().name("delivered_no_reply"),
   expectedSevereTotal: __t.f64().name("expected_severe_total"),
   severeTotalLo: __t.f64().name("severe_total_lo"),
   severeTotalHi: __t.f64().name("severe_total_hi"),

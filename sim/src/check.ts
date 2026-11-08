@@ -19,7 +19,7 @@ const HEX_SHAPE: Shape = { hex: 'string', lat: 'number', lng: 'number', windMph:
 const HH_SHAPE: Shape = { id: 'string', hex: 'string', lat: 'number', lng: 'number', age65: 'boolean', livesAlone: 'boolean', medicalDevice: 'boolean', windCovered: 'boolean', floodPolicy: 'boolean', earthquakeEndorsement: 'boolean', phoneOnFile: 'boolean', holdout: 'boolean' };
 const TRUTH_SHAPE: Shape = { householdId: 'string', damage: 'number', safety: 'string', peril: 'string', needType: 'string', location: 'string' };
 const EVENT_SHAPES: Record<string, Shape> = {
-  sms_sent: { kind: 'string', t: 'number', householdId: 'string' },
+  sms_sent: { kind: 'string', t: 'number', householdId: 'string', delivered: 'boolean' },
   sms_reply: { kind: 'string', t: 'number', householdId: 'string', safety: 'string', damage: 'number|null', lifeSafety: 'boolean', needs: 'object', notHome: 'boolean', channel: 'string' },
   claim: { kind: 'string', t: 'number', householdId: 'string', peril: 'string', reportedDamage: 'number' },
   field_report: { kind: 'string', t: 'number', householdId: 'string', adjusterId: 'string', safety: 'string', damage: 'number' },

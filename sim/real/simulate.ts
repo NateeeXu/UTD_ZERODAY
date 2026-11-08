@@ -15,7 +15,7 @@ import { parseShakeMapGrid } from './geo.ts';
 import { RAW_DIR } from './sources.ts';
 import { replyLanguage, replyText } from './textgen.ts';
 import { distanceToSegmentKm, ipeMmi, ruptureLengthKm, ruptureSegment } from './quake-model.ts';
-import { replyLabels, truthLocation, truthNeedType, truthReturnMin, locationAt } from '../src/needs.ts';
+import { replyLabels, truthLocation, truthNeedType, truthReturnMin, locationAt, markDelivery } from '../src/needs.ts';
 
 export const HORIZON_MIN = 4320;
 export const HOLDOUT_SHARE = 0.15;
@@ -443,6 +443,11 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
     }
   }
   const kindOrder: Record<SimEvent['kind'], number> = { sms_sent: 0, sms_reply: 1, claim: 2, field_report: 3 };
+  const hhById = new Map(households.map((h) => [h.id, h] as const));
+  markDelivery(events, new Rng(subSeed(sc.seed, 'delivery')), (id) => {
+    const hh = hhById.get(id)!;
+    return { outagePct: cellOut.get(hh.hex)!.towerOutagePct, damage: truthById.get(id)!.damage };
+  });
   events.sort((a, b) => a.t - b.t || kindOrder[a.kind] - kindOrder[b.kind] || (a.householdId < b.householdId ? -1 : a.householdId > b.householdId ? 1 : 0));
   notes.push(`${texts} sms_reply events carry free text.`);
   const reunifyCountAll = households.filter(reunify).length;

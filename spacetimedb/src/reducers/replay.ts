@@ -54,7 +54,7 @@ function toIngest(e: StagedRow): IngestEvent {
         note: '',
       };
     default:
-      return { kind: 'sms_sent', t: e.t, householdId: e.householdId };
+      return { kind: 'sms_sent', t: e.t, householdId: e.householdId, delivered: e.delivered };
   }
 }
 

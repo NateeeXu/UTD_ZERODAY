@@ -18,4 +18,5 @@ export default __t.row({
   source: __t.string(),
   ingestedBy: __t.identity().name("ingested_by"),
   ingestedAt: __t.timestamp().name("ingested_at"),
+  delivered: __t.bool(),
 });

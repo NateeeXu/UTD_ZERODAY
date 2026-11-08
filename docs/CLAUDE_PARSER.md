@@ -120,6 +120,22 @@ End-to-end check (local): `spacetime call -s local triage-loop submit_raw_reply 
 
 ## Results
 - **Offline** (2026-11-08): `npm run parser:test` 49/49 pass. Keyword net alone (`parser-eval.ts --no-claude`): life-safety recall **15/15** adversarial and **10/10** real, 0 extra referrals on the 80 cases, 0 false-safe (every non-net case falls back to `unsure`). Damage / needs / valid-JSON numbers are meaningless without Claude.
+- **Large eval, prompt v1** (`claude-sonnet-5-5`, low effort; 2026-11-08; 800 cases: 40 adversarial + 600 hand-written in 6 languages (100 each: en, es, zh, vi, tl, ko; 25 life safety, 15 assistance, 15 inspection, 15 safe, 10 unknown damage, 10 tricks, 10 language phenomena per language) + 160 stratified simulator replies including all 29 life-safety ones; 95 % Wilson intervals):
+
+| | result |
+|---|---|
+| life-safety recall | **222/224 = 99.1 % [96.8–99.8 %]**; by language en 55/57, es 38/38, zh 34/34, vi 30/30, tl 32/32, ko 33/33 |
+| false-safe rate | **2/386 = 0.5 % [0.1–1.9 %]** (both: "the dog ran away, everyone is fine": a label question, not a danger) |
+| extra referrals | 23 of 576 non-life-safety cases |
+| safety exact | 88 % overall, 95.6 % on unambiguous hand-written cases; most misses are `safe -> unsure` (a person calls back) |
+| damage within 1 when a number is given | 414/414 (100 %); damage unknown correct 357/360 |
+| valid JSON | 800/800 |
+| keyword net | caught 12 cases on top of Claude; mean latency 1.4 s, p95 1.7 s |
+
+The two life-safety misses ("my 9 yr old is home by himself, I'm stuck at work and can't get to him"; "can someone check on us, my husband is bedbound") are fixed in **prompt v2** (a child or dependent out of a caregiver's reach, and a request to check on people, are life safety; a request to check the house stays an inspection) plus a keyword rule; both now return life_safety true and "come check the roof damage" stays an inspection. v2 was not re-run on the full set (cost decision); only the two fixed cases and the inspection counter-example were checked. Re-run with `npm run parser:eval -- --set all --real-n 160` before relying on new numbers.
+
+- **Label quality (blind second annotation)**: a second annotator labeled the 640 hand-written and adversarial texts without seeing the answers. Agreement: life_safety 99.8 % (Cohen's kappa 1.00), safety 97.5 % (kappa 0.96), not_home 100 %, missing_people 99.8 %, damage exact 97.7 % (all within one level). On the 623 cases where both annotators agree, the model's life-safety recall is 193/194 and false-safe 1/327. Caveat: both annotators are Claude models following the same written rules, so this measures rule consistency, not agreement with human emergency dispatchers.
+
 - **With Claude** (`claude-sonnet-5-5`, low effort, prompt v1; 2026-11-08; 40 adversarial + 40 sampled simulator replies in 6 languages):
 
 | | adversarial (40) | sampled (40) | all (80) |

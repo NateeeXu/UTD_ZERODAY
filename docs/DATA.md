@@ -50,6 +50,7 @@ z = −4.6 + 1.9 (damage 3) / 0.8 (damage 2) + 0.5 age 65+ + 1.2 age 65+ living 
 | `location = home` | anyone in a life-safety situation stays home (that is why they need help) |
 | `location = displaced` | left because the home is badly damaged: 80 % at damage 3, 40 % at damage 2; knows the damage |
 | `returnMin` (away people) | they get home 4–12 h after it hit (commute disruption); then `displaced` if damage ≥ 2, else `home`. Replies and visits use where people are at that minute |
+| SMS delivery receipt | households that replied: delivered; others: not delivered with probability min(0.9, 0.05 + 0.7 × tower outage share + 0.4 if the home is destroyed) (separate random stream; nothing else changes). In the live events 8–31 % of texts are not delivered, and the share of people who truly need help is about twice as high among undelivered as among delivered-but-silent households |
 | Concrete needs | medical device → `power_for_device` if outage > 40 % else `medical`; damage ≥ 2 → `shelter`; no vehicle (hurricane or damage ≥ 2) → `transport`; outage > 60 % → `water_food` |
 
 ### SMS check-in and replies

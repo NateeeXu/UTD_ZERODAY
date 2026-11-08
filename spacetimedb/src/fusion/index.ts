@@ -162,11 +162,11 @@ export function staticWorld(ctx: Ctx): Map<string, StaticCell> {
 // ----- gathering -------------------------------------------------------------
 
 function emptySignals(h: HouseholdRow): HouseholdSignals {
-  return { household: toHousehold(h), smsSentT: null, reply: null, claim: null, field: null };
+  return { household: toHousehold(h), smsSentT: null, smsDelivered: null, reply: null, claim: null, field: null };
 }
 
 type EventRows = {
-  sent: Iterable<{ householdId: string; t: number }>;
+  sent: Iterable<{ householdId: string; t: number; delivered: boolean }>;
   replies: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; damageKnown: boolean; lifeSafety: boolean; needs: string; notHome: boolean; channel: string }>;
   claims: Iterable<{ id: bigint; householdId: string; t: number; peril: string; reportedDamage: number }>;
   fields: Iterable<{ id: bigint; householdId: string; t: number; safety: string; damage: number; damageKnown: boolean; adjusterId: string }>;
@@ -184,6 +184,7 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
   for (const e of rows.sent) {
     const s = byId.get(e.householdId);
     if (s && (s.smsSentT === null || e.t < s.smsSentT)) s.smsSentT = e.t;
+    if (s) s.smsDelivered = s.smsDelivered === true || e.delivered;
   }
   const replyId = new Map<string, bigint>();
   for (const e of rows.replies) {
@@ -232,7 +233,7 @@ function foldEvents(byId: Map<string, HouseholdSignals>, rows: EventRows) {
 export function gatherCellSignals(ctx: Ctx, hexId: string, members?: Household[]): HouseholdSignals[] {
   const byId = new Map<string, HouseholdSignals>();
   for (const h of members ?? staticWorld(ctx).get(hexId)?.households ?? [])
-    byId.set(h.id, { household: h, smsSentT: null, reply: null, claim: null, field: null });
+    byId.set(h.id, { household: h, smsSentT: null, smsDelivered: null, reply: null, claim: null, field: null });
   foldEvents(byId, {
     sent: ctx.db.smsSent.hex.filter(hexId),
     replies: ctx.db.smsReply.hex.filter(hexId),
@@ -348,7 +349,7 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     const prevById = new Map<string, ReturnType<typeof ctx.db.householdEstimate.householdId.find>>();
     for (const r of ctx.db.householdEstimate.hex.filter(hexId)) prevById.set(r.householdId, r);
     let accounted = 0, vulnerable = 0, unaccountedVulnerable = 0, recheckDue = 0;
-    let assistanceRequests = 0, inspectionRequests = 0, locateDue = 0;
+    let assistanceRequests = 0, inspectionRequests = 0, locateDue = 0, undeliveredUnaccounted = 0, deliveredNoReply = 0;
     let highRiskUnaccounted = 0, longestWaitMin = 0, openReferrals = 0, overdueReferrals = 0, membersMissing = 0, closedNoContact = 0;
     const acct = new Map<string, { accounted: boolean; escalation: string }>();
     const queue: QueueEntry[] = [];
@@ -372,6 +373,8 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       if (a.assistance) assistanceRequests++;
       if (a.inspection) inspectionRequests++;
       if (a.locate) locateDue++;
+      if (!a.accounted && s?.smsDelivered === false) undeliveredUnaccounted++;
+      if (!a.accounted && s?.smsDelivered === true) deliveredNoReply++;
       if (a.openReferral) openReferrals++;
       if (a.overdue) overdueReferrals++;
       if (f?.memberMissing && f.referralStatus !== 'resolved') membersMissing++;
@@ -458,7 +461,9 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       stats.recheckDue !== recheckDue ||
       stats.assistanceRequests !== assistanceRequests ||
       stats.inspectionRequests !== inspectionRequests ||
-      stats.locateDue !== locateDue;
+      stats.locateDue !== locateDue ||
+      stats.undeliveredUnaccounted !== undeliveredUnaccounted ||
+      stats.deliveredNoReply !== deliveredNoReply;
     if (accountingChanged) accountingDirty = true;
     const material =
       priorityChanged ||
@@ -502,6 +507,8 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
       assistanceRequests,
       inspectionRequests,
       locateDue,
+      undeliveredUnaccounted,
+      deliveredNoReply,
       updatedAt: ctx.timestamp,
       updatedSimMinutes: prep.nowMin,
     });
@@ -510,14 +517,14 @@ export function recomputeCells(ctx: Ctx, hexIds: Iterable<string>, prep: Recompu
     // Totals over all cells (a few hundred rows), so full rebuilds and partial recomputes agree.
     let acc = 0, un = 0, vul = 0, unVul = 0;
     m.highRiskUnaccounted = 0; m.longestWaitMin = 0; m.openReferrals = 0; m.overdueReferrals = 0; m.membersMissing = 0; m.closedNoContact = 0; m.recheckDue = 0;
-    m.assistanceRequests = 0; m.inspectionRequests = 0; m.locateDue = 0;
+    m.assistanceRequests = 0; m.inspectionRequests = 0; m.locateDue = 0; m.undeliveredUnaccounted = 0; m.deliveredNoReply = 0;
     for (const s of ctx.db.hexStats.iter()) {
       acc += s.accounted; un += s.unaccounted; vul += s.vulnerable; unVul += s.unaccountedVulnerable;
       m.highRiskUnaccounted += s.highRiskUnaccounted;
       if (s.longestWaitMin > m.longestWaitMin) m.longestWaitMin = s.longestWaitMin;
       m.openReferrals += s.openReferrals; m.overdueReferrals += s.overdueReferrals;
       m.membersMissing += s.membersMissing; m.closedNoContact += s.closedNoContact; m.recheckDue += s.recheckDue;
-      m.assistanceRequests += s.assistanceRequests; m.inspectionRequests += s.inspectionRequests; m.locateDue += s.locateDue;
+      m.assistanceRequests += s.assistanceRequests; m.inspectionRequests += s.inspectionRequests; m.locateDue += s.locateDue; m.undeliveredUnaccounted += s.undeliveredUnaccounted; m.deliveredNoReply += s.deliveredNoReply;
     }
     m.accounted = acc;
     m.unaccounted = un;
@@ -584,6 +591,8 @@ const LADDER = ['sms_sent', 'sms_resend', 'agent_call', 'field_visit', 'locate']
 export const LADDER_MIN = { highRisk: [30, 90, 240], standard: [120, 360, 720] } as const;
 /** Low-risk households in a P2 cell get a field visit after 48 h instead of 12 h, but they do get one. */
 export const LOW_RISK_VISIT_MIN = 2880;
+/** A high-risk household whose text was delivered but who stays silent gets a visit after 3 h. */
+export const DELIVERED_SILENT_VISIT_MIN = 180;
 /** A life-safety report not referred within this many sim minutes is overdue. */
 export const REFER_MIN = 30;
 /** A referral not acknowledged within this many sim minutes is overdue. */
@@ -670,13 +679,18 @@ export function accountFor(
     if (vulnerable && stale > 0) return { ...base, escalation: 'recheck', waitMin: stale, recheck: true };
     return { ...base, escalation: 'accounted' };
   }
-  // Not heard from yet.
+  // Not heard from yet. Carrier receipts change the ladder:
+  //   not delivered (phone dead / no signal / lost): resending is pointless -> reach out through the
+  //     emergency contact now (agent_call), visit on the high-risk clock (lost phones go with wrecked homes);
+  //   delivered but silent, high-risk: the phone works and nobody answers -> visit after 3 h instead of 4 h.
   const phone = s.smsSentT !== null || !!s.household.phoneOnFile;
   const since = Math.max(0, nowMin - (s.smsSentT ?? 0));
-  const [resend, call, visit] = highRisk ? LADDER_MIN.highRisk : LADDER_MIN.standard;
-  const visitAt = !highRisk && cellPriority === 'P2' && pNeedsHelp < 0.2 ? LOW_RISK_VISIT_MIN : visit;
+  const undelivered = s.smsDelivered === false;
+  const [resend, call, visit] = highRisk || undelivered ? LADDER_MIN.highRisk : LADDER_MIN.standard;
+  let visitAt = !highRisk && !undelivered && cellPriority === 'P2' && pNeedsHelp < 0.2 ? LOW_RISK_VISIT_MIN : visit;
+  if (highRisk && s.smsDelivered === true) visitAt = Math.min(visitAt, DELIVERED_SILENT_VISIT_MIN);
   const locate = s.field?.safety === 'unsure';
-  let step = locate ? 4 : since >= visitAt ? 3 : since >= call ? 2 : !phone ? 2 : since >= resend ? 1 : 0;
+  let step = locate ? 4 : since >= visitAt ? 3 : since >= call ? 2 : !phone || undelivered ? 2 : since >= resend ? 1 : 0;
   step = Math.max(step, LADDER.indexOf(prevEscalation as (typeof LADDER)[number]));
   return { ...base, accounted: false, escalation: LADDER[step], waitMin: since, locate: step === 4 };
 }

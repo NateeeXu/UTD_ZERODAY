@@ -95,11 +95,11 @@ function stagedRow(e: SimEvent, seq: number) {
   const base = { seq, t: Math.round(e.t), kind: e.kind, householdId: e.householdId };
   const blank = {
     safety: '', damage: 0, peril: '', reportedDamage: 0, adjusterId: '', text: '', language: '',
-    damageKnown: true, lifeSafety: false, needs: '', notHome: false, channel: '',
+    damageKnown: true, lifeSafety: false, needs: '', notHome: false, channel: '', delivered: true,
   };
   switch (e.kind) {
     case 'sms_sent':
-      return { ...base, ...blank };
+      return { ...base, ...blank, delivered: (e as { delivered?: boolean }).delivered !== false };
     case 'sms_reply':
       // v3 fields are optional in the bundle: older bundles seed as before (life safety = "needs help").
       return {

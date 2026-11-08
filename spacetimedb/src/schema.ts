@@ -52,6 +52,7 @@ export const stagedEvent = table(
     needs: t.string(), // sms_reply: comma-separated needs ('' when none)
     notHome: t.bool(), // sms_reply: the person replying is not at the house
     channel: t.string(), // sms_reply: 'sms' | 'call'
+    delivered: t.bool(), // sms_sent: carrier delivery receipt (false = phone off, dead or out of signal)
   }
 );
 
@@ -209,7 +210,10 @@ const eventColumns = {
   ingestedAt: t.timestamp(),
 };
 
-export const smsSent = table({ name: 'sms_sent', public: true }, { ...eventColumns });
+export const smsSent = table(
+  { name: 'sms_sent', public: true },
+  { ...eventColumns, delivered: t.bool() } // carrier delivery receipt: false = phone off, dead or out of signal
+);
 
 export const smsReply = table(
   { name: 'sms_reply', public: true },
@@ -316,6 +320,8 @@ export const hexStats = table(
     assistanceRequests: t.u32(), // needs help, not life safety (State Farm customer care)
     inspectionRequests: t.u32(), // asked for someone to look at the house
     locateDue: t.u32(), // property inspected, occupants not seen, not heard from: find their whereabouts
+    undeliveredUnaccounted: t.u32(), // not heard from and the text was NOT delivered (phone dead / no signal / lost)
+    deliveredNoReply: t.u32(), // not heard from although the text WAS delivered (phone on, person silent)
     updatedAt: t.timestamp(),
     updatedSimMinutes: t.f64(),
   }
@@ -472,6 +478,8 @@ export const metrics = table(
     assistanceRequests: t.u32(),
     inspectionRequests: t.u32(),
     locateDue: t.u32(),
+    undeliveredUnaccounted: t.u32(),
+    deliveredNoReply: t.u32(),
     // Region total of severely damaged households with its 90% interval (sum of cell means, sd = sqrt of summed
     // cell variances, rounded outward and clipped to [sum of cell lo, sum of cell hi]); severeIntervalWidth = sum of cell widths.
     expectedSevereTotal: t.f64(),
@@ -680,6 +688,7 @@ export const StagedEventInput = t.object('StagedEventInput', {
   needs: t.string(),
   notHome: t.bool(),
   channel: t.string(),
+  delivered: t.bool(),
 });
 
 const spacetimedb = schema({

@@ -10,7 +10,7 @@ import {
   FIELD_REPORT_SHARE, GRID_RADIUS, H3_RESOLUTION, HOLDOUT_SHARE, HORIZON_MIN,
 } from './config.ts';
 import { Rng, subSeed } from './rng.ts';
-import { replyLabels, truthLocation, truthNeedType, locationAt } from './needs.ts';
+import { replyLabels, truthLocation, truthNeedType, locationAt, markDelivery } from './needs.ts';
 
 /** Diagnostics about deliberate quirks, written to data/sim-meta.json (not part of the contract). */
 export interface WorldMeta {
@@ -392,6 +392,11 @@ export function generateBundle(cfg: EventConfig): { bundle: EventBundle; meta: W
   }
 
   const kindOrder: Record<SimEvent['kind'], number> = { sms_sent: 0, sms_reply: 1, claim: 2, field_report: 3 };
+  const hhById = new Map(households.map((h) => [h.id, h] as const));
+  markDelivery(events, new Rng(subSeed(cfg.seed, 'delivery')), (id) => {
+    const hh = hhById.get(id)!;
+    return { outagePct: cellOf(hh.hex).towerOutagePct, damage: truthById.get(id)!.damage };
+  });
   events.sort((a, b) => a.t - b.t || kindOrder[a.kind] - kindOrder[b.kind] || (a.householdId < b.householdId ? -1 : a.householdId > b.householdId ? 1 : 0));
 
   const bundle: EventBundle = {

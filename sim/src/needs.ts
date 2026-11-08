@@ -98,3 +98,25 @@ export function replyLabels(
   if (reply.damage >= 1 && damage !== null && rng.chance(0.3)) needs.push('inspection');
   return { lifeSafety: false, needs, notHome, damage };
 }
+
+/**
+ * SMS delivery receipts. A household that replied clearly received the text. For the others, the carrier
+ * reports "not delivered" with a probability that grows with the cell's tower / power outage (phone dead,
+ * no signal) and with a destroyed home (phone lost or broken); otherwise the text was delivered and the
+ * silence is the person's (busy, away, or unable to answer). Uses its own random stream ('delivery'), so
+ * every other simulated value is unchanged. All rates are simulator assumptions (docs/DATA.md).
+ */
+export function markDelivery(
+  events: { kind: string; householdId: string; delivered?: boolean }[],
+  rng: Rng,
+  info: (householdId: string) => { outagePct: number; damage: Damage }
+): void {
+  const replied = new Set(events.filter((e) => e.kind === 'sms_reply').map((e) => e.householdId));
+  for (const e of events) {
+    if (e.kind !== 'sms_sent') continue;
+    if (replied.has(e.householdId)) { e.delivered = true; continue; }
+    const i = info(e.householdId);
+    const p = Math.min(0.9, 0.05 + 0.7 * (i.outagePct / 100) + (i.damage === 3 ? 0.4 : 0));
+    e.delivered = !rng.chance(p);
+  }
+}

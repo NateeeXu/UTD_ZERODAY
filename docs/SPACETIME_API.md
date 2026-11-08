@@ -96,6 +96,14 @@ Dashboard idea: big "Unaccounted N → 0" and "Longest wait (high-risk) h:mm", t
 - New reducer for the Claude parser: `submit_parsed_reply(householdId, safety, damage (0–3, 255 = unknown), lifeSafety, needs, notHome, text, language, passcode)`; see docs/CLAUDE_PARSER.md. The "I need help" button (`submit_sms_reply` with `needs_help`) counts as a generic plea = life safety.
 - Data assumptions and limitations: docs/DATA.md.
 
+### SMS delivery receipts (phone dead, broken, or person unable to answer)
+
+From the outside these all look like silence. The carrier receipt separates them: `sms_sent.delivered` (false = phone off, dead, lost or out of signal).
+- Not delivered: resending is pointless. The ladder goes straight to `agent_call` (emergency contact) and visits on the high-risk clock (4 h), because lost phones go with wrecked homes.
+- Delivered but silent, high-risk household: the phone works and nobody answers; visit after 3 h instead of 4 h.
+- Simulated staff calls to a household whose texts were not delivered go to the emergency contact (lower answer rate).
+- Counts (`hex_stats` / `metrics`): `undeliveredUnaccounted`, `deliveredNoReply` (both among households not heard from yet). Show them next to "Unaccounted".
+
 ### Uncertainty on the map
 
 - `hex_stats.severeLo` / `severeHi`: 90 % interval for the number of severely damaged households in the cell (show as "6–11"); `expectedSevere` is the point estimate. `severeVar` is its variance.

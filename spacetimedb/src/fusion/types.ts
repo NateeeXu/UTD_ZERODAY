@@ -25,6 +25,7 @@ export interface SourceTrust {
 export interface HouseholdSignals {
   household: Household;
   smsSentT: number | null; // first time a text was sent
+  smsDelivered: boolean | null; // carrier receipt: true if any text was delivered, false if none was, null if never texted
   /** Latest reply (SMS or agent call). damage null = the reply does not describe the home. */
   reply: {
     t: number;
