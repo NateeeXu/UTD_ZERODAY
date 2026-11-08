@@ -1,34 +1,54 @@
-// "New random disaster" for the dev sandbox (?region=harbor). The manager queues one request
-// (request_new_disaster); a worker on the demo Mac generates the disaster and loads it into this database.
-// Progress lives in the one-row disaster_request table: loading a world swaps the connection
-// (LiveProvider's world watch shows "New scenario" and remounts everything), so nothing about the
-// request may be kept in component state. Mounted only for the dev region; tx / ca have no such table.
+// "New random disaster", right of the Saviu brand on every region.
+// Random disasters only ever load into the dev sandbox: the demo Mac's worker refuses any other
+// database, so Corpus Christi and Bay Area can't be replaced by a stray click.
+// - In the sandbox (RandomDisasterButton) the manager queues one request (request_new_disaster) and the
+//   progress is read only from the one-row disaster_request table. Loading a world swaps the connection
+//   (LiveProvider's world watch shows "New scenario" and remounts everything), so nothing about the
+//   request may live in component state.
+// - On the other regions (RandomDisasterLauncher) the same menu and confirmation switch to the sandbox
+//   and leave a short-lived pending choice in sessionStorage; the sandbox button submits it once this
+//   identity is a manager there (asking to join first if needed). The launcher never touches
+//   disaster_request.
 import { useEffect, useRef, useState } from 'react';
 import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import './random-disaster.css';
 
-type Choice = { region: 'ca' | 'tx'; label: string };
+type Region = 'ca' | 'tx';
+type Choice = { region: Region; label: string };
 const CHOICES: Choice[] = [
   { region: 'ca', label: 'Earthquake · Bay Area' },
   { region: 'tx', label: 'Hurricane · Corpus Christi' },
 ];
 const STALE_QUEUE_MS = 15_000; // queued this long with no loader picking it up
 const LOADED_NOTE_MS = 20_000; // how long "New disaster loaded" stays after done
+const PENDING_KEY = 'saviu-pending-disaster';
+const PENDING_TTL_MS = 120_000; // a launcher choice not picked up within 2 min is dropped
 
-export function RandomDisasterButton({ canControl, onNeedJoin }: { canControl: boolean; onNeedJoin: () => void }) {
-  const [rows] = useTable(tables.disasterRequest);
-  const req = rows[0];
-  const request = useReducer(reducers.requestNewDisaster);
-  const cancel = useReducer(reducers.cancelDisasterRequest);
+function writePending(region: Region | null) {
+  try {
+    if (region) sessionStorage.setItem(PENDING_KEY, JSON.stringify({ region, at: Date.now() }));
+    else sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    /* storage blocked: the sandbox button simply waits for a click */
+  }
+}
+
+function readPending(): Region | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null') as { region?: unknown; at?: unknown } | null;
+    if (!v || (v.region !== 'ca' && v.region !== 'tx') || typeof v.at !== 'number') return null;
+    if (Date.now() - v.at > PENDING_TTL_MS) { writePending(null); return null; }
+    return v.region;
+  } catch {
+    return null;
+  }
+}
+
+// Menu of the two disaster kinds, closed by an outside click or Escape.
+function useMenu() {
   const [menu, setMenu] = useState(false);
-  const [confirm, setConfirm] = useState<Choice | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
   const wrap = useRef<HTMLDivElement>(null);
-
-  // Close the menu on a click outside it, or on Escape.
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setMenu(false); };
@@ -37,6 +57,67 @@ export function RandomDisasterButton({ canControl, onNeedJoin }: { canControl: b
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
   }, [menu]);
+  return { menu, setMenu, wrap };
+}
+
+function Menu({ onPick }: { onPick: (c: Choice) => void }) {
+  return (
+    <div className="glass rd-menu" role="menu" aria-label="New random disaster">
+      {CHOICES.map((c) => <button key={c.region} type="button" role="menuitem" onClick={() => onPick(c)}>{c.label}</button>)}
+    </div>
+  );
+}
+
+function Confirm({ choice, body, action, onCancel, onConfirm }: { choice: Choice; body: string; action: string; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rd-title" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 id="rd-title">Replace this disaster?</h2>
+        <p className="small muted">{choice.label}</p>
+        <p>{body}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn primary" onClick={onConfirm}>{action}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SANDBOX_BODY = 'This generates a new hypothetical disaster and replaces the current one in this sandbox. Replies, assignments and chats are cleared. Members stay.';
+
+// Corpus Christi / Bay Area: switch to the sandbox and hand over the choice.
+export function RandomDisasterLauncher({ onGoSandbox }: { onGoSandbox: () => void }) {
+  const { menu, setMenu, wrap } = useMenu();
+  const [confirm, setConfirm] = useState<Choice | null>(null);
+  return (
+    <div className="rd-wrap" ref={wrap}>
+      <button type="button" className="btn ghost-btn rd-btn" aria-haspopup="menu" aria-expanded={menu}
+        title="Random disasters load into the Sandbox; this region stays as it is" onClick={() => setMenu((m) => !m)}>
+        New random disaster
+      </button>
+      {menu && <Menu onPick={(c) => { setMenu(false); setConfirm(c); }} />}
+      {confirm && (
+        <Confirm choice={confirm} action="Go to Sandbox and replace" onCancel={() => setConfirm(null)}
+          body={`Random disasters load into the Sandbox, so Corpus Christi and Bay Area stay as they are. You'll switch to the Sandbox. ${SANDBOX_BODY}`}
+          onConfirm={() => { writePending(confirm.region); setConfirm(null); onGoSandbox(); }} />
+      )}
+    </div>
+  );
+}
+
+// Sandbox (dev region): queue the request and show its progress.
+export function RandomDisasterButton({ canControl, ready, onNeedJoin }: { canControl: boolean; ready: boolean; onNeedJoin: () => void }) {
+  const [rows, rowsReady] = useTable(tables.disasterRequest);
+  const req = rows[0];
+  const request = useReducer(reducers.requestNewDisaster);
+  const cancel = useReducer(reducers.cancelDisasterRequest);
+  const { menu, setMenu, wrap } = useMenu();
+  const [confirm, setConfirm] = useState<Choice | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const askedJoin = useRef(false);
 
   const status = req?.status ?? '';
   const updated = req ? req.updatedAt.toDate().getTime() : 0;
@@ -50,16 +131,7 @@ export function RandomDisasterButton({ canControl, onNeedJoin }: { canControl: b
     return () => clearInterval(id);
   }, [ticking]);
 
-  const open = () => {
-    setError(null);
-    if (!canControl) return onNeedJoin();
-    setMenu((m) => !m);
-  };
-
-  const replace = async () => {
-    if (!confirm) return;
-    const { region } = confirm;
-    setConfirm(null);
+  const submit = async (region: Region) => {
     setBusy(true);
     setError(null);
     try {
@@ -69,6 +141,26 @@ export function RandomDisasterButton({ canControl, onNeedJoin }: { canControl: b
     } finally {
       setBusy(false);
     }
+  };
+
+  // A choice made on Corpus Christi / Bay Area: submit it here once we know who we are.
+  useEffect(() => {
+    if (!ready || !rowsReady || busy) return;
+    const pending = readPending();
+    if (!pending) return;
+    if (queued || running) { writePending(null); return; } // one is already on its way
+    if (!canControl) {
+      if (!askedJoin.current) { askedJoin.current = true; onNeedJoin(); }
+      return;
+    }
+    writePending(null);
+    void submit(pending);
+  }, [ready, rowsReady, canControl, queued, running, busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const open = () => {
+    setError(null);
+    if (!canControl) return onNeedJoin();
+    setMenu((m) => !m);
   };
 
   const doCancel = async () => {
@@ -101,27 +193,10 @@ export function RandomDisasterButton({ canControl, onNeedJoin }: { canControl: b
           {error ?? note}
         </span>
       )}
-
-      {menu && (
-        <div className="glass rd-menu" role="menu" aria-label="New random disaster">
-          {CHOICES.map((c) => (
-            <button key={c.region} type="button" role="menuitem" onClick={() => { setMenu(false); setConfirm(c); }}>{c.label}</button>
-          ))}
-        </div>
-      )}
-
+      {menu && <Menu onPick={(c) => { setMenu(false); setConfirm(c); }} />}
       {confirm && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="rd-title" onClick={() => setConfirm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 id="rd-title">Replace this disaster?</h2>
-            <p className="small muted">{confirm.label}</p>
-            <p>This generates a new hypothetical disaster and replaces the current one in this sandbox. Replies, assignments and chats are cleared. Members stay.</p>
-            <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
-              <button type="button" className="btn primary" onClick={() => void replace()}>Replace disaster</button>
-            </div>
-          </div>
-        </div>
+        <Confirm choice={confirm} body={SANDBOX_BODY} action="Replace disaster" onCancel={() => setConfirm(null)}
+          onConfirm={() => { const r = confirm.region; setConfirm(null); void submit(r); }} />
       )}
     </div>
   );

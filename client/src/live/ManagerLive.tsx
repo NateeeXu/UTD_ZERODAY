@@ -8,7 +8,7 @@ import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
-import { RandomDisasterButton } from './RandomDisasterButton';
+import { RandomDisasterButton, RandomDisasterLauncher } from './RandomDisasterButton';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
@@ -125,6 +125,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const fictional = world ? !world.region : false; // until `world` arrives, assume real geography (never invent names)
 
   const [joining, setJoining] = useState(false);
+  const sandbox = REGIONS.find((r) => r.dev && r.db); // where random disasters load
   const [mapMode, setMapMode] = useState<MapMode>('priority');
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
@@ -286,7 +287,9 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   return (
     <div className="manager live">
       <RegionHeader region={region} onRegion={onRegion}
-        brandExtra={region.dev ? <RandomDisasterButton canControl={isManager} onNeedJoin={() => setJoining(true)} /> : undefined}>
+        brandExtra={region.dev
+          ? <RandomDisasterButton canControl={isManager} ready={memberReady && !rejoining} onNeedJoin={() => setJoining(true)} />
+          : sandbox ? <RandomDisasterLauncher onGoSandbox={() => onRegion(sandbox)} /> : undefined}>
         <QrButton household={qrHousehold} region={region.id} db={region.db!} members={members} managerName={me?.name} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
