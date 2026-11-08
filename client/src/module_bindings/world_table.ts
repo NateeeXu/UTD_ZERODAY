@@ -23,6 +23,7 @@ export default __t.row({
   eventLocalHour: __t.option(__t.u8()).name("event_local_hour"),
   eventWeekday: __t.option(__t.bool()).name("event_weekday"),
   dataSourcesJson: __t.string().name("data_sources_json"),
+  hazardGeometryJson: __t.string().name("hazard_geometry_json"),
   localHour: __t.u8().name("local_hour"),
   weekday: __t.bool(),
   daytime: __t.bool(),

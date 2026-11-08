@@ -572,6 +572,7 @@ export const World = __t.object("World", {
   eventLocalHour: __t.option(__t.u8()),
   eventWeekday: __t.option(__t.bool()),
   dataSourcesJson: __t.string(),
+  hazardGeometryJson: __t.string(),
   localHour: __t.u8(),
   weekday: __t.bool(),
   daytime: __t.bool(),
@@ -592,6 +593,7 @@ export const WorldInput = __t.object("WorldInput", {
   eventLocalHour: __t.option(__t.u8()),
   eventWeekday: __t.option(__t.bool()),
   dataSources: __t.array(__t.string()),
+  hazardGeometry: __t.string(),
 });
 export type WorldInput = __Infer<typeof WorldInput>;
 
