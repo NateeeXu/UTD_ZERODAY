@@ -126,8 +126,19 @@ export interface SimOptions {
   dataSources: string[];
 }
 
-/** Track, landfall and the expected wind swath, from the same wind profile as the simulator (HurricaneTrack.wind). */
-function hurricaneGeometry(sc: HurricaneScenario, t: HurricaneTrack): HazardGeometry {
+/** NHC Atlantic 2026 two-thirds probability circles: forecast lead (h) -> radius (n mi). */
+const NHC_CONE_NM: [number, number][] = [[0, 0], [12, 25], [24, 39], [36, 49], [48, 62]];
+const CONE_ISSUED_H_BEFORE_LANDFALL = 24;
+function coneRadiusKm(leadH: number): number {
+  for (let i = 1; i < NHC_CONE_NM.length; i++) {
+    const [h0, r0] = NHC_CONE_NM[i - 1]!, [h1, r1] = NHC_CONE_NM[i]!;
+    if (leadH <= h1) return (r0 + ((r1 - r0) * (leadH - h0)) / (h1 - h0)) * 1.852;
+  }
+  return NHC_CONE_NM[NHC_CONE_NM.length - 1]![1] * 1.852;
+}
+
+/** Landfall, centre line and an NHC-style forecast cone issued 24 h before landfall, reaching 24 h past it. */
+function hurricaneGeometry(sc: HurricaneScenario): HazardGeometry {
   const h = (sc.headingDeg * Math.PI) / 180;
   const ux = Math.sin(h), uy = Math.cos(h);
   const kmLng = 111.32 * Math.cos((sc.landfall.lat * Math.PI) / 180);
@@ -136,28 +147,28 @@ function hurricaneGeometry(sc: HurricaneScenario, t: HurricaneTrack): HazardGeom
     lat: round(sc.landfall.lat + (s * uy - d * ux) / 111.32, 4),
     lng: round(sc.landfall.lng + (s * ux + d * uy) / kmLng, 4),
   });
+  const issued = CONE_ISSUED_H_BEFORE_LANDFALL;
+  const sAt = (lead: number) => sc.forwardKmh * (lead - issued);
   const track = [];
-  for (let s = -160; s <= 200; s += 40) track.push(at(s, 0));
-  // Radius where wind drops to V: vmax(s) * 0.9 (asymmetry + exposure, typical) * (R / d)^0.6 = V
-  const radius = (s: number, V: number) => {
-    const v = t.vmaxAt(s) * 0.9;
-    return v <= V ? 0 : sc.rmaxKm * (v / V) ** (1 / 0.6);
-  };
-  const band = (V: number) => {
-    const left = [], right = [];
-    for (let s = -160; s <= 200; s += 20) {
-      const r = radius(s, V);
-      if (r <= 0) continue;
-      left.push(at(s, -r));
-      right.unshift(at(s, r));
-    }
-    return [...left, ...right];
-  };
+  for (let lead = 0; lead <= 48; lead += 6) track.push(at(sAt(lead), 0));
+  const left = [], right = [];
+  for (let lead = 0; lead <= 48; lead += 3) {
+    const r = coneRadiusKm(lead);
+    left.push(at(sAt(lead), -r));
+    right.unshift(at(sAt(lead), r));
+  }
+  // Rounded end of the cone: half circle around the last forecast point.
+  const cap = [];
+  const rEnd = coneRadiusKm(48), sEnd = sAt(48);
+  for (let a = -75; a <= 75; a += 15) {
+    const t = (a * Math.PI) / 180;
+    cap.push(at(sEnd + rEnd * Math.cos(t), rEnd * Math.sin(t)));
+  }
   const v = sc.vmaxMph;
   const category = v >= 157 ? 5 : v >= 130 ? 4 : v >= 111 ? 3 : v >= 96 ? 2 : 1;
   return {
     kind: 'hurricane', landfall: sc.landfall, track, headingDeg: sc.headingDeg, vmaxMph: v, category, rmaxKm: sc.rmaxKm,
-    swath: { hurricane: band(74), tropical: band(39), radiiKm: { hurricane: Math.round(radius(0, 74)), tropical: Math.round(radius(0, 39)) } },
+    cone: { polygon: [...left, ...cap, ...right], issuedHoursBeforeLandfall: issued, radiusAtLandfallKm: Math.round(coneRadiusKm(issued)) },
   };
 }
 
@@ -502,7 +513,7 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       households,
       region: r.id,
       hazardType: sc.kind,
-      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc, track!) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
+      ...(sc.kind === 'hurricane' ? { hazardGeometry: hurricaneGeometry(sc) } : quakeGeometry ? { hazardGeometry: quakeGeometry } : {}),
       facilities: base.facilities,
       dataSources: opt.dataSources,
       eventLocalHour,

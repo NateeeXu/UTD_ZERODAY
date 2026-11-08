@@ -77,8 +77,8 @@ export interface Household {
 // v3：灾害本身的几何信息，给地图画登陆点 / 路径 / 震中 / 破裂线
 export type HazardGeometry =
   | { kind: 'hurricane'; landfall: { lat: number; lng: number }; track: { lat: number; lng: number }[]; headingDeg: number; vmaxMph: number; category: number; rmaxKm: number;
-      // 预计影响范围：沿路径的风圈带（闭合多边形），hurricane = 飓风级风（≥74 mph），tropical = 热带风暴级风（≥39 mph）；radiiKm 是登陆时的半径
-      swath: { hurricane: { lat: number; lng: number }[]; tropical: { lat: number; lng: number }[]; radiiKm: { hurricane: number; tropical: number } } }
+      // 预报锥形（NHC 画法）：预报在登陆前 issuedHoursBeforeLandfall 小时发布，风暴当时的位置最窄，预报时间越远越宽；polygon 是闭合多边形
+      cone: { polygon: { lat: number; lng: number }[]; issuedHoursBeforeLandfall: number; radiusAtLandfallKm: number } }
   | { kind: 'earthquake'; epicenter: { lat: number; lng: number }; rupture: [{ lat: number; lng: number }, { lat: number; lng: number }] | null; magnitude: number; faultName: string };
 
 export interface World {
