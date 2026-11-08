@@ -14,23 +14,29 @@ is published under different names and seeded with one bundle each.
 > geography, demographics, facilities and hazard inputs (see `world.dataSourcesJson`). The
 > `household` table is public for that reason; with real customers it would sit behind per-role views.
 
-## 0. Shared dev database (use this for frontend work)
+## 0. Shared Maincloud databases (use these for frontend work)
+
+All three run the v2 module (engine v2) and use the same private passcodes.
+
+| Database (client `withDatabaseName`) | World | Households | Cells | Use |
+|---|---|---|---|---|
+| `triage-loop-nateeexu-dev` | Harbor Bend, TX (fictional, `data/live.json`) | 3,000 | 331 | Development; reset it freely |
+| `triage-loop-nateeexu-tx` | Corpus Christi, TX hurricane (`data/real/tx-corpus-christi`) | 20,000 | 449 | Demo |
+| `triage-loop-nateeexu-ca` | Alameda County, CA Hayward Fault quake (`data/real/ca-bay-area`) | 30,000 | 611 | Demo |
 
 | Setting | Value |
 |---|---|
 | Host (client `withUri`) | `wss://maincloud.spacetimedb.com` |
-| Database (client `withDatabaseName`) | `triage-loop-nateeexu-dev` |
-| Data | Harbor Bend (`data/live.json`, 3,000 households) |
-| Module on it | **v1** (commit d30357e, engine v1). The v2 schema in this document is not on it yet; see below |
 | Passcodes | **not in the repo**: ask the database owner; they are in the owner's `spacetimedb/.env` (see `spacetimedb/.env.example`) |
+| Full-recompute cadence | 120 sim minutes on all three (set at seed time with `--cadence`) |
 
-- The default passcodes in this doc (`triage-staff` / `triage-reply`) work only on a local server. The dev database uses private passcodes.
-- Only the owner can seed or wipe it. Managers can `reset_demo`, `start_replay`, `pause_replay`, `jump_to`.
-- **Pause the replay when you are not testing**: a running replay ticks every second and uses Maincloud energy.
-- Client bindings: `spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path spacetimedb` (needs the CLI), or copy `spacetimedb/bindings/`. **Regenerate after the v2 upgrade**: reducer and table shapes changed.
-- `spacetime sql` and `spacetime call` run inside `spacetimedb/` pick up `spacetime.json` (database `triage-loop`), and a different database name on the command line then fails. Run them from another folder, e.g. `spacetime sql -s maincloud triage-loop-nateeexu-dev "SELECT * FROM metrics"`.
-- **Upgrading it to v2 (owner only).** The v2 schema cannot be migrated in place (new columns in existing tables), so the owner republishes with `--delete-data=always` and reseeds from the owner's `.env`. Members, assignments and events on it are lost. See §9.
-- **Corpus Christi and Bay Area databases**: one more Maincloud database per world, published and seeded by the owner (§9). Their names go here once they exist.
+- The default passcodes in this doc (`triage-staff` / `triage-reply`) work only on a local server.
+- Membership is per database: join each world separately with `join_as`.
+- Only the owner can seed or wipe. Managers can `reset_demo`, `start_replay`, `pause_replay`, `jump_to`.
+- **Pause the replay when you are not testing**: a running replay ticks every second and uses Maincloud energy. All three were left paused at t = 0.
+- Client bindings: `spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path spacetimedb` (needs the CLI), or copy `spacetimedb/bindings/`. Regenerate whenever the schema changes.
+- `spacetime sql` and `spacetime call` run inside `spacetimedb/` pick up `spacetime.json` (database `triage-loop`). Run them from another folder, e.g. `spacetime sql -s maincloud triage-loop-nateeexu-tx "SELECT * FROM metrics"`.
+- Schema changes that add columns need `--delete-data=always` and a reseed (owner only, see §9).
 
 ## 1. What runs inside Spacetime
 
