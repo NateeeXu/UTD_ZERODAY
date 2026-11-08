@@ -41,7 +41,7 @@ const STREETS = [
 const SUFFIX = ['St', 'Ave', 'Dr', 'Ln', 'Ct', 'Rd'];
 
 // Synthetic street address derived from the household id (stable across reloads).
-export function addressOf(h: Household): string {
+export function addressOf(h: Pick<Household, 'id'>): string {
   const n = parseInt(h.id.replace(/\D/g, ''), 10) || 0;
   const num = 100 + ((n * 37) % 8900);
   return `${num} ${STREETS[n % STREETS.length]} ${SUFFIX[(n >> 4) % SUFFIX.length]}`;

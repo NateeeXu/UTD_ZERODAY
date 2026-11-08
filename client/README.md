@@ -1,4 +1,4 @@
-# client/: Triage Loop frontend (owner: B)
+# client/: Triage Loop frontend
 
 ```bash
 cd client
@@ -6,38 +6,33 @@ npm install
 npm run dev        # also served on the LAN (--host), so phones on the same Wi-Fi can open it
 ```
 
+## Screens (live, SpacetimeDB)
 | Route | Screen |
 |---|---|
-| `#/` | Manager dashboard: map with layer toggle, Next up, area detail, timeline, QR |
-| `#/adjuster` | Adjuster phone view: task list (assigned areas first), household card, field-report form |
-| `#/sms?h=live-h00042` | Policyholder SMS check-in (QR target). Without `?h=` it picks a random household |
+| `#/` | Manager dashboard: map (approved style A + C), metrics strip, action / verification queues, live feed, replay controls, judge QR |
+| `#/adjuster` | Adjuster phone: join, assigned homes (+ engine's top unassigned candidates), two-part field report |
+| `#/reply?h=<householdId>&code=<reply passcode>` | Policyholder SMS page (QR target, no login) |
 
-Demo deep links (query string goes before the `#`):
-- `?t=800` opens the replay at minute 800 (T+13h 20m).
-- `?area=Seawall%20Point` opens that area's panel.
-- e.g. `http://<laptop-ip>:5173/?t=800&area=Seawall%20Point#/`
+- **Joining:** managers and adjusters join with the staff passcode, typed in the join dialog. It is never stored or bundled; the connection token (one per screen and database, in `localStorage`) keeps the role across reloads.
+- **QR code:** the manager types the reply passcode once into the QR card. It may travel in the QR link, because it only allows SMS replies.
+- **Energy:** always **Pause** the replay when you're not demoing; a running replay uses Maincloud energy.
 
-## Data
-- Loads `../data/live.json` (and `../data/model.json` once the engine writes it). Falls back to an in-browser mock (`src/data/mockBundle.ts`) only if `live.json` is missing. **Restart `npm run dev` after new data files land.**
-- Replay runs 0–72 h (`T_END` in `src/state/TriageStore.tsx`), matching the simulator horizon.
-- Basemap: Esri World Light Gray Canvas (no API key). Attribution is shown bottom-right.
+## Configuration (`.env.local`, never commit secrets)
+```
+VITE_SPACETIME_HOST=https://maincloud.spacetimedb.com   # default
+VITE_SPACETIME_DB=triage-loop-nateeexu-dev              # Harbor Bend dev database (default)
+VITE_SPACETIME_DB_TX=<corpus christi database>          # enables the region button
+VITE_SPACETIME_DB_CA=<bay area database>
+```
+`?region=harbor|tx|ca` in the URL (before the `#`) picks a region; the choice is remembered.
 
-## Areas
-Hexes are grouped into named areas by their H3 resolution-7 parent (`src/areas.ts`, 57 areas for `live.json`). Names are made up and deterministic. Area priority = worst hex priority; an area is "unverified" when most households in its driving hexes are unverified.
+## Bindings (`src/module_bindings/`)
+- Copied from `spacetimedb/bindings/`.
+- The dev database already runs the v2 schema, so seven files were hand-synced to it: `hex`, `hex_stats`, `household`, `world` and `replay_state` changed, `sms_reply` gained `text`/`language`, and `facility` and `inspection_candidate` are new. The source was the live schema (`GET https://maincloud.spacetimedb.com/v1/database/<db>/schema?version=9`).
+- **Replace the folder** with `spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path spacetimedb` once the v2 module is pushed.
+- Use `src/live/rows.ts` for row types: `module_bindings/types.ts` still has v1 shapes for the changed tables.
 
-## Placeholder engine
-`src/engine/placeholderEstimate.ts` stands in for A's engine and emits `HexEstimate` plus UI-only extras (`HexView`):
-
-| Extra field | Used for |
-|---|---|
-| `hazard` (0–1) | Hazard layer, Why-P0 hazard bar |
-| `helpReplies` | Next up reasons, Why-P0 check-ins line |
-| `expectedClaims`, `claimsGap` | Claims gap layer, "N filed vs M expected by now" |
-| `replyRate` | Why-P0 check-ins bar |
-
-**For A:** if the real engine / `hex_stats` can provide these (or equivalents), the UI can switch over without changes beyond the store.
-
-## Local mode vs Spacetime
-- Field reports, SMS replies and adjuster assignments are kept in the browser and synced between tabs of the same browser (BroadcastChannel + localStorage). Reset on the manager screen clears them.
-- Phones on other devices do **not** sync in local mode. That comes with Spacetime (Maincloud).
-- To switch: write a provider with the same `TriageState` shape backed by subscriptions (`hex`, `hex_stats`, `metrics`, event tables, `assignment`), call reducers in `inject` / `assign`, and swap it in `src/main.tsx`. Views only use `useTriage()`.
+## Code map
+- `src/live/`: live screens (`ManagerLive`, `AdjusterLive`, `ReplyLive`), `LiveMap` + `mapModel` (port of `docs/preview/map-preview.html`), `config` (hosts, regions, token keys), `labels` (district names).
+- `src/views/`, `src/state/`, `src/engine/`: the older local-mode prototype (browser-only replay of `data/live.json`), at `#/local`, `#/local/adjuster` and `#/local/sms`.
+- `src/regions/` (`#/regions`) and `#/lab`: design explorations, not used by the live screens.

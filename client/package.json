@@ -16,7 +16,8 @@
     "polygon-clipping": "^0.15.7",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "spacetimedb": "2.14"
   },
   "devDependencies": {
     "@types/d3-contour": "^3.0.6",
