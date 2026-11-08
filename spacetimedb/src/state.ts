@@ -3,9 +3,11 @@ import { SenderError } from 'spacetimedb/server';
 import { Timestamp } from 'spacetimedb';
 import type { Ctx } from './schema';
 import { DEFAULT_TRUST } from './fusion/trust';
+import type { WorldContext } from './fusion/engine/features.ts';
 
 export const SINGLETON = 0;
-export const MAX_MINUTES = 4320;
+export const MAX_MINUTES = 4320; // default horizon when the world does not set horizonMinutes
+export const DEFAULT_FULL_RECOMPUTE_EVERY_MIN = 60;
 
 export type Role = 'manager' | 'adjuster' | 'policyholder_demo';
 export const ROLES: readonly Role[] = ['manager', 'adjuster', 'policyholder_demo'];
@@ -24,7 +26,33 @@ export function getReplay(ctx: Ctx) {
     totalStaged: 0,
     maxMinutes: MAX_MINUTES,
     lastTickAt: ctx.timestamp,
+    fullRecomputeEveryMin: DEFAULT_FULL_RECOMPUTE_EVERY_MIN,
+    lastFullRecomputeMin: 0,
   });
+}
+
+/** Engine WorldContext from the stored world row (derived at seed time; defaults = Harbor Bend at night). */
+export function worldCtxOf(ctx: Ctx): WorldContext {
+  const w = ctx.db.world.id.find(SINGLETON);
+  if (!w)
+    return {
+      hazardType: 'hurricane',
+      horizonMinutes: MAX_MINUTES,
+      localHour: 0,
+      weekday: false,
+      daytime: false,
+      schoolHours: false,
+      timeSource: 'landfallIso',
+    };
+  return {
+    hazardType: w.hazardType === 'earthquake' ? 'earthquake' : 'hurricane',
+    horizonMinutes: w.horizonMinutes > 0 ? w.horizonMinutes : MAX_MINUTES,
+    localHour: w.localHour,
+    weekday: w.weekday,
+    daytime: w.daytime,
+    schoolHours: w.schoolHours,
+    timeSource: w.timeSource === 'world' ? 'world' : 'landfallIso',
+  };
 }
 
 export function getMetrics(ctx: Ctx) {
@@ -110,6 +138,18 @@ export function simNow(ctx: Ctx): number {
 
 export function microsBetween(a: Timestamp, b: Timestamp): number {
   return Number(b.microsSinceUnixEpoch - a.microsSinceUnixEpoch);
+}
+
+/** Mark static world data (hex / household / facility) as changed; invalidates the in-memory cache. */
+export function touchWorld(ctx: Ctx) {
+  const cfg = ctx.db.config.id.find(SINGLETON);
+  if (cfg) ctx.db.config.id.update({ ...cfg, worldStamp: ctx.timestamp.microsSinceUnixEpoch });
+}
+
+/** Cache key for static world data: unique per committed world write (a rolled-back stamp is never reused). */
+export function worldStampKey(ctx: Ctx): string {
+  const cfg = ctx.db.config.id.find(SINGLETON);
+  return `${ctx.databaseIdentity.toHexString()}:${cfg ? cfg.worldStamp : 0n}`;
 }
 
 // ----- permissions ----------------------------------------------------------

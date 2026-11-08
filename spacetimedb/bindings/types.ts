@@ -22,6 +22,27 @@ export const Assignment = __t.object("Assignment", {
 });
 export type Assignment = __Infer<typeof Assignment>;
 
+export const CellAgg = __t.object("CellAgg", {
+  hex: __t.string(),
+  outage: __t.f64(),
+  daytime: __t.bool(),
+  smsSent: __t.u32(),
+  replied: __t.u32(),
+  sentEnHome: __t.u32(),
+  repliedEnHome: __t.u32(),
+  sentLeHome: __t.u32(),
+  repliedLeHome: __t.u32(),
+  sentEnAway: __t.u32(),
+  repliedEnAway: __t.u32(),
+  sentLeAway: __t.u32(),
+  repliedLeAway: __t.u32(),
+  exposureOwner: __t.f64(),
+  exposureRenter: __t.f64(),
+  claimsOwner: __t.u32(),
+  claimsRenter: __t.u32(),
+});
+export type CellAgg = __Infer<typeof CellAgg>;
+
 export const Claim = __t.object("Claim", {
   id: __t.u64(),
   householdId: __t.string(),
@@ -40,8 +61,35 @@ export const Config = __t.object("Config", {
   owner: __t.identity(),
   staffPasscode: __t.string(),
   replyPasscode: __t.string(),
+  worldStamp: __t.u64(),
 });
 export type Config = __Infer<typeof Config>;
+
+export const Facility = __t.object("Facility", {
+  id: __t.string(),
+  kind: __t.string(),
+  name: __t.string(),
+  lat: __t.f64(),
+  lng: __t.f64(),
+  hex: __t.string(),
+  enrollment: __t.option(__t.u32()),
+  capacity: __t.option(__t.u32()),
+  source: __t.string(),
+});
+export type Facility = __Infer<typeof Facility>;
+
+export const FacilityInput = __t.object("FacilityInput", {
+  id: __t.string(),
+  kind: __t.string(),
+  name: __t.string(),
+  lat: __t.f64(),
+  lng: __t.f64(),
+  hex: __t.string(),
+  enrollment: __t.option(__t.u32()),
+  capacity: __t.option(__t.u32()),
+  source: __t.string(),
+});
+export type FacilityInput = __Infer<typeof FacilityInput>;
 
 export const FieldReport = __t.object("FieldReport", {
   id: __t.u64(),
@@ -67,6 +115,14 @@ export const Hex = __t.object("Hex", {
   floodDepthFt: __t.f64(),
   towerOutagePct: __t.f64(),
   analystZone: __t.u8(),
+  hazardIndex: __t.option(__t.f64()),
+  shakingMmi: __t.option(__t.f64()),
+  liquefaction: __t.option(__t.f64()),
+  tractGeoid: __t.option(__t.string()),
+  daytimeWorkers: __t.option(__t.f64()),
+  residentWorkers: __t.option(__t.f64()),
+  k12Enrollment: __t.option(__t.f64()),
+  collegeEnrollment: __t.option(__t.f64()),
 });
 export type Hex = __Infer<typeof Hex>;
 
@@ -79,6 +135,14 @@ export const HexInput = __t.object("HexInput", {
   floodDepthFt: __t.f64(),
   towerOutagePct: __t.f64(),
   analystZone: __t.u8(),
+  hazardIndex: __t.option(__t.f64()),
+  shakingMmi: __t.option(__t.f64()),
+  liquefaction: __t.option(__t.f64()),
+  tractGeoid: __t.option(__t.string()),
+  daytimeWorkers: __t.option(__t.f64()),
+  residentWorkers: __t.option(__t.f64()),
+  k12Enrollment: __t.option(__t.f64()),
+  collegeEnrollment: __t.option(__t.f64()),
 });
 export type HexInput = __Infer<typeof HexInput>;
 
@@ -102,6 +166,8 @@ export const HexStats = __t.object("HexStats", {
   silence: __t.f64(),
   expectedSevere: __t.f64(),
   maxPNeedsHelp: __t.f64(),
+  hazard: __t.f64(),
+  silenceCause: __t.string(),
   reason: __t.string(),
   updatedAt: __t.timestamp(),
   updatedSimMinutes: __t.f64(),
@@ -121,6 +187,19 @@ export const Household = __t.object("Household", {
   earthquakeEndorsement: __t.bool(),
   phoneOnFile: __t.bool(),
   holdout: __t.bool(),
+  tractGeoid: __t.option(__t.string()),
+  childrenUnder18: __t.option(__t.bool()),
+  awayDaytime: __t.option(__t.bool()),
+  age75: __t.option(__t.bool()),
+  disability: __t.option(__t.bool()),
+  noVehicle: __t.option(__t.bool()),
+  limitedEnglish: __t.option(__t.bool()),
+  primaryLanguage: __t.option(__t.string()),
+  mobileHome: __t.option(__t.bool()),
+  policyType: __t.option(__t.string()),
+  schoolAgeChildren: __t.option(__t.u8()),
+  collegeStudent: __t.option(__t.bool()),
+  nearestSchoolId: __t.option(__t.string()),
 });
 export type Household = __Infer<typeof Household>;
 
@@ -149,8 +228,34 @@ export const HouseholdInput = __t.object("HouseholdInput", {
   earthquakeEndorsement: __t.bool(),
   phoneOnFile: __t.bool(),
   holdout: __t.bool(),
+  tractGeoid: __t.option(__t.string()),
+  childrenUnder18: __t.option(__t.bool()),
+  awayDaytime: __t.option(__t.bool()),
+  age75: __t.option(__t.bool()),
+  disability: __t.option(__t.bool()),
+  noVehicle: __t.option(__t.bool()),
+  limitedEnglish: __t.option(__t.bool()),
+  primaryLanguage: __t.option(__t.string()),
+  mobileHome: __t.option(__t.bool()),
+  policyType: __t.option(__t.string()),
+  schoolAgeChildren: __t.option(__t.u8()),
+  collegeStudent: __t.option(__t.bool()),
+  nearestSchoolId: __t.option(__t.string()),
 });
 export type HouseholdInput = __Infer<typeof HouseholdInput>;
+
+export const InspectionCandidate = __t.object("InspectionCandidate", {
+  householdId: __t.string(),
+  hex: __t.string(),
+  rank: __t.u8(),
+  inspectScore: __t.f64(),
+  pSevere: __t.f64(),
+  pNeedsHelp: __t.f64(),
+  uncertainty: __t.f64(),
+  cellPriority: __t.string(),
+  cellVerification: __t.string(),
+});
+export type InspectionCandidate = __Infer<typeof InspectionCandidate>;
 
 export const Member = __t.object("Member", {
   identity: __t.identity(),
@@ -232,6 +337,8 @@ export const ReplayState = __t.object("ReplayState", {
   totalStaged: __t.u32(),
   maxMinutes: __t.u32(),
   lastTickAt: __t.timestamp(),
+  fullRecomputeEveryMin: __t.u32(),
+  lastFullRecomputeMin: __t.f64(),
 });
 export type ReplayState = __Infer<typeof ReplayState>;
 
@@ -259,6 +366,8 @@ export const SmsReply = __t.object("SmsReply", {
   ingestedAt: __t.timestamp(),
   safety: __t.string(),
   damage: __t.u8(),
+  text: __t.option(__t.string()),
+  language: __t.option(__t.string()),
 });
 export type SmsReply = __Infer<typeof SmsReply>;
 
@@ -283,6 +392,8 @@ export const StagedEvent = __t.object("StagedEvent", {
   peril: __t.string(),
   reportedDamage: __t.u8(),
   adjusterId: __t.string(),
+  text: __t.string(),
+  language: __t.string(),
 });
 export type StagedEvent = __Infer<typeof StagedEvent>;
 
@@ -296,6 +407,8 @@ export const StagedEventInput = __t.object("StagedEventInput", {
   peril: __t.string(),
   reportedDamage: __t.u8(),
   adjusterId: __t.string(),
+  text: __t.string(),
+  language: __t.string(),
 });
 export type StagedEventInput = __Infer<typeof StagedEventInput>;
 
@@ -314,6 +427,32 @@ export const World = __t.object("World", {
   landfallIso: __t.string(),
   centerLat: __t.f64(),
   centerLng: __t.f64(),
+  region: __t.option(__t.string()),
+  hazardType: __t.string(),
+  horizonMinutes: __t.u32(),
+  eventLocalHour: __t.option(__t.u8()),
+  eventWeekday: __t.option(__t.bool()),
+  dataSourcesJson: __t.string(),
+  localHour: __t.u8(),
+  weekday: __t.bool(),
+  daytime: __t.bool(),
+  schoolHours: __t.bool(),
+  timeSource: __t.string(),
 });
 export type World = __Infer<typeof World>;
+
+export const WorldInput = __t.object("WorldInput", {
+  eventId: __t.string(),
+  name: __t.string(),
+  landfallIso: __t.string(),
+  centerLat: __t.f64(),
+  centerLng: __t.f64(),
+  region: __t.option(__t.string()),
+  hazardType: __t.option(__t.string()),
+  horizonMinutes: __t.option(__t.u32()),
+  eventLocalHour: __t.option(__t.u8()),
+  eventWeekday: __t.option(__t.bool()),
+  dataSources: __t.array(__t.string()),
+});
+export type WorldInput = __Infer<typeof WorldInput>;
 

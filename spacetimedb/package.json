@@ -15,7 +15,13 @@
     "generate": "spacetime generate --lang typescript --out-dir bindings --module-path . --import-extension ts",
     "seed": "node scripts/seed.ts",
     "smoke": "node scripts/smoke.ts",
-    "sync-engine": "node scripts/sync-engine.ts"
+    "sync-engine": "node scripts/sync-engine.ts",
+    "publish:local:all": "spacetime publish -s local --module-path . --yes triage-loop && spacetime publish -s local --module-path . --yes triage-loop-tx && spacetime publish -s local --module-path . --yes triage-loop-ca",
+    "seed:hb": "node scripts/seed.ts --db triage-loop --file ../data/live.json",
+    "seed:tx": "node scripts/seed.ts --db triage-loop-tx --file ../data/real/tx-corpus-christi/live.json",
+    "seed:ca": "node scripts/seed.ts --db triage-loop-ca --file ../data/real/ca-bay-area/live.json",
+    "bench": "node scripts/bench.ts",
+    "parity": "node scripts/parity.ts"
   },
   "license": "MIT",
   "dependencies": {

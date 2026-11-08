@@ -1,7 +1,8 @@
 // Input/output types for the fusion adapter. Everything here is plain data (no ctx), so any
-// estimator (the temporary stub or the real engine copied from engine/src) can be plugged in.
+// estimator (the real engine copied from engine/src, or the temporary stub) can be plugged in.
 import type {
   Damage,
+  Facility,
   HexCell,
   HexEstimate,
   Household,
@@ -10,6 +11,9 @@ import type {
   Peril,
   Safety,
 } from './contract';
+import type { WorldContext, WorldRefs } from './engine/features.ts';
+
+export type { WorldContext, WorldRefs };
 
 export interface SourceTrust {
   hazard: number;
@@ -26,38 +30,63 @@ export interface HouseholdSignals {
   field: { t: number; safety: Safety; damage: Damage; adjusterId: string } | null;
 }
 
-/** World-level reference rates at the current time (same meaning as engine WorldRefs). */
-export interface WorldRefs {
-  refReplyRate: number; // replies / texts among low-outage cells
-  claimRatePerHazard: number; // claims / sum(households * hazard)
-}
-
 export interface CellInput {
   cell: HexCell;
   households: HouseholdSignals[];
+  facilities: Facility[]; // facilities located in this cell
   nowMin: number; // sim minutes after landfall
+  world: WorldContext; // hazard type, horizon, daytime / school-hours flags
   trust: SourceTrust; // current (learned) source trust
-  params: ModelParams | null; // data/model.json if loaded
-  refs: WorldRefs | null; // only computed when the estimator needs it
+  params: ModelParams | null; // model.json if loaded
+}
+
+/** The per-cell counters world reference rates are computed from (persisted in `cell_agg`). */
+export interface RefsCounters {
+  hex: string;
+  outage: number;
+  daytime: boolean;
+  smsSent: number;
+  replied: number;
+  sentEnHome: number;
+  repliedEnHome: number;
+  sentLeHome: number;
+  repliedLeHome: number;
+  sentEnAway: number;
+  repliedEnAway: number;
+  sentLeAway: number;
+  repliedLeAway: number;
+  exposureOwner: number;
+  exposureRenter: number;
+  claimsOwner: number;
+  claimsRenter: number;
 }
 
 export interface HouseholdOutput extends HouseholdEstimate {
-  inspectScore: number; // 0..1, active-inspection ranking (severity x uncertainty)
+  inspectScore: number; // 0..1, active-inspection ranking
 }
 
 export interface CellOutput {
   households: HouseholdOutput[];
-  hex: HexEstimate;
-  reason: string;
+  hex: HexEstimate; // includes hazard, reason, silenceCause (v2)
 }
 
-/** A pluggable estimator. `estimateCell` must be pure and deterministic. */
-export interface CellEstimator extends RefsAware {
+/**
+ * A pluggable estimator, run in three phases so world reference rates can be computed from the
+ * up-to-date aggregates of every cell before any cell is estimated:
+ *   prepare(input)        per cell: aggregate signals (pure)
+ *   refsCounters(prepared) per cell: counters to persist for computeRefs (null = estimator needs no refs)
+ *   estimate(prepared, refs)
+ */
+export interface CellEstimator {
   name: 'stub' | 'engine';
-  estimateCell(input: CellInput): CellOutput;
+  needsRefs: boolean;
+  prepare(input: CellInput): PreparedCell;
+  refsCounters(p: PreparedCell): RefsCounters | null;
+  estimate(p: PreparedCell, refs: WorldRefs | null): CellOutput;
 }
 
-/** A pluggable estimator. `needsRefs` = compute WorldRefs before calling estimateCell. */
-export interface RefsAware {
-  needsRefs: boolean;
+/** Opaque per-estimator state between phases. */
+export interface PreparedCell {
+  input: CellInput;
+  [k: string]: unknown;
 }

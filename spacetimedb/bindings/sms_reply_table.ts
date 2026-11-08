@@ -20,4 +20,6 @@ export default __t.row({
   ingestedAt: __t.timestamp().name("ingested_at"),
   safety: __t.string(),
   damage: __t.u8(),
+  text: __t.option(__t.string()),
+  language: __t.option(__t.string()),
 });

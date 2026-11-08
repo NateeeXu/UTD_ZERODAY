@@ -67,26 +67,51 @@ export const removeMember = spacetimedb.reducer(
 
 // ----- live submissions ----------------------------------------------------------
 
+function smsReply(
+  ctx: Ctx,
+  a: { householdId: string; safety: string; damage: number; passcode: string; text?: string; language?: string }
+) {
+  const role = memberOf(ctx)?.role;
+  const allowedByRole = role === 'policyholder_demo' || role === 'manager' || isOwner(ctx);
+  if (!allowedByRole) {
+    const cfg = passcodes(ctx);
+    if (a.passcode !== cfg.replyPasscode && a.passcode !== cfg.staffPasscode)
+      throw new SenderError('join as policyholder_demo or provide the reply passcode');
+  }
+  if (a.safety !== 'safe' && a.safety !== 'needs_help') throw new SenderError("safety must be 'safe' or 'needs_help'");
+  checkDamage(a.damage);
+  if (a.text !== undefined && a.text.length > 1000) throw new SenderError('text must be at most 1000 characters');
+  if (a.language !== undefined && a.language.length > 16) throw new SenderError('language code too long');
+  onEvent(
+    ctx,
+    {
+      kind: 'sms_reply',
+      t: simNow(ctx),
+      householdId: a.householdId,
+      safety: a.safety,
+      damage: a.damage as Damage,
+      text: a.text,
+      language: a.language,
+    },
+    'live'
+  );
+}
+
 /** Policyholder SMS reply page. Allowed for policyholder_demo / manager members, or with the reply passcode. */
 export const submitSmsReply = spacetimedb.reducer(
   { name: 'submit_sms_reply' },
   { householdId: t.string(), safety: t.string(), damage: t.u8(), passcode: t.string() },
-  (ctx, { householdId, safety, damage, passcode }) => {
-    const role = memberOf(ctx)?.role;
-    const allowedByRole = role === 'policyholder_demo' || role === 'manager' || isOwner(ctx);
-    if (!allowedByRole) {
-      const cfg = passcodes(ctx);
-      if (passcode !== cfg.replyPasscode && passcode !== cfg.staffPasscode)
-        throw new SenderError('join as policyholder_demo or provide the reply passcode');
-    }
-    if (safety !== 'safe' && safety !== 'needs_help') throw new SenderError("safety must be 'safe' or 'needs_help'");
-    checkDamage(damage);
-    onEvent(
-      ctx,
-      { kind: 'sms_reply', t: simNow(ctx), householdId, safety, damage: damage as Damage },
-      'live'
-    );
-  }
+  (ctx, args) => smsReply(ctx, args)
+);
+
+/**
+ * Same as submit_sms_reply, but also stores the original free-text reply and its language
+ * (safety/damage are the values parsed from it, e.g. by Claude on the reply page).
+ */
+export const submitSmsTextReply = spacetimedb.reducer(
+  { name: 'submit_sms_text_reply' },
+  { householdId: t.string(), safety: t.string(), damage: t.u8(), text: t.string(), language: t.string(), passcode: t.string() },
+  (ctx, args) => smsReply(ctx, { ...args, text: args.text || undefined, language: args.language || undefined })
 );
 
 /** Adjuster field report. Caller must be an `adjuster` member. Completes their open assignment for the household. */
