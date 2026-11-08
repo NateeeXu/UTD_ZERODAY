@@ -21,6 +21,7 @@ import { useOutbox, type Draft, type ReportMode, type SentRecord } from './outbo
 import { PhoneMap, type MapArea } from './PhoneMap';
 import { CloseSheet, ReportScreen, SentSheet, type NextInfo, type ReportTarget } from './ReportFlow';
 import { Icon, needIcon } from './icons';
+import { useStickySheet } from './sheetState';
 import './adjuster.css';
 
 interface Task {
@@ -728,7 +729,7 @@ function TasksView({ moving, setMoving, open, done, me, hasStart, isDefaultStart
   onOpen: (id: string) => void; onGo: (id: string) => void; onDismiss: (t: Task, b: D.Banner) => void; onSkip: (t: Task) => void;
 }) {
   // Sheet: 'peek' = one line so the map shows, 'next' = Next best + Next up, 'all' = the whole list.
-  const [sheet, setSheet] = useState<'peek' | 'next' | 'all'>('next');
+  const [sheet, setSheet] = useStickySheet();
   const expanded = sheet === 'all';
   const up = () => setSheet((s) => (s === 'peek' ? 'next' : 'all'));
   const down = () => setSheet((s) => (s === 'all' ? 'next' : 'peek'));
