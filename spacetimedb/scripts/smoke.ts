@@ -388,6 +388,29 @@ async function main() {
     check('reply "4." records damage as unknown', latestReply()?.text === '4.' && latestReply()?.damageKnown === false);
     await replyLevelOf('3 people trapped upstairs');
     check('a count is not a level: "3 people trapped" goes to the parser', pendingInbox() === inboxBefore + 1 && latestReply()?.text === '4.');
+    // A task a manager sent: opening it tells the policyholder, once.
+    await subscribe(manager.conn, ['SELECT * FROM household_estimate']);
+    const sentHome = [...db.household.iter()].find(h => h.id !== top.householdId && h.id !== unlisted.id && ![...db.assignment.iter()].some(a => a.householdId === h.id));
+    if (sentHome) {
+      const notesFor = () => [...db.chatMessage.iter()].filter(c => c.householdId === sentHome.id && c.sender === 'system').length;
+      const queuedFor = () => [...db.imessageOutbox.iter()].filter(m => m.householdId === sentHome.id).length;
+      await adjuster.conn.reducers.notifyAssignedTask({ householdId: sentHome.id });
+      await sleep(200);
+      check('opening a home not assigned to you sends nothing', notesFor() === 0 && queuedFor() === 0);
+      await manager.conn.reducers.assign({ householdId: sentHome.id, adjusterIdentityHex: adjuster.identity.toHexString() });
+      await sleep(200);
+      check('a manager assignment alone sends nothing', notesFor() === 0 && queuedFor() === 0);
+      await expectReject('outsider notify_assigned_task', outsider.conn.reducers.notifyAssignedTask({ householdId: sentHome.id }));
+      await adjuster.conn.reducers.notifyAssignedTask({ householdId: sentHome.id });
+      await sleep(300);
+      check('opening a manager-sent task sends one notice', notesFor() === 1 && queuedFor() === 1, `${notesFor()} chat, ${queuedFor()} iMessage`);
+      await adjuster.conn.reducers.notifyAssignedTask({ householdId: sentHome.id });
+      await sleep(300);
+      check('opening it again sends nothing more', notesFor() === 1 && queuedFor() === 1);
+    }
+    await adjuster.conn.reducers.notifyAssignedTask({ householdId: top.householdId });
+    await sleep(300);
+    check('opening an accepted task does not repeat its notice', chat().filter(c => c.sender === 'system').length === 1 && notices().length === 1);
     if (notice) {
       await expectReject('outsider mark_imessage', outsider.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' }));
       await manager.conn.reducers.markImessage({ id: notice.id, status: 'sent', error: '' });

@@ -451,7 +451,7 @@ const inspectionValue = (inspectScore * 2) / (2 + verifiedHouseholdsInCell);
 - In the app it says `Reply here`. By iMessage it says `Open the Saviu app and reply`, and bridge replies are read only while the Mac has Full Disk Access.
 - A reply that is only `1`-`4` skips the parser and is stored as `damage` 1, 2, 3 or unknown, with no statement about the people (call-back-only). A reply that starts with a level (`3, roof is gone`) goes to the parser and keeps that level as its damage.
 - `{task}` is `inspect your home` (`kind = 'inspection'`) or `check on your household` (`welfare`). Neither text promises an arrival time.
-- No notice when the task was no longer needed, and none for manager assignments (`assign`, `assign_hex`).
+- No notice when the task was no longer needed. A manager assignment (`assign`, `assign_hex`) sends none by itself; the same notice goes out when the adjuster opens the task (`notify_assigned_task`), once per adjuster and household.
 
 ### `disaster_request`: the "New random disaster" button
 `id` (u64 PK), `region` (`tx` hurricane / `ca` earthquake), `status` (`queued` / `running` / `done` / `failed`), `error` (`''`, or why it failed), `requestedBy`, `createdAt`, `updatedAt`. At most one row: the current or latest request. Survives `wipe_world` and `reset_demo`, because the load it asks for runs them. `scripts/disaster-worker.ts` (section 9) does the work; with no worker a request stays `queued` until cancelled.
@@ -491,6 +491,7 @@ Client call style: `conn.reducers.submitFieldReport({ householdId, safety, damag
 | `update_my_location` | lat, lng, source (`demo` / `gps`) | **`adjuster` members only** | Sets the caller's `adjuster_location` and rebuilds their "Next best" list |
 | `refresh_recommendations` | none | **`adjuster` members only** | Rebuilds the caller's list. Rejects with `set your location first` when there is no position |
 | `accept_recommendation` | householdId | **`adjuster` members only** | Self-assigns a household from the caller's list, notifies the policyholder (`chat_message` plus a queued `imessage_outbox` row, see section 4) and rebuilds the list. If the task is no longer needed, removes the row and refreshes the list, with no assignment, no notice and no error. Rejects with `not in your Next best list` for any other household |
+| `notify_assigned_task` | householdId | **`adjuster` members only** | Sends the task notice (chat and iMessage) for a home assigned to the caller. Does nothing if it is not assigned to them or they have already notified it. |
 | `send_chat_message` | householdId, text (1–500 chars after trimming) | **`adjuster` members only**, with a non-cancelled assignment on that household | Appends a `chat_message` (`sender = 'adjuster'`). Also works after the visit (`done`). In the app only, never sent by iMessage. Rejects with `only the assigned adjuster can message this household` |
 | `mark_imessage` | id (u64), status (`sent` / `failed`), error (truncated to 200) | manager / owner | Delivery result from `scripts/imessage-bridge.ts`: sets `status`, `error` and `updatedAt` on `imessage_outbox` |
 | `request_new_disaster` | region (`tx` / `ca`) | manager / owner | Queues one random disaster. Rejected while another is `queued` or `running`. Replaces the previous finished row. |

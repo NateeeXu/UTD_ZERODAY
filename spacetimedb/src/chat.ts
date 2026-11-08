@@ -8,6 +8,12 @@ export function addChat(ctx: Ctx, householdId: string, sender: ChatSender, sende
   ctx.db.chatMessage.insert({ id: 0n, householdId, sender, senderName, text, createdAt: ctx.timestamp });
 }
 
+/** Whether this adjuster's assignment notice has already gone to this household. */
+export function wasNotified(ctx: Ctx, householdId: string, adjusterName: string): boolean {
+  const start = `Adjuster ${adjusterName} has been assigned`;
+  return [...ctx.db.chatMessage.householdId.filter(householdId)].some(m => m.sender === 'system' && m.text.startsWith(start));
+}
+
 /** In-app message plus a queued iMessage, from the one template in notice-template.ts. */
 export function notifyTaskAccepted(ctx: Ctx, householdId: string, kind: string, adjusterName: string) {
   addChat(ctx, householdId, 'system', 'Automated assistant', acceptNotice(adjusterName, kind, 'app'));

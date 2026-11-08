@@ -9,7 +9,7 @@ import { isOwner, memberOf, requireAdjuster, requireManager, ROLES, SINGLETON, s
 import { NEEDS, onEvent, parseNeeds } from '../ingest';
 import { recomputeHex } from '../fusion';
 import type { Damage, Safety } from '../fusion/contract';
-import { addChat, notifyTaskAccepted } from '../chat';
+import { addChat, notifyTaskAccepted, wasNotified } from '../chat';
 import { replyLevel } from '../notice-template';
 import { afterFieldReport, dropFromAllLists, forgetAdjuster, recomputeRecommendations, setAdjusterLocation, stillNeeded } from '../recommend';
 
@@ -389,6 +389,22 @@ function assignOne(ctx: Ctx, householdId: string, adjuster: Identity) {
   });
   dropFromAllLists(ctx, householdId);
 }
+
+/**
+ * The adjuster opened a task a manager sent them: tell the policyholder, as accepting from Next best does.
+ * Once per adjuster and household, so opening it again (or an accepted task) sends nothing.
+ */
+export const notifyAssignedTask = spacetimedb.reducer(
+  { name: 'notify_assigned_task' },
+  { householdId: t.string() },
+  (ctx, { householdId }) => {
+    const me = requireAdjuster(ctx);
+    const mine = [...ctx.db.assignment.householdId.filter(householdId)].some(a => a.adjuster.equals(ctx.sender) && a.status === 'assigned');
+    if (!mine || wasNotified(ctx, householdId, me.name)) return;
+    const estimate = ctx.db.householdEstimate.householdId.find(householdId);
+    notifyTaskAccepted(ctx, householdId, estimate?.accounted ? 'inspection' : 'welfare', me.name);
+  }
+);
 
 function requireAdjusterMember(ctx: Ctx, identityHex: string): Identity {
   const adjuster = parseIdentity(identityHex);
