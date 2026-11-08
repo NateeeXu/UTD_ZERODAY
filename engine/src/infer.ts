@@ -345,8 +345,10 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
     if (!m.verified) spreadSum += 4 * m.pSevere * (1 - m.pSevere);
     else if (m.pNeedsHelp >= cfg.verifiedValues.high) verifiedHelp++;
   }
-  // 90% interval for the number of severe households (src/interval.ts).
+  // 90% interval for the number of severe households (src/interval.ts). Its mean counts verified households
+  // as known (0 or 1) instead of their soft 0.02 / 0.98, so the point estimate always sits inside the interval.
   const interval = severeIntervalFor(agg, members, cfg, ctx?.tau2, ctx?.tail);
+  expectedSevere = interval.mean;
   const severeShare = n > 0 ? expectedSevere / n : 0;
   const severity = clamp01(1 - (1 - severeShare) * (1 - maxPNeedsHelp));
 

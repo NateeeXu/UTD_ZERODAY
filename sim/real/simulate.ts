@@ -14,6 +14,7 @@ import type { HurricaneScenario, Scenario } from './scenarios.ts';
 import { parseShakeMapGrid } from './geo.ts';
 import { RAW_DIR } from './sources.ts';
 import { replyLanguage, replyText } from './textgen.ts';
+import { distanceToSegmentKm, ipeMmi, ruptureLengthKm, ruptureSegment } from './quake-model.ts';
 import { replyLabels, truthLocation, truthNeedType, truthReturnMin, locationAt } from '../src/needs.ts';
 
 export const HORIZON_MIN = 4320;
@@ -164,6 +165,16 @@ export function simulate(base: BaseWorld, data: RegionData, sc: Scenario, opt: S
       flood.set(c.hex, f);
     }
     notes.push(`Track: landfall ${sc.landfall.lat},${sc.landfall.lng}, heading ${sc.headingDeg} deg, ${sc.vmaxMph} mph, Rmax ${sc.rmaxKm} km, surge ${sc.surgeFt} ft.`);
+  } else if (sc.parametric) {
+    // Random event: finite rupture + intensity prediction equation (real/quake-model.ts), small cell noise.
+    const q = sc.parametric;
+    const len = ruptureLengthKm(q.magnitude);
+    const [ra, rb] = ruptureSegment(q.epicenter, q.strikeDeg, len);
+    for (const c of cells) {
+      const d = distanceToSegmentKm({ lat: c.lat, lng: c.lng }, ra, rb);
+      mmi.set(c.hex, clamp(ipeMmi(q.magnitude, d) + hazardRng.normal(0, 0.15), 1, 10));
+    }
+    notes.push(`Parametric M${q.magnitude} on ${q.faultName}: epicentre ${q.epicenter.lat},${q.epicenter.lng}, strike ${q.strikeDeg} deg, rupture ${len.toFixed(0)} km, depth ${q.depthKm} km.`);
   } else {
     const g = parseShakeMapGrid(readFileSync(join(RAW_DIR, 'usgs', `grid_${sc.usgsEventId}.xml`), 'utf8'));
     for (const c of cells) mmi.set(c.hex, clamp(g.grid.sample(c.lat, c.lng), 1, 10));

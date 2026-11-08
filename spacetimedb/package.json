@@ -21,7 +21,8 @@
     "seed:tx": "node scripts/seed.ts --db triage-loop-tx --file ../data/real/tx-corpus-christi/live.json",
     "seed:ca": "node scripts/seed.ts --db triage-loop-ca --file ../data/real/ca-bay-area/live.json",
     "bench": "node scripts/bench.ts",
-    "parity": "node scripts/parity.ts"
+    "parity": "node scripts/parity.ts",
+    "disaster": "node scripts/new-disaster.ts"
   },
   "license": "MIT",
   "dependencies": {

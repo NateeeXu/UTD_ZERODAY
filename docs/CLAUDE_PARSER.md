@@ -78,7 +78,7 @@ Return only the extraction.
 | original text, `language` | `text`, `language` (kept for audit and the eval set) |
 
 ## Deployment
-- A small Node worker (`scripts/claude-worker.ts`, not written yet) using the **official Anthropic TypeScript SDK**, model `claude-opus-5-5`, low effort (extraction), structured output with the schema above.
+- A small Node worker (`scripts/claude-worker.ts`, not written yet) using the **official Anthropic TypeScript SDK**, model **`claude-sonnet-5-5`** (Claude Sonnet 5.5: the team's choice for the live API; fast and cheaper for short extraction), low effort, structured output with the schema above.
 - Flow: the reply page writes the raw text to Spacetime → the worker (subscribed) parses it → calls `submit_parsed_reply` with its own identity.
 - The **API key lives only in the worker's `.env`** (gitignored). Never in the frontend bundle, the repo, Spacetime tables or bindings.
 
