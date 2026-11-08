@@ -59,15 +59,38 @@ export function loadBundle(path: string): EventBundle {
   return b;
 }
 
-/** All backtest bundles in <dataDir>/backtest, sorted by file name (natural order for -1..-6). */
-export function loadBacktests(dataDir: string): EventBundle[] {
-  const dir = join(dataDir, 'backtest');
-  if (!existsSync(dir)) throw new Error(`no backtest directory at ${dir}`);
+/**
+ * All backtest bundles of a data directory, sorted by file name (natural order for -1..-6).
+ * Accepts both layouts: <dir>/backtest/*.json (Harbor Bend) and <dir>/backtest-N.json (real regions).
+ */
+export function backtestFiles(dataDir: string): string[] {
+  const sub = join(dataDir, 'backtest');
+  const dir = existsSync(sub) ? sub : dataDir;
+  if (!existsSync(dir)) throw new Error(`no data directory at ${dataDir}`);
   const files = readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    .filter((f) => f.endsWith('.json') && (dir === sub || /^backtest-.*\.json$/.test(f)))
     .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
-  if (files.length === 0) throw new Error(`no *.json files in ${dir}`);
-  return files.map((f) => loadBundle(join(dir, f)));
+  if (files.length === 0) throw new Error(`no backtest *.json files in ${dir}`);
+  return files.map((f) => join(dir, f));
+}
+
+export function loadBacktests(dataDir: string): EventBundle[] {
+  return backtestFiles(dataDir).map((f) => loadBundle(f));
+}
+
+/** Known data regions: id, directory, model output. */
+export interface RegionSpec {
+  id: string;
+  dir: string;
+  label: string;
+}
+
+export function knownRegions(dataRoot: string = DEFAULT_DATA_DIR): RegionSpec[] {
+  return [
+    { id: 'harbor-bend', dir: dataRoot, label: 'Harbor Bend, TX (synthetic hurricane)' },
+    { id: 'tx-corpus-christi', dir: join(dataRoot, 'real', 'tx-corpus-christi'), label: 'Corpus Christi, TX (hurricane, real geography)' },
+    { id: 'ca-bay-area', dir: join(dataRoot, 'real', 'ca-bay-area'), label: 'Alameda County, CA (earthquake, real geography)' },
+  ];
 }
 
 export function loadModel(path: string): ModelParams {

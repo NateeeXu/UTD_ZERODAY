@@ -4,13 +4,14 @@
 //   priority  P0  if any household has pNeedsHelp >= p0HelpProb
 //                 or expectedSevere / households >= p0SevereShare
 //             P1  if any pNeedsHelp >= p1HelpProb or severe share >= p1SevereShare
-//                 (and a high-hazard silent cell is never left at P2: silentHighHazardFloor)
 //             P2  otherwise
+//             A high-hazard silent cell is floored at silentHighHazardFloor
+//             (default P0, "suspected P0") and always needs verification.
 //   verification  needs_verification if confidence < thresholds.confidence
 //                 or (hazard >= highHazard and silence >= highSilence)
 // Verified households (field report present) take the reported values.
 
-import type { HexEstimate, HexId, Household, HouseholdEstimate, ModelParams, Priority, SimEvent, Verification, World } from '../../shared/types.ts';
+import type { Facility, HexCell, HexEstimate, HexId, Household, HouseholdEstimate, ModelParams, Priority, SimEvent, Verification, World } from '../../shared/types.ts';
 import type { TriageConfig } from './config.ts';
 import { DEFAULT_CONFIG, clamp, clamp01 } from './config.ts';
 import type { CellAggregate, FeatureName, Snapshot } from './features.ts';
@@ -211,6 +212,8 @@ export function estimateHouseholdsFromSnapshot(snap: Snapshot, models: ResolvedM
 /**
  * Silence: hazard-weighted share of expected signal that is missing,
  * attenuated while so little signal is expected that absence proves nothing.
+ * expectedHeard is conditioned on coverage / policy type (claims) and on
+ * limited English / being away (replies), see features.ts fillExpected.
  */
 export function cellSilence(agg: CellAggregate, cfg: TriageConfig): number {
   if (!(agg.expectedHeard > 0)) return 0;
@@ -219,14 +222,76 @@ export function cellSilence(agg: CellAggregate, cfg: TriageConfig): number {
   return clamp01(agg.hazard * deficit * evidence);
 }
 
+export type SilenceCause = NonNullable<HexEstimate['silenceCause']>;
+
+/**
+ * Why is the cell silent?
+ *   'outage'  tower outage >= cfg.silenceCause.outageExplains
+ *   'away'    daytime event and away-from-home households dominate the silent ones
+ *   'trapped' CMIST-vulnerable households (age75, disability, noVehicle, medicalDevice, livesAlone) dominate
+ *   'unknown' otherwise
+ * "Dominate" = at least dominantShare of the silent households and over-represented
+ * (by overRepresentation) relative to the whole cell. Returns undefined below minSilence.
+ */
+export function silenceCauseOf(agg: CellAggregate, silence: number, cfg: TriageConfig): SilenceCause | undefined {
+  const sc = cfg.silenceCause;
+  if (silence < sc.minSilence) return undefined;
+  if (agg.outage >= sc.outageExplains) return 'outage';
+  if (agg.silent === 0) return 'unknown';
+  const n = agg.households;
+  const awayShare = agg.silentAway / agg.silent;
+  const vulnShare = agg.silentVulnerable / agg.silent;
+  const awayCell = n > 0 ? agg.away / n : 0;
+  const vulnCell = n > 0 ? agg.vulnerable / n : 0;
+  const awayOk = agg.daytime && awayShare >= sc.dominantShare && awayShare >= awayCell * sc.overRepresentation;
+  const vulnOk = vulnShare >= sc.dominantShare && vulnShare >= vulnCell * sc.overRepresentation;
+  if (awayOk && vulnOk) {
+    const awayRatio = awayCell > 0 ? awayShare / awayCell : Infinity;
+    const vulnRatio = vulnCell > 0 ? vulnShare / vulnCell : Infinity;
+    return awayRatio >= vulnRatio ? 'away' : 'trapped';
+  }
+  if (awayOk) return 'away';
+  if (vulnOk) return 'trapped';
+  return 'unknown';
+}
+
 const PRIORITY_RANK: Record<Priority, number> = { P0: 0, P1: 1, P2: 2 };
 
 export function higherPriority(a: Priority, b: Priority): Priority {
   return PRIORITY_RANK[a] <= PRIORITY_RANK[b] ? a : b;
 }
 
+/** Optional context for the human-readable reason (schools for the students note). */
+export interface CellContext {
+  cell?: HexCell;
+  facilities?: readonly Facility[];
+  schoolHours?: boolean;
+}
+
+function fmtInt(x: number): string {
+  return Math.round(x).toLocaleString('en-US');
+}
+
+function pct(x: number): string {
+  return `${Math.round(x * 100)}%`;
+}
+
+/** Students note for a weekday school-hours event hitting a high-hazard cell with enrolled pupils. */
+export function studentsNote(ctx: CellContext | undefined, hazard: number, cfg: TriageConfig): string | null {
+  if (!ctx || !ctx.schoolHours || !ctx.cell) return null;
+  if (hazard < cfg.thresholds.highHazard) return null;
+  const k12 = ctx.cell.k12Enrollment ?? 0;
+  if (!(k12 > 0)) return null;
+  const schools = (ctx.facilities ?? []).filter((f) => f.kind === 'school' && f.hex === ctx.cell!.hex);
+  if (schools.length === 0) return `${fmtInt(k12)} students at local schools (school hours)`;
+  const top = schools.slice().sort((a, b) => (b.enrollment ?? 0) - (a.enrollment ?? 0) || (a.name < b.name ? -1 : 1))[0];
+  const more = schools.length > 1 ? ` and ${schools.length - 1} more school${schools.length > 2 ? 's' : ''}` : '';
+  const n = top.enrollment && top.enrollment > 0 ? top.enrollment : k12;
+  return `${fmtInt(n)} students at ${top.name}${more} (school hours)`;
+}
+
 /** Classify one cell from its aggregate and the estimates of its households. */
-export function classifyCell(agg: CellAggregate, members: readonly HouseholdEstimate[], cfg: TriageConfig): HexEstimate {
+export function classifyCell(agg: CellAggregate, members: readonly HouseholdEstimate[], cfg: TriageConfig, ctx?: CellContext): HexEstimate {
   const n = agg.households;
   if (members.length !== n) {
     throw new Error(`cell ${agg.hex}: aggregate has ${n} households but ${members.length} estimates were supplied`);
@@ -234,10 +299,12 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
   let expectedSevere = 0;
   let maxPNeedsHelp = 0;
   let spreadSum = 0;
+  let verifiedHelp = 0;
   for (const m of members) {
     expectedSevere += m.pSevere;
     if (m.pNeedsHelp > maxPNeedsHelp) maxPNeedsHelp = m.pNeedsHelp;
     if (!m.verified) spreadSum += 4 * m.pSevere * (1 - m.pSevere);
+    else if (m.pNeedsHelp >= cfg.verifiedValues.high) verifiedHelp++;
   }
   const severeShare = n > 0 ? expectedSevere / n : 0;
   const severity = clamp01(1 - (1 - severeShare) * (1 - maxPNeedsHelp));
@@ -256,14 +323,43 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
   const th = cfg.thresholds;
 
   let priority: Priority;
-  if (maxPNeedsHelp >= th.p0HelpProb || severeShare >= th.p0SevereShare) priority = 'P0';
-  else if (maxPNeedsHelp >= th.p1HelpProb || severeShare >= th.p1SevereShare) priority = 'P1';
-  else priority = 'P2';
+  let tierWhy: string;
+  if (maxPNeedsHelp >= th.p0HelpProb) {
+    priority = 'P0';
+    tierWhy = verifiedHelp > 0 ? `${verifiedHelp} household${verifiedHelp > 1 ? 's' : ''} confirmed needing help` : `credible needs-help signal (max ${pct(maxPNeedsHelp)})`;
+  } else if (severeShare >= th.p0SevereShare) {
+    priority = 'P0';
+    tierWhy = `${expectedSevere.toFixed(1)} of ${n} expected severe`;
+  } else if (maxPNeedsHelp >= th.p1HelpProb) {
+    priority = 'P1';
+    tierWhy = `possible needs-help (max ${pct(maxPNeedsHelp)})`;
+  } else if (severeShare >= th.p1SevereShare) {
+    priority = 'P1';
+    tierWhy = `${expectedSevere.toFixed(1)} of ${n} expected severe`;
+  } else {
+    priority = 'P2';
+    tierWhy = n > 0 ? `${expectedSevere.toFixed(1)} of ${n} expected severe` : 'no policyholders';
+  }
 
   const highHazardSilent = agg.hazard >= th.highHazard && silence >= th.highSilence;
-  if (highHazardSilent) priority = higherPriority(priority, th.silentHighHazardFloor);
-
+  let suspected = false;
+  if (highHazardSilent && PRIORITY_RANK[th.silentHighHazardFloor] < PRIORITY_RANK[priority]) {
+    priority = th.silentHighHazardFloor;
+    suspected = true;
+  }
   const verification: Verification = confidence < th.confidence || highHazardSilent ? 'needs_verification' : 'verified';
+  const silenceCause = silenceCauseOf(agg, silence, cfg);
+
+  const parts: string[] = [];
+  parts.push(suspected ? `suspected ${priority}: high hazard (${pct(agg.hazard)}) and silent` : `${priority}: ${tierWhy}`);
+  if (silence >= cfg.silenceCause.minSilence) {
+    const cause = silenceCause === 'outage' ? 'tower outage' : silenceCause === 'away' ? 'residents away' : silenceCause === 'trapped' ? 'vulnerable residents may be trapped' : 'cause unknown';
+    parts.push(`silence ${pct(silence)} (${agg.replied}/${agg.smsSent} replied, ${agg.claimed} claim${agg.claimed === 1 ? '' : 's'}, outage ${pct(agg.outage)}): ${cause}`);
+  }
+  if (agg.fieldReported > 0) parts.push(`${agg.fieldReported}/${n} field-verified`);
+  parts.push(verification === 'verified' ? `confidence ${pct(confidence)}` : `needs verification (confidence ${pct(confidence)})`);
+  const note = studentsNote(ctx, agg.hazard, cfg);
+  if (note) parts.push(note);
 
   return {
     hex: agg.hex,
@@ -281,7 +377,28 @@ export function classifyCell(agg: CellAggregate, members: readonly HouseholdEsti
       claims: agg.claimed,
       fieldReports: agg.fieldReported,
     },
+    hazard: agg.hazard,
+    reason: parts.join('; '),
+    ...(silenceCause !== undefined ? { silenceCause } : {}),
   };
+}
+
+/**
+ * Active-inspection score of a household, normalised to 0..1 (0 for verified):
+ * (wSevere*pSevere + wHelp*pNeedsHelp + wUncertainty*uncertainty + wSilence*cellSilence
+ *  + wNeedsVerification*[cell needs verification]) / sum of weights.
+ */
+export function inspectionScore(e: HouseholdEstimate, cell: Pick<HexEstimate, 'silence' | 'verification'>, cfg: TriageConfig): number {
+  if (e.verified) return 0;
+  const w = cfg.active;
+  const wSum = w.wSevere + w.wHelp + w.wUncertainty + w.wSilence + w.wNeedsVerification;
+  const nv = cell.verification === 'needs_verification' ? 1 : 0;
+  return (w.wSevere * e.pSevere + w.wHelp * e.pNeedsHelp + w.wUncertainty * e.uncertainty + w.wSilence * cell.silence + w.wNeedsVerification * nv) / wSum;
+}
+
+/** Household estimates of one cell with inspectScore filled in (pure). */
+export function attachInspectScores(members: readonly HouseholdEstimate[], hex: HexEstimate, cfg: TriageConfig): HouseholdEstimate[] {
+  return members.map((e) => ({ ...e, inspectScore: inspectionScore(e, hex, cfg) }));
 }
 
 /** Group household estimates by hex (in world.hexes order). */
@@ -296,9 +413,25 @@ export function groupByHex(snap: Snapshot, estimates: readonly HouseholdEstimate
   return groups;
 }
 
+export function cellContext(snap: Snapshot, hex: HexId): CellContext {
+  return { cell: snap.cellById.get(hex), facilities: snap.facilitiesByHex.get(hex) ?? [], schoolHours: snap.ctx.schoolHours };
+}
+
 export function estimateHexesFromSnapshot(snap: Snapshot, estimates: readonly HouseholdEstimate[], cfg: TriageConfig): HexEstimate[] {
   const groups = groupByHex(snap, estimates);
-  return snap.world.hexes.map((c) => classifyCell(snap.cells.get(c.hex)!, groups.get(c.hex)!, cfg));
+  return snap.world.hexes.map((c) => classifyCell(snap.cells.get(c.hex)!, groups.get(c.hex)!, cfg, cellContext(snap, c.hex)));
+}
+
+/** Fill inspectScore on every household estimate from its cell's estimate (pure). */
+export function withInspectScores(snap: Snapshot, estimates: readonly HouseholdEstimate[], hexes: readonly HexEstimate[], cfg: TriageConfig): HouseholdEstimate[] {
+  const hexById = new Map<HexId, HexEstimate>();
+  for (const x of hexes) hexById.set(x.hex, x);
+  return estimates.map((e) => {
+    const h = snap.householdById.get(e.householdId);
+    const x = h ? hexById.get(h.hex) : undefined;
+    if (!h || !x) throw new Error(`no hex estimate for household ${e.householdId}`);
+    return { ...e, inspectScore: inspectionScore(e, x, cfg) };
+  });
 }
 
 export interface Estimates {
@@ -309,7 +442,7 @@ export interface Estimates {
   hexes: HexEstimate[];
 }
 
-/** One-call inference: snapshot at t, household estimates, hex estimates. */
+/** One-call inference: snapshot at t, household estimates (with inspectScore), hex estimates. */
 export function estimateAll(
   world: World,
   events: readonly SimEvent[],
@@ -320,8 +453,9 @@ export function estimateAll(
 ): Estimates {
   const models = resolveModels(params, cfg, trust);
   const snapshot = buildSnapshot(world, events, t, cfg);
-  const households = estimateHouseholdsFromSnapshot(snapshot, models, cfg);
-  const hexes = estimateHexesFromSnapshot(snapshot, households, cfg);
+  const raw = estimateHouseholdsFromSnapshot(snapshot, models, cfg);
+  const hexes = estimateHexesFromSnapshot(snapshot, raw, cfg);
+  const households = withInspectScores(snapshot, raw, hexes, cfg);
   return { t, snapshot, models, households, hexes };
 }
 

@@ -1,213 +1,356 @@
-// Backtest calibration.
-//   node scripts/calibrate.ts [dataDir] [--out=<model.json>] [--test=backtest-6]
-//                             [--times=360,720,1440,2880] [--l2=1]
-// Trains P(damage>=2) and P(needs_help) on non-holdout households of every
-// backtest except the test event, at several snapshot times, and reports
-// Brier / ECE / AUC on the test event (all + holdout households) and on the
-// holdout households of the training events. A hazard-only baseline
-// (maps + policy attributes, no SMS, no claims) is fitted the same way so the
-// gain from fusion is visible.
+// Backtest calibration (v2): leave-one-event-out per region, region-specific vs pooled.
+//   node scripts/calibrate.ts                       # all known regions under <repo>/data
+//   node scripts/calibrate.ts --regions tx-corpus-christi,ca-bay-area
+//   node scripts/calibrate.ts <dataDir> --out <model.json>   # one directory (no pooling partner)
+// Options: --data-root <dir> --times 360,720,1440,2880 --l2 1 --no-pooled
+//
+// For every region and every backtest event e (leave-one-event-out):
+//   specific: train on the region's other events;  pooled: train on every other event of every region
+//   (all hazards share the 0-1 hazardIndex). Both are evaluated on e (all households and holdout only).
+// The strategy with the lower mean severe Brier wins; the final model is that strategy trained on
+// all backtests, and ModelParams.calibration stores the LOEO means (never in-sample numbers).
+// Holdout households are never trained on. Truth is used only as labels. sim-meta.json is never read.
 
-import { join } from 'node:path';
-import type { EventBundle, ModelParams } from '../../shared/types.ts';
+import { existsSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
+import type { EventBundle, HazardType, ModelParams } from '../../shared/types.ts';
 import { DEFAULT_CONFIG } from '../src/config.ts';
-import { FEATURE_NAMES, HAZARD_BASELINE_FEATURES, buildSnapshot, householdFeatureRecord, selectFeatures } from '../src/features.ts';
-import type { FeatureName } from '../src/features.ts';
+import { FEATURE_NAMES, HAZARD_BASELINE_FEATURES, buildSnapshot, householdFeatureRecord, worldContext } from '../src/features.ts';
 import { fitLogistic, predictProb } from '../src/logistic.ts';
 import type { FitResult, LinearModel } from '../src/logistic.ts';
 import { brier, summarize } from '../src/metrics.ts';
 import type { MetricSummary } from '../src/metrics.ts';
 import { sourceOpinions } from '../src/learning.ts';
-import { fmt, heading, loadBacktests, minutesLabel, parseArgs, pct, resolveDataDir, table, truthMap, writeJson } from './io.ts';
+import { DEFAULT_DATA_DIR, fmt, heading, knownRegions, loadBacktests, minutesLabel, parseArgs, pct, table, truthMap, writeJson } from './io.ts';
+import type { RegionSpec } from './io.ts';
 
 const cfg = DEFAULT_CONFIG;
 const args = parseArgs(process.argv.slice(2));
-const dataDir = resolveDataDir(args);
-const outPath = args.flags.get('out') ?? join(dataDir, 'model.json');
 const times = (args.flags.get('times') ?? '360,720,1440,2880').split(',').map(Number);
 const l2 = Number(args.flags.get('l2') ?? 1);
+const usePooled = args.flags.get('no-pooled') !== 'true';
+const dataRoot = resolve(args.flags.get('data-root') ?? DEFAULT_DATA_DIR);
 
-interface Row {
-  world: string;
-  t: number;
-  holdout: boolean;
-  x: number[];
-  ySevere: 0 | 1;
-  yHelp: 0 | 1;
-  opinions: { hazard: number; sms: number | null; claims: number | null };
+// ---------- which regions ----------
+let regions: RegionSpec[];
+let singleOut: string | null = null;
+if (args.positional.length > 0) {
+  const dir = resolve(args.positional[0]);
+  regions = [{ id: basename(dir), dir, label: dir }];
+  singleOut = args.flags.get('out') ?? join(dir, 'model.json');
+} else {
+  const wanted = args.flags.get('regions')?.split(',');
+  regions = knownRegions(dataRoot).filter((r) => !wanted || wanted.includes(r.id));
+  const missing = regions.filter((r) => !existsSync(r.dir));
+  for (const m of missing) console.log(`skipping ${m.id}: ${m.dir} does not exist`);
+  regions = regions.filter((r) => existsSync(r.dir));
+}
+if (regions.length === 0) throw new Error('no regions to calibrate');
+
+// ---------- rows ----------
+interface WorldRows {
+  region: string;
+  eventId: string;
+  key: string;
+  hazardType: HazardType;
+  worldRegion: string | undefined;
+  X: Float64Array[];
+  ySevere: Uint8Array;
+  yHelp: Uint8Array;
+  holdout: Uint8Array;
+  t: Int32Array;
+  opinionHazard: Float64Array;
+  opinionSms: Float64Array; // NaN = no opinion
+  opinionClaims: Float64Array;
 }
 
-function buildRows(b: EventBundle, t: number): Row[] {
+function buildWorldRows(region: string, b: EventBundle): WorldRows {
   const truth = truthMap(b.truth);
-  const snap = buildSnapshot(b.world, b.events, t, cfg);
-  const rows: Row[] = [];
-  for (const h of b.world.households) {
-    const tr = truth.get(h.id);
-    if (!tr) throw new Error(`${b.world.eventId}: no truth for ${h.id}`);
-    const rec = householdFeatureRecord(h, snap, cfg);
-    rows.push({
-      world: b.world.eventId,
-      t,
-      holdout: h.holdout,
-      x: FEATURE_NAMES.map((n) => rec[n]),
-      ySevere: tr.damage >= 2 ? 1 : 0,
-      yHelp: tr.safety === 'needs_help' ? 1 : 0,
-      opinions: sourceOpinions(h.id, snap),
-    });
+  const n = b.world.households.length * times.length;
+  const X: Float64Array[] = new Array(n);
+  const ySevere = new Uint8Array(n);
+  const yHelp = new Uint8Array(n);
+  const holdout = new Uint8Array(n);
+  const tArr = new Int32Array(n);
+  const oh = new Float64Array(n);
+  const os = new Float64Array(n);
+  const oc = new Float64Array(n);
+  let i = 0;
+  for (const t of times) {
+    const snap = buildSnapshot(b.world, b.events, t, cfg);
+    for (const h of b.world.households) {
+      const tr = truth.get(h.id);
+      if (!tr) throw new Error(`${b.world.eventId}: no truth for ${h.id}`);
+      const rec = householdFeatureRecord(h, snap, cfg);
+      const row = new Float64Array(FEATURE_NAMES.length);
+      for (let j = 0; j < FEATURE_NAMES.length; j++) row[j] = rec[FEATURE_NAMES[j]];
+      X[i] = row;
+      ySevere[i] = tr.damage >= 2 ? 1 : 0;
+      yHelp[i] = tr.safety === 'needs_help' ? 1 : 0;
+      holdout[i] = h.holdout ? 1 : 0;
+      tArr[i] = t;
+      const op = sourceOpinions(h.id, snap);
+      oh[i] = op.hazard;
+      os[i] = op.sms === null ? NaN : op.sms;
+      oc[i] = op.claims === null ? NaN : op.claims;
+      i++;
+    }
   }
-  return rows;
+  return {
+    region,
+    eventId: b.world.eventId,
+    key: `${region}/${b.world.eventId}`,
+    hazardType: worldContext(b.world, cfg).hazardType,
+    worldRegion: b.world.region,
+    X,
+    ySevere,
+    yHelp,
+    holdout,
+    t: tArr,
+    opinionHazard: oh,
+    opinionSms: os,
+    opinionClaims: oc,
+  };
 }
-
-const bundles = loadBacktests(dataDir);
-const testId = args.flags.get('test') ?? (bundles.some((b) => b.world.eventId === 'backtest-6') ? 'backtest-6' : bundles[bundles.length - 1].world.eventId);
-const test = bundles.find((b) => b.world.eventId === testId);
-if (!test) throw new Error(`test event ${testId} not found among ${bundles.map((b) => b.world.eventId).join(', ')}`);
-const train = bundles.filter((b) => b.world.eventId !== testId);
-if (train.length === 0) throw new Error('need at least one training event besides the test event');
-
-console.log(`data: ${dataDir}`);
-console.log(`train: ${train.map((b) => b.world.eventId).join(', ')}   test: ${testId}   snapshots: ${times.map(minutesLabel).join(' ')}   l2=${l2}`);
 
 const t0 = Date.now();
-const trainRows: Row[] = [];
-const trainHoldoutRows: Row[] = [];
-for (const b of train) {
-  for (const t of times) {
-    for (const r of buildRows(b, t)) (r.holdout ? trainHoldoutRows : trainRows).push(r);
-  }
+const worldsByRegion = new Map<string, WorldRows[]>();
+for (const r of regions) {
+  const bundles = loadBacktests(r.dir);
+  const rows = bundles.map((b) => buildWorldRows(r.id, b));
+  worldsByRegion.set(r.id, rows);
+  const ctx = worldContext(bundles[0].world, cfg);
+  console.log(
+    `${r.id}: ${rows.map((w) => `${w.eventId} (${w.X.length / times.length} hh)`).join(', ')}  hazard=${ctx.hazardType} daytime=${ctx.daytime} schoolHours=${ctx.schoolHours} (time from ${ctx.timeSource})`,
+  );
 }
-const testRowsByTime = new Map<number, Row[]>();
-for (const t of times) testRowsByTime.set(t, buildRows(test, t));
-const testRows = times.flatMap((t) => testRowsByTime.get(t)!);
-console.log(`rows: train ${trainRows.length} (non-holdout), train-holdout ${trainHoldoutRows.length}, test ${testRows.length}  [${Date.now() - t0} ms]`);
+const allWorlds = [...worldsByRegion.values()].flat();
+console.log(`rows built in ${Date.now() - t0} ms; snapshots ${times.map(minutesLabel).join(' ')}; l2=${l2}; features ${FEATURE_NAMES.length} (baseline ${HAZARD_BASELINE_FEATURES.length})`);
 
-// ---------- fit ----------
-const baselineIdx = HAZARD_BASELINE_FEATURES.map((n) => FEATURE_NAMES.indexOf(n));
-const pick = (x: readonly number[], idx: readonly number[]): number[] => idx.map((i) => x[i]);
+// ---------- fitting ----------
+const baselineCols = HAZARD_BASELINE_FEATURES.map((n) => FEATURE_NAMES.indexOf(n));
 
-function fit(label: string, X: number[][], y: number[]): FitResult {
+interface TrainSet {
+  X: Float64Array[];
+  ySevere: number[];
+  yHelp: number[];
+}
+
+function trainSet(worlds: readonly WorldRows[]): TrainSet {
+  const X: Float64Array[] = [];
+  const ySevere: number[] = [];
+  const yHelp: number[] = [];
+  for (const w of worlds) {
+    for (let i = 0; i < w.X.length; i++) {
+      if (w.holdout[i]) continue; // holdout households never train
+      X.push(w.X[i]);
+      ySevere.push(w.ySevere[i]);
+      yHelp.push(w.yHelp[i]);
+    }
+  }
+  return { X, ySevere, yHelp };
+}
+
+interface Fitted {
+  severe: FitResult;
+  help: FitResult;
+  severeBase: FitResult;
+  helpBase: FitResult;
+  rows: number;
+  ms: number;
+}
+
+function fitAll(ts: TrainSet): Fitted {
   const t1 = Date.now();
-  const res = fitLogistic(X, y, { l2, maxIter: 60, tol: 1e-8 });
-  console.log(`fit ${label}: ${res.iterations} iterations, converged=${res.converged}, loss=${fmt(res.finalLoss, 1)} [${Date.now() - t1} ms]`);
-  return res;
-}
-
-const Xfull = trainRows.map((r) => r.x);
-const Xbase = trainRows.map((r) => pick(r.x, baselineIdx));
-const ySevere = trainRows.map((r) => r.ySevere);
-const yHelp = trainRows.map((r) => r.yHelp);
-
-const severeFit = fit('severe (fusion)', Xfull, ySevere);
-const helpFit = fit('needsHelp (fusion)', Xfull, yHelp);
-const severeBase = fit('severe (hazard-only)', Xbase, ySevere);
-const helpBase = fit('needsHelp (hazard-only)', Xbase, yHelp);
-
-// ---------- evaluate ----------
-function evalRows(rows: readonly Row[], model: LinearModel, idx: readonly number[] | null, which: 'severe' | 'help'): MetricSummary {
-  const p = rows.map((r) => predictProb(model, idx ? pick(r.x, idx) : r.x));
-  const y = rows.map((r) => (which === 'severe' ? r.ySevere : r.yHelp));
-  return summarize(p, y);
-}
-
-interface EvalSet {
-  label: string;
-  rows: Row[];
-}
-
-function evalSets(): EvalSet[] {
-  const sets: EvalSet[] = [];
-  for (const t of times) {
-    const rows = testRowsByTime.get(t)!;
-    sets.push({ label: `${testId} all @${minutesLabel(t)}`, rows });
+  const opts = { l2, maxIter: 60, tol: 1e-8 };
+  const severe = fitLogistic(ts.X, ts.ySevere, opts);
+  const help = fitLogistic(ts.X, ts.yHelp, opts);
+  const severeBase = fitLogistic(ts.X, ts.ySevere, opts, baselineCols);
+  const helpBase = fitLogistic(ts.X, ts.yHelp, opts, baselineCols);
+  for (const [name, f] of [['severe', severe], ['help', help], ['severe-base', severeBase], ['help-base', helpBase]] as const) {
+    if (!f.converged) console.log(`  warning: ${name} did not converge in ${f.iterations} iterations`);
   }
-  sets.push({ label: `${testId} all pooled`, rows: testRows });
-  sets.push({ label: `${testId} holdout pooled`, rows: testRows.filter((r) => r.holdout) });
-  sets.push({ label: `train-events holdout pooled`, rows: trainHoldoutRows });
-  return sets;
+  return { severe, help, severeBase, helpBase, rows: ts.X.length, ms: Date.now() - t1 };
 }
 
-function metricsTable(which: 'severe' | 'help', full: LinearModel, base: LinearModel): string {
-  const rows = evalSets().map((s) => {
-    const f = evalRows(s.rows, full, null, which);
-    const b = evalRows(s.rows, base, baselineIdx, which);
-    return [s.label, String(f.n), pct(f.positives / Math.max(f.n, 1), 1), f.brier, f.ece, f.auc, b.brier, b.ece, b.auc, f.brier - b.brier];
+function predictRows(model: LinearModel, X: readonly Float64Array[], idx: readonly number[], cols: readonly number[] | null): number[] {
+  const out = new Array<number>(idx.length);
+  const buf = cols ? new Float64Array(cols.length) : null;
+  for (let k = 0; k < idx.length; k++) {
+    const row = X[idx[k]];
+    if (cols && buf) {
+      for (let j = 0; j < cols.length; j++) buf[j] = row[cols[j]];
+      out[k] = predictProb(model, buf);
+    } else out[k] = predictProb(model, row);
+  }
+  return out;
+}
+
+interface EvalResult {
+  severe: MetricSummary;
+  help: MetricSummary;
+  severeBase: MetricSummary;
+  helpBase: MetricSummary;
+}
+
+function evaluate(f: Fitted, w: WorldRows, onlyHoldout: boolean): EvalResult {
+  const idx: number[] = [];
+  for (let i = 0; i < w.X.length; i++) if (!onlyHoldout || w.holdout[i]) idx.push(i);
+  const yS = idx.map((i) => w.ySevere[i]);
+  const yH = idx.map((i) => w.yHelp[i]);
+  return {
+    severe: summarize(predictRows(f.severe.model, w.X, idx, null), yS),
+    help: summarize(predictRows(f.help.model, w.X, idx, null), yH),
+    severeBase: summarize(predictRows(f.severeBase.model, w.X, idx, baselineCols), yS),
+    helpBase: summarize(predictRows(f.helpBase.model, w.X, idx, baselineCols), yH),
+  };
+}
+
+function meanOf(values: number[]): number {
+  const v = values.filter((x) => Number.isFinite(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN;
+}
+
+interface FoldRecord {
+  event: string;
+  strategy: 'specific' | 'pooled';
+  all: EvalResult;
+  holdout: EvalResult;
+  rows: number;
+  ms: number;
+}
+
+function evalRow(label: string, e: EvalResult, n: string): (string | number)[] {
+  return [label, n, pct(e.severe.positives / Math.max(e.severe.n, 1), 1), e.severe.brier, e.severe.ece, e.severe.auc, e.severeBase.brier, e.severeBase.auc, pct(e.help.positives / Math.max(e.help.n, 1), 1), e.help.brier, e.help.ece, e.help.auc, e.helpBase.brier, e.helpBase.auc];
+}
+const EVAL_HEADERS = ['fold / strategy', 'n', 'sev%', 'sev Brier', 'sev ECE', 'sev AUC', 'base Brier', 'base AUC', 'help%', 'help Brier', 'help ECE', 'help AUC', 'base Brier', 'base AUC'];
+
+function meanEval(list: EvalResult[]): EvalResult {
+  const m = (pick: (e: EvalResult) => MetricSummary): MetricSummary => ({
+    n: list.reduce((a, e) => a + pick(e).n, 0),
+    positives: list.reduce((a, e) => a + pick(e).positives, 0),
+    brier: meanOf(list.map((e) => pick(e).brier)),
+    ece: meanOf(list.map((e) => pick(e).ece)),
+    auc: meanOf(list.map((e) => pick(e).auc)),
+    logLoss: meanOf(list.map((e) => pick(e).logLoss)),
   });
-  return table(['set', 'n', 'pos', 'Brier', 'ECE', 'AUC', 'base Brier', 'base ECE', 'base AUC', 'dBrier'], rows);
+  return { severe: m((e) => e.severe), help: m((e) => e.help), severeBase: m((e) => e.severeBase), helpBase: m((e) => e.helpBase) };
 }
 
-console.log(heading('P(damage >= 2): fusion vs hazard-only baseline (lower Brier/ECE better, higher AUC better)'));
-console.log(metricsTable('severe', severeFit.model, severeBase.model));
-console.log(heading('P(safety = needs_help): fusion vs hazard-only baseline'));
-console.log(metricsTable('help', helpFit.model, helpBase.model));
-
-function topWeights(res: FitResult, names: readonly string[], k = 10): string {
-  const order = res.standardizedWeights.map((w, i) => ({ w, i })).sort((a, b) => Math.abs(b.w) - Math.abs(a.w));
-  return order
-    .slice(0, k)
-    .map(({ w, i }) => `${names[i]} ${w >= 0 ? '+' : ''}${w.toFixed(2)}`)
-    .join(', ');
-}
-console.log(heading('largest standardised weights'));
-console.log(`severe:    ${topWeights(severeFit, FEATURE_NAMES)}`);
-console.log(`needsHelp: ${topWeights(helpFit, FEATURE_NAMES)}`);
-
-// ---------- source trust at calibration ----------
-// Each source's own P(severe) proxy (see learning.ts sourceOpinions), scored
-// as 1 - Brier against truth over the training rows. Online learning later
-// moves these numbers with the same definition.
-function trustFrom(rows: readonly Row[]): { trust: ModelParams['sourceTrust']; counts: Record<string, number> } {
-  const score = (key: 'hazard' | 'sms' | 'claims'): { v: number; n: number } => {
+function trustFrom(worlds: readonly WorldRows[]): ModelParams['sourceTrust'] {
+  const score = (pick: (w: WorldRows) => Float64Array): number => {
     const p: number[] = [];
     const y: number[] = [];
-    for (const r of rows) {
-      const o = r.opinions[key];
-      if (o === null) continue;
-      p.push(o);
-      y.push(r.ySevere);
+    for (const w of worlds) {
+      const o = pick(w);
+      for (let i = 0; i < w.X.length; i++) {
+        if (w.holdout[i] || Number.isNaN(o[i])) continue;
+        p.push(o[i]);
+        y.push(w.ySevere[i]);
+      }
     }
-    const b = brier(p, y);
-    return { v: p.length > 0 ? Math.min(1, Math.max(0.01, 1 - b)) : 0.5, n: p.length };
+    if (p.length === 0) return 0.5;
+    return Math.min(1, Math.max(0.01, 1 - brier(p, y)));
   };
-  const hz = score('hazard');
-  const sm = score('sms');
-  const cl = score('claims');
-  return { trust: { hazard: hz.v, sms: sm.v, claims: cl.v }, counts: { hazard: hz.n, sms: sm.n, claims: cl.n } };
+  return { hazard: score((w) => w.opinionHazard), sms: score((w) => w.opinionSms), claims: score((w) => w.opinionClaims) };
 }
-const trustTrain = trustFrom(trainRows);
-const trustTest = trustFrom(testRows.filter((r) => !r.holdout));
-console.log(heading('source trust = 1 - Brier of each source\'s own severe-damage signal'));
-console.log(
-  table(
-    ['set', 'hazard', 'n', 'sms', 'n', 'claims', 'n'],
-    [
-      ['train events', trustTrain.trust.hazard, String(trustTrain.counts.hazard), trustTrain.trust.sms, String(trustTrain.counts.sms), trustTrain.trust.claims, String(trustTrain.counts.claims)],
-      [`${testId} (non-holdout)`, trustTest.trust.hazard, String(trustTest.counts.hazard), trustTest.trust.sms, String(trustTest.counts.sms), trustTest.trust.claims, String(trustTest.counts.claims)],
-    ],
-  ),
-);
 
-// ---------- write model ----------
-const testSevere = evalRows(testRows, severeFit.model, null, 'severe');
-const params: ModelParams = {
-  version: 1,
-  features: [...FEATURE_NAMES],
-  severe: { bias: severeFit.model.bias, weights: severeFit.model.weights },
-  needsHelp: { bias: helpFit.model.bias, weights: helpFit.model.weights },
-  sourceTrust: trustTrain.trust,
-  calibration: { brier: testSevere.brier, ece: testSevere.ece, heldOutEvent: testId },
-  trainedOn: train.map((b) => b.world.eventId),
-};
-writeJson(outPath, params);
-console.log(`\nwrote ${outPath}  (calibration = severe model on ${testId}, all households, pooled over ${times.map(minutesLabel).join('/')})`);
-
-// Baseline weights are not part of the contract; keep them next to the model for the demo.
-const baselineOut = outPath.replace(/\.json$/, '.hazard-baseline.json');
-if (args.flags.get('write-baseline') === 'true') {
-  writeJson(baselineOut, {
-    note: 'hazard-only baseline (maps + policy attributes); not used by the engine, for comparison only',
-    features: HAZARD_BASELINE_FEATURES as FeatureName[],
-    severe: severeBase.model,
-    needsHelp: helpBase.model,
-  });
-  console.log(`wrote ${baselineOut}`);
+function topWeights(res: FitResult, k = 10): string {
+  return res.standardizedWeights
+    .map((w, i) => ({ w, i }))
+    .sort((a, b) => Math.abs(b.w) - Math.abs(a.w))
+    .slice(0, k)
+    .map(({ w, i }) => `${FEATURE_NAMES[i]} ${w >= 0 ? '+' : ''}${w.toFixed(2)}`)
+    .join(', ');
 }
+
+// ---------- per region ----------
+for (const r of regions) {
+  const own = worldsByRegion.get(r.id)!;
+  const others = allWorlds.filter((w) => w.region !== r.id);
+  const canPool = usePooled && others.length > 0;
+  console.log(heading(`${r.id}: leave-one-event-out over ${own.map((w) => w.eventId).join(', ')}${canPool ? ` (pooled adds ${others.length} events from ${[...new Set(others.map((w) => w.region))].join(', ')})` : ''}`));
+
+  const folds: FoldRecord[] = [];
+  for (const held of own) {
+    const strategies: ('specific' | 'pooled')[] = canPool ? ['specific', 'pooled'] : ['specific'];
+    for (const strategy of strategies) {
+      const train = strategy === 'specific' ? own.filter((w) => w !== held) : allWorlds.filter((w) => w !== held);
+      if (train.length === 0) continue;
+      const f = fitAll(trainSet(train));
+      folds.push({ event: held.eventId, strategy, all: evaluate(f, held, false), holdout: evaluate(f, held, true), rows: f.rows, ms: f.ms });
+      console.log(`  fold ${held.eventId} / ${strategy}: ${f.rows} training rows, ${f.ms} ms`);
+    }
+  }
+
+  const rowsAll: (string | number)[][] = [];
+  const rowsHold: (string | number)[][] = [];
+  for (const fr of folds) {
+    rowsAll.push(evalRow(`${fr.event} / ${fr.strategy}`, fr.all, String(fr.all.severe.n)));
+    rowsHold.push(evalRow(`${fr.event} / ${fr.strategy}`, fr.holdout, String(fr.holdout.severe.n)));
+  }
+  const means = new Map<string, { all: EvalResult; holdout: EvalResult; count: number }>();
+  for (const strategy of ['specific', 'pooled'] as const) {
+    const list = folds.filter((f) => f.strategy === strategy);
+    if (list.length === 0) continue;
+    const all = meanEval(list.map((f) => f.all));
+    const holdout = meanEval(list.map((f) => f.holdout));
+    means.set(strategy, { all, holdout, count: list.length });
+    rowsAll.push(evalRow(`MEAN / ${strategy}`, all, `${list.length} folds`));
+    rowsHold.push(evalRow(`MEAN / ${strategy}`, holdout, `${list.length} folds`));
+  }
+  console.log('\nall households of the held-out event:');
+  console.log(table(EVAL_HEADERS, rowsAll));
+  console.log('\nholdout households only (never trained on anywhere):');
+  console.log(table(EVAL_HEADERS, rowsHold));
+
+  // choose
+  let chosen: 'specific' | 'pooled' = 'specific';
+  let why = 'only one strategy available';
+  const sp = means.get('specific');
+  const po = means.get('pooled');
+  if (sp && po) {
+    const dSev = po.all.severe.brier - sp.all.severe.brier;
+    const dHelp = po.all.help.brier - sp.all.help.brier;
+    if (dSev < -1e-4 || (Math.abs(dSev) <= 1e-4 && dHelp < 0)) {
+      chosen = 'pooled';
+      why = `pooled has lower mean LOEO severe Brier (${fmt(po.all.severe.brier)} vs ${fmt(sp.all.severe.brier)}; needs-help ${fmt(po.all.help.brier)} vs ${fmt(sp.all.help.brier)})`;
+    } else {
+      why = `region-specific has lower (or equal) mean LOEO severe Brier (${fmt(sp.all.severe.brier)} vs pooled ${fmt(po.all.severe.brier)}; needs-help ${fmt(sp.all.help.brier)} vs ${fmt(po.all.help.brier)})`;
+    }
+  }
+  console.log(`\nchosen strategy for ${r.id}: ${chosen} - ${why}`);
+
+  // final model
+  const finalTrain = chosen === 'specific' ? own : allWorlds;
+  const f = fitAll(trainSet(finalTrain));
+  const m = means.get(chosen)!;
+  console.log(`final fit (${chosen}): ${f.rows} rows, ${f.ms} ms`);
+  console.log(`  severe:    ${topWeights(f.severe)}`);
+  console.log(`  needsHelp: ${topWeights(f.help)}`);
+  const trust = trustFrom(finalTrain);
+  console.log(`  source trust: hazard ${fmt(trust.hazard)}, sms ${fmt(trust.sms)}, claims ${fmt(trust.claims)}`);
+
+  const params: ModelParams = {
+    version: 2,
+    features: [...FEATURE_NAMES],
+    severe: { bias: f.severe.model.bias, weights: f.severe.model.weights },
+    needsHelp: { bias: f.help.model.bias, weights: f.help.model.weights },
+    sourceTrust: trust,
+    calibration: {
+      brier: m.all.severe.brier,
+      ece: m.all.severe.ece,
+      heldOutEvent: `leave-one-event-out:${own.map((w) => w.eventId).join(',')}`,
+      auc: m.all.severe.auc,
+      needsHelp: { brier: m.all.help.brier, ece: m.all.help.ece, auc: m.all.help.auc },
+      baseline: { brier: m.all.severeBase.brier, ece: m.all.severeBase.ece, auc: m.all.severeBase.auc },
+    },
+    region: own[0].worldRegion ?? r.id,
+    hazardType: own[0].hazardType,
+    trainedOn: finalTrain.map((w) => (w.region === r.id ? w.eventId : w.key)),
+  };
+  const out = singleOut ?? join(r.dir, 'model.json');
+  writeJson(out, params);
+  console.log(`wrote ${out}  (calibration = mean LOEO of the ${chosen} strategy, all households, pooled over ${times.map(minutesLabel).join('/')})`);
+}
+console.log(`\ntotal ${((Date.now() - t0) / 1000).toFixed(1)} s`);

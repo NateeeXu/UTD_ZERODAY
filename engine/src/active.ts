@@ -1,13 +1,14 @@
 // Active inspection: where should the next adjuster go?
 //
-// Score = wSevere * pSevere + wHelp * pNeedsHelp + wUncertainty * uncertainty
-//       + wSilence * cellSilence + wNeedsVerification * [cell needs verification]
+// Score = inspectionScore (infer.ts): (wSevere * pSevere + wHelp * pNeedsHelp + wUncertainty * uncertainty
+//       + wSilence * cellSilence + wNeedsVerification * [cell needs verification]) / sum of weights.
 // Verified households are excluded. The function sees neither truth nor the
 // holdout flag: holdout households are ordinary customers to the adjuster;
 // only the learning loop treats their reports differently.
 
-import type { HexEstimate, HexId, Household, HouseholdEstimate, Priority, Verification, World } from '../../shared/types.ts';
+import type { Facility, HexEstimate, HexId, Household, HouseholdEstimate, Priority, Verification, World } from '../../shared/types.ts';
 import type { TriageConfig } from './config.ts';
+import { inspectionScore } from './infer.ts';
 
 export interface InspectionCandidate {
   householdId: string;
@@ -57,8 +58,7 @@ export function recommendInspections(
   for (const x of hexes) hexById.set(x.hex, x);
   const hhById = new Map<string, Household>();
   for (const h of world.households) hhById.set(h.id, h);
-  const w = cfg.active;
-  const cap = opts.perCellCap ?? w.perCellCap;
+  const cap = opts.perCellCap ?? cfg.active.perCellCap;
 
   const scored: { score: number; id: string; cand: InspectionCandidate }[] = [];
   for (const e of households) {
@@ -69,8 +69,7 @@ export function recommendInspections(
     const cell = hexById.get(h.hex);
     if (!cell) throw new Error(`recommendInspections: no hex estimate for ${h.hex}`);
     const nv = cell.verification === 'needs_verification' ? 1 : 0;
-    const score =
-      w.wSevere * e.pSevere + w.wHelp * e.pNeedsHelp + w.wUncertainty * e.uncertainty + w.wSilence * cell.silence + w.wNeedsVerification * nv;
+    const score = inspectionScore(e, cell, cfg);
     const reasons: string[] = [];
     if (e.pNeedsHelp >= 0.25) reasons.push(`pNeedsHelp ${e.pNeedsHelp.toFixed(2)}`);
     if (e.pSevere >= 0.4) reasons.push(`pSevere ${e.pSevere.toFixed(2)}`);
@@ -164,4 +163,23 @@ export function routeOrder(candidates: readonly InspectionCandidate[], start: { 
     cur = next;
   }
   return out;
+}
+
+export interface NearbyFacility {
+  facility: Facility;
+  km: number;
+}
+
+/** k nearest facilities to a point (optionally restricted to kinds); deterministic ties by id. */
+export function nearestFacilities(
+  facilities: readonly Facility[],
+  point: { lat: number; lng: number },
+  k: number,
+  kinds?: readonly Facility['kind'][],
+): NearbyFacility[] {
+  const list = facilities
+    .filter((f) => !kinds || kinds.includes(f.kind))
+    .map((f) => ({ facility: f, km: haversineKm(point, f) }));
+  list.sort((a, b) => a.km - b.km || (a.facility.id < b.facility.id ? -1 : a.facility.id > b.facility.id ? 1 : 0));
+  return list.slice(0, k);
 }

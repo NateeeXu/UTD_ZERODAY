@@ -8,6 +8,7 @@
     "fixture": "node scripts/fixture.ts",
     "calibrate": "node scripts/calibrate.ts",
     "replay": "node scripts/replay.ts",
+    "bench": "node scripts/bench.ts",
     "check": "node scripts/selfcheck.ts",
     "typecheck": "tsc --noEmit"
   },
