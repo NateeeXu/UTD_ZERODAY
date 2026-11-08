@@ -6,7 +6,7 @@ export function Chip({ priority, verification }: { priority: Priority; verificat
   return (
     <span
       className={`chip chip-${priority}${unverified ? ' unverified' : ''}`}
-      title={unverified ? `${priority}, needs verification` : priority}
+      title={unverified ? `${priority}, needs check` : priority}
     >
       {priority}
     </span>

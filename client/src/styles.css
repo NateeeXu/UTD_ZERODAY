@@ -42,6 +42,8 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .link:hover { color: var(--text); }
 .pill { font-size: 12px; padding: 3px 9px; border: 1px solid var(--text); border-radius: 999px; white-space: nowrap; }
 .pill.warn { border-color: #b45309; color: #b45309; }
+.pill.status-inspected { border-color: #0f7a55; color: #0b5c40; }
+.pill.status-needs_check { border-color: #b45309; color: #92400e; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 
 .chip {
@@ -320,7 +322,9 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .tip-title { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
 .tip-title i { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .tip-status { margin-left: auto; font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: rgba(217, 58, 53, 0.12); color: #9b1f1b; white-space: nowrap; }
-.tip-status.ok { background: rgba(15, 122, 85, 0.12); color: #0b5c40; }
+.tip-status.inspected { background: rgba(15, 122, 85, 0.12); color: #0b5c40; }
+.tip-status.confident { background: rgba(0, 0, 0, 0.06); color: #444; }
+.tip-status.needs_check { background: rgba(180, 83, 9, 0.12); color: #92400e; }
 .tip-why { margin-top: 4px; }
 .tip-meta { margin-top: 2px; color: #555; font-variant-numeric: tabular-nums; }
 .leaflet-tooltip.tip { width: max-content; max-width: 380px; }

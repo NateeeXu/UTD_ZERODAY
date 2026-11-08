@@ -82,7 +82,7 @@ export function ManagerView() {
       key: Date.now(),
       title: `${kindTitle(e)} · ${area?.name ?? 'Unknown area'}`,
       detail: kindDetail(e),
-      outcome: hex ? `→ ${hex.verification === 'verified' ? 'verified' : 'unverified'} ${hex.priority} · just now` : '',
+      outcome: hex ? `→ ${hex.verification === 'verified' ? 'confident' : 'needs check'} ${hex.priority} · just now` : '',
     });
   }, [s.injected, s.householdById, s.areaOfHex, s.hexById]);
   useEffect(() => {
@@ -117,7 +117,7 @@ export function ManagerView() {
           {s.source === 'mock' && <span className="pill warn">mock data</span>}
         </div>
         <div className="stats">
-          <span><b>{pct(m.verifiedCoverage)}</b> verified</span>
+          <span><b>{pct(m.verifiedCoverage)}</b> confident</span>
           <span><b>{m.heldOutBrier == null ? '—' : m.heldOutBrier.toFixed(3)}</b> error</span>
           <span>trust <b>{Math.round(m.sourceTrust.hazard * 100)} · {Math.round(m.sourceTrust.sms * 100)} · {Math.round(m.sourceTrust.claims * 100)}</b></span>
         </div>
@@ -158,7 +158,7 @@ export function ManagerView() {
               {(['P0', 'P1', 'P2'] as const).map((p) => (
                 <span key={p}><i style={{ background: PRIORITY_COLOR[p], opacity: p === 'P2' ? 0.4 : 1 }} />{p} {PRIORITY_LABEL[p]}</span>
               ))}
-              <span><i className="hatch-swatch" />unverified</span>
+              <span><i className="hatch-swatch" />needs check</span>
             </>
           ) : (
             <div className="ramp">

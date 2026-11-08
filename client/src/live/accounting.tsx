@@ -89,7 +89,7 @@ export const ESCALATION: Record<string, { label: string; tone: 'muted' | 'amber'
   assistance: { label: 'Customer care', tone: 'blue' },
   inspection_request: { label: 'Inspection requested', tone: 'blue' },
   accounted: { label: 'Accounted', tone: 'green' },
-  verified: { label: 'Verified', tone: 'green' },
+  verified: { label: 'Inspected', tone: 'green' },
   closed: { label: 'Closed', tone: 'muted' },
 };
 

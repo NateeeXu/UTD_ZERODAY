@@ -134,10 +134,10 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
             <aside className="card queues">
               <nav className="tabs" role="tablist">
                 <button role="tab" aria-selected={tab === 'verify'} className={tab === 'verify' ? 'on' : ''} onClick={() => setTab('verify')}>
-                  To verify <span className="count">{toVerify.length}</span>
+                  To check <span className="count">{toVerify.length}</span>
                 </button>
                 <button role="tab" aria-selected={tab === 'act'} className={tab === 'act' ? 'on' : ''} onClick={() => setTab('act')}>
-                  Verified P0 <span className="count">{actNow.length}</span>
+                  Confident P0 <span className="count">{actNow.length}</span>
                 </button>
               </nav>
               <ul className="area-list scroll">

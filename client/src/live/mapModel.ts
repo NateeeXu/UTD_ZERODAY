@@ -1,6 +1,7 @@
 // Map logic from docs/preview/map-preview.html (approved style A + C), on live hex_stats rows.
 import { cellToBoundary, cellToLatLng, cellToParent, cellsToMultiPolygon } from 'h3-js';
 import type { HexStatsRow } from './rows';
+import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
 
 export type Priority = 'P0' | 'P1' | 'P2';
 export const COLOR: Record<Priority, string> = { P0: '#d93a35', P1: '#ee7d2b', P2: '#e8b931' };
@@ -169,10 +170,10 @@ export function severeRange(u: Pick<MapUnit, 'lo' | 'hi' | 'ex'>): string {
 }
 
 export function tooltipHtml(u: MapUnit, label: string): string {
-  const status = u.fr > 0 ? 'field-verified' : u.v === 'verified' ? 'verified' : 'unverified';
+  const status = cellStatus(u.fr, u.v);
   return (
     `<div class="tip-title"><i style="background:${COLOR[u.p]}"></i>${esc(label)} · ${u.p}` +
-    `<span class="tip-status ${u.v === 'verified' ? 'ok' : ''}">${status}</span></div>` +
+    `<span class="tip-status ${status}">${CELL_STATUS_LABEL[status]}</span></div>` +
     `<div class="tip-why">${esc(driverLine(u))}</div>` +
     `<div class="tip-meta">${u.n.toLocaleString()} homes · ${severeRange(u)} severely damaged · ${Math.round(u.c * 100)}% confident</div>` +
     (Number.isFinite(u.un)

@@ -4,6 +4,7 @@ import type { AreaView } from '../areas';
 import { useTriage } from '../state/TriageStore';
 import { DAMAGE_LABEL, fmtAgo, homeLabel, pct } from '../format';
 import { Chip, ZONE_LABEL, areaHazard } from './bits';
+import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
 
 const ADJUSTERS = ['adj-01', 'adj-02', 'adj-03'];
 
@@ -93,7 +94,7 @@ export function AreaDetail({ view, onClose }: { view: AreaView; onClose: () => v
         <div className="detail-title">
           <Chip priority={view.priority} verification={view.verification} />
           <h2>{view.area.name}</h2>
-          <span className="pill">{view.verification === 'verified' ? 'Verified' : 'Needs verification'}</span>
+          <span className={`pill status-${cellStatus(view.fieldReports, view.verification)}`}>{CELL_STATUS_LABEL[cellStatus(view.fieldReports, view.verification)]}</span>
         </div>
         <span className="muted">
           {view.households} homes · {view.fieldReports} field report{view.fieldReports === 1 ? '' : 's'}

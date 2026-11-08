@@ -18,6 +18,7 @@ import type { HexStatsRow, HouseholdRow, MetricsRow, SmsReplyRow } from './rows'
 import { HouseholdPanel, reportDamage, useLogContact, type Outcome } from './household';
 import { SevereCard } from './SevereCard';
 import { homeLabel, pct } from '../format';
+import { CELL_STATUS_LABEL, cellStatus } from '../cellStatus';
 
 export function ManagerLive() {
   const [region, setRegion] = useState<RegionConfig>(initialRegion);
@@ -427,8 +428,8 @@ function ModelButton({ metrics }: { metrics: MetricsRow | undefined }) {
           <dl>
             <dt>Holdout error (Brier)</dt><dd>{metrics.holdoutN ? metrics.holdoutBrierSevere.toFixed(3) : '—'}</dd>
             <dt>Source trust · hazard / SMS / claims</dt><dd>{pct(metrics.trustHazard)} · {pct(metrics.trustSms)} · {pct(metrics.trustClaims)}</dd>
-            <dt>Verified coverage</dt><dd>{pct(metrics.verifiedCoverage)}</dd>
-            <dt>Cells needing verification</dt><dd>{metrics.needsVerificationCells} of {metrics.hexes}</dd>
+            <dt>Confident coverage (P0/P1)</dt><dd>{pct(metrics.verifiedCoverage)}</dd>
+            <dt>Cells needing a check</dt><dd>{metrics.needsVerificationCells} of {metrics.hexes}</dd>
             <dt>Closed without contact</dt><dd>{metrics.closedNoContact}</dd>
           </dl>
           <span className="small muted">Trust moves after every 10 field reports. Lower holdout error is better.</span>
@@ -457,7 +458,7 @@ function householdLine(h: HouseholdRow | undefined, fictional: boolean): string 
 
 function Chip({ p, unverified }: { p: Priority; unverified?: boolean }) {
   return (
-    <span className={`chip chip-${p}`} style={{ opacity: unverified ? 0.55 : 1 }} title={unverified ? `${p}, needs verification` : p}>
+    <span className={`chip chip-${p}`} style={{ opacity: unverified ? 0.55 : 1 }} title={unverified ? `${p}, needs check` : p}>
       {p}
     </span>
   );
@@ -494,7 +495,7 @@ export function CellDetail({ unit, label, households, candidates, openAssignment
         <div className="detail-title">
           <Chip p={unit.p} unverified={unit.v === 'needs_verification'} />
           <h2>{label}</h2>
-          <span className="pill">{unit.v === 'verified' ? 'Verified' : 'Needs verification'}</span>
+          <span className={`pill status-${cellStatus(unit.fr, unit.v)}`}>{CELL_STATUS_LABEL[cellStatus(unit.fr, unit.v)]}</span>
         </div>
         <span className="muted small">
           {unit.res === 7 ? `District of ${unit.kids.length} neighborhoods · ` : ''}{unit.n.toLocaleString()} households · confidence {pct(unit.c)}
