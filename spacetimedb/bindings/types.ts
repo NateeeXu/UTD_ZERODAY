@@ -169,6 +169,10 @@ export const HexStats = __t.object("HexStats", {
   hazard: __t.f64(),
   silenceCause: __t.string(),
   reason: __t.string(),
+  accounted: __t.u32(),
+  unaccounted: __t.u32(),
+  vulnerable: __t.u32(),
+  unaccountedVulnerable: __t.u32(),
   updatedAt: __t.timestamp(),
   updatedSimMinutes: __t.f64(),
 });
@@ -211,6 +215,8 @@ export const HouseholdEstimate = __t.object("HouseholdEstimate", {
   uncertainty: __t.f64(),
   verified: __t.bool(),
   inspectScore: __t.f64(),
+  accounted: __t.bool(),
+  escalation: __t.string(),
   updatedAt: __t.timestamp(),
 });
 export type HouseholdEstimate = __Infer<typeof HouseholdEstimate>;
@@ -254,6 +260,8 @@ export const InspectionCandidate = __t.object("InspectionCandidate", {
   uncertainty: __t.f64(),
   cellPriority: __t.string(),
   cellVerification: __t.string(),
+  accounted: __t.bool(),
+  escalation: __t.string(),
 });
 export type InspectionCandidate = __Infer<typeof InspectionCandidate>;
 
@@ -276,6 +284,12 @@ export const Metrics = __t.object("Metrics", {
   fieldReports: __t.u32(),
   verifiedHouseholds: __t.u32(),
   verifiedCoverage: __t.f64(),
+  accounted: __t.u32(),
+  unaccounted: __t.u32(),
+  accountedRate: __t.f64(),
+  vulnerable: __t.u32(),
+  vulnerableAccounted: __t.u32(),
+  vulnerableAccountedRate: __t.f64(),
   p0Cells: __t.u32(),
   p1Cells: __t.u32(),
   p2Cells: __t.u32(),

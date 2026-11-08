@@ -18,5 +18,7 @@ export default __t.row({
   uncertainty: __t.f64(),
   verified: __t.bool(),
   inspectScore: __t.f64().name("inspect_score"),
+  accounted: __t.bool(),
+  escalation: __t.string(),
   updatedAt: __t.timestamp().name("updated_at"),
 });

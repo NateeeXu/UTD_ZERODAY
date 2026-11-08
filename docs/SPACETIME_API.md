@@ -38,6 +38,23 @@ All three run the v2 module (engine v2) and use the same private passcodes.
 - `spacetime sql` and `spacetime call` run inside `spacetimedb/` pick up `spacetime.json` (database `triage-loop`). Run them from another folder, e.g. `spacetime sql -s maincloud triage-loop-nateeexu-tx "SELECT * FROM metrics"`.
 - Schema changes that add columns need `--delete-data=always` and a reseed (owner only, see §9).
 
+## 0b. "No one overlooked" (accounted / unaccounted)
+
+A household is **accounted for** once it replied by SMS, filed a claim or got a field report. Everyone else is **unaccounted**, never "fine".
+
+| Where | Columns |
+|---|---|
+| `metrics` | `accounted`, `unaccounted` (the number to drive to zero), `accountedRate`, `vulnerable`, `vulnerableAccounted`, `vulnerableAccountedRate` (equity check: compare with `accountedRate`) |
+| `hex_stats` | `accounted`, `unaccounted`, `vulnerable`, `unaccountedVulnerable` per cell |
+| `household_estimate`, `inspection_candidate` | `accounted` (bool), `escalation` |
+
+`escalation` is the next contact step for each household:
+- Not heard from: `sms_sent` (< 2 h since the text) → `sms_resend` (< 6 h) → `agent_call` (< 12 h, or a low-risk P2 cell) → `field_visit`.
+- Heard from: `emergency_referral` (replied needs help, no visit yet) → `accounted` → `verified` (field report).
+
+Vulnerable = 75+, disability, no vehicle, limited English, medical device, or 65+ living alone.
+Dashboard idea: a big "Unaccounted: N → 0" number, the unaccounted list from `inspection_candidate` where `accounted = false`, and the two rates side by side.
+
 ## 1. What runs inside Spacetime
 
 Everything below is a reducer or a table inside the database. The browser only subscribes and calls reducers.
