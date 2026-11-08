@@ -12,14 +12,21 @@ function readToken(key: string): string | undefined {
 }
 
 // One connection per (screen, database). Remount with a different `db` to switch regions.
+// The identity token is what keeps a manager / adjuster role across reloads, so it is kept on purpose:
+// - saved on every connect, and also written back into the builder so automatic reconnects reuse it
+//   (otherwise a page opened without a token reconnects as a brand-new identity);
+// - never dropped on an ordinary connect error (network blip, database being republished). Tokens stay
+//   valid when a database is rebuilt; only an explicit token rejection clears it.
 export function LiveProvider({ screen, db, children }: { screen: Screen; db: string; children: ReactNode }) {
   const builder = useMemo(() => {
     const key = tokenKey(screen, db);
-    return DbConnection.builder()
+    const b = DbConnection.builder()
       .withUri(HOST)
       .withDatabaseName(db)
-      .withToken(readToken(key))
+      .withToken(readToken(key));
+    return b
       .onConnect((_conn, _identity, token) => {
+        b.withToken(token);
         try {
           localStorage.setItem(key, token);
         } catch {
@@ -27,12 +34,13 @@ export function LiveProvider({ screen, db, children }: { screen: Screen; db: str
         }
       })
       .onConnectError((_ctx, err) => {
-        // A stale token for a wiped database fails here: drop it and reconnect fresh next load.
         console.error('Spacetime connect error', err);
-        try {
-          localStorage.removeItem(key);
-        } catch {
-          /* ignore */
+        if (/\b401\b|unauthori[sz]ed|invalid token|token.*(expired|invalid)/i.test(String(err))) {
+          try {
+            localStorage.removeItem(key);
+          } catch {
+            /* ignore */
+          }
         }
       });
   }, [screen, db]);

@@ -62,7 +62,7 @@ function AdjusterScreen() {
       <div className="phone">
         <header className="phone-top"><strong>Field tasks</strong><ConnectionBadge /></header>
         <p className="muted pad">Join as an adjuster to see your assigned homes.</p>
-        <JoinDialog role="adjuster" onDone={() => undefined} />
+        <JoinDialog role="adjuster" db={initialLiveRegion().db ?? undefined} onDone={() => undefined} />
       </div>
     );
   }

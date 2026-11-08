@@ -4,7 +4,7 @@ import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './config';
 import { LiveMap } from './LiveMap';
-import { JoinDialog } from './JoinDialog';
+import { JoinDialog, rememberedName } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
@@ -234,7 +234,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
         {me ? (
           <span className="small">{me.role === 'manager' ? 'Manager' : me.role} · <b>{me.name}</b></span>
         ) : (
-          <button className="btn" onClick={() => setJoining(true)}>Join as manager</button>
+          <button className="btn" onClick={() => setJoining(true)}>{rememberedName(region.db ?? undefined, 'manager') ? 'Rejoin as manager' : 'Join as manager'}</button>
         )}
       </RegionHeader>
 
@@ -358,7 +358,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
       </div>
 
       <ReplayBar replay={replay} canControl={isManager} onNeedJoin={() => setJoining(true)} />
-      {joining && <JoinDialog role="manager" onDone={() => setJoining(false)} onCancel={() => setJoining(false)} />}
+      {joining && <JoinDialog role="manager" db={region.db ?? undefined} onDone={() => setJoining(false)} onCancel={() => setJoining(false)} />}
     </div>
   );
 }
