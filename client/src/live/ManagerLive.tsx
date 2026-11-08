@@ -8,7 +8,7 @@ import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
 import { QrButton } from './LiveQrCard';
-import { RandomDisasterButton, RandomDisasterLauncher } from './RandomDisasterButton';
+import { RandomDisasterButton } from './RandomDisasterButton';
 import { useEstimatesById, useHouseholdsById, useHouseholdsInCell } from './hooks';
 import { SnapshotManager } from './SnapshotManager';
 import { makeLabeler } from './labels';
@@ -39,7 +39,7 @@ export function ManagerLive() {
   );
 }
 
-// Shared top bar: product label (plus, in the dev sandbox, the new-disaster button), right-hand slot,
+// Shared top bar: product label (plus the new-disaster button), right-hand slot,
 // then the region switcher pinned to the right edge (topbar.css).
 export function RegionHeader({ region, onRegion, brandExtra, children }: {
   region: RegionConfig; onRegion: (r: RegionConfig) => void; brandExtra?: ReactNode; children?: ReactNode;
@@ -49,7 +49,7 @@ export function RegionHeader({ region, onRegion, brandExtra, children }: {
       <div className="brand stacked">
         <div className="brand-line">
           <strong>Saviu</strong>
-          {/* The generated scenario name is no longer shown here; the dev sandbox puts its disaster button here. */}
+          {/* The generated scenario name is no longer shown here; the disaster button goes here. */}
           {brandExtra}
         </div>
       </div>
@@ -125,7 +125,6 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   const fictional = world ? !world.region : false; // until `world` arrives, assume real geography (never invent names)
 
   const [joining, setJoining] = useState(false);
-  const sandbox = REGIONS.find((r) => r.dev && r.db); // where random disasters load
   const [mapMode, setMapMode] = useState<MapMode>('priority');
   const [selected, setSelected] = useState<MapUnit | null>(null);
   const [focus, setFocus] = useState<{ id: string; hex: string } | null>(null); // household panel
@@ -287,9 +286,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
   return (
     <div className="manager live">
       <RegionHeader region={region} onRegion={onRegion}
-        brandExtra={region.dev
-          ? <RandomDisasterButton canControl={isManager} ready={memberReady && !rejoining} onNeedJoin={() => setJoining(true)} />
-          : sandbox ? <RandomDisasterLauncher onGoSandbox={() => onRegion(sandbox)} /> : undefined}>
+        brandExtra={<RandomDisasterButton canControl={isManager} only={region.id === 'tx' || region.id === 'ca' ? region.id : undefined} onNeedJoin={() => setJoining(true)} />}>
         <QrButton household={qrHousehold} region={region.id} db={region.db!} members={members} managerName={me?.name} />
         <ModelButton metrics={metrics} />
         <ConnectionBadge />
