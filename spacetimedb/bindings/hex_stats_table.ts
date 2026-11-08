@@ -37,6 +37,13 @@ export default __t.row({
   unaccounted: __t.u32(),
   vulnerable: __t.u32(),
   unaccountedVulnerable: __t.u32().name("unaccounted_vulnerable"),
+  highRiskUnaccounted: __t.u32().name("high_risk_unaccounted"),
+  longestWaitMin: __t.f64().name("longest_wait_min"),
+  openReferrals: __t.u32().name("open_referrals"),
+  overdueReferrals: __t.u32().name("overdue_referrals"),
+  membersMissing: __t.u32().name("members_missing"),
+  closedNoContact: __t.u32().name("closed_no_contact"),
+  recheckDue: __t.u32().name("recheck_due"),
   updatedAt: __t.timestamp().name("updated_at"),
   updatedSimMinutes: __t.f64().name("updated_sim_minutes"),
 });

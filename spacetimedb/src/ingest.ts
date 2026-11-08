@@ -67,6 +67,13 @@ export function emptyStats(ctx: Ctx, hexId: string, displayOrder: number) {
     unaccounted: 0,
     vulnerable: 0,
     unaccountedVulnerable: 0,
+    highRiskUnaccounted: 0,
+    longestWaitMin: 0,
+    openReferrals: 0,
+    overdueReferrals: 0,
+    membersMissing: 0,
+    closedNoContact: 0,
+    recheckDue: 0,
     updatedAt: ctx.timestamp,
     updatedSimMinutes: 0,
   };
@@ -401,6 +408,8 @@ export function clearDemoState(ctx: Ctx) {
   ctx.db.assignment.clear();
   ctx.db.householdEstimate.clear();
   ctx.db.inspectionCandidate.clear();
+  ctx.db.householdFollowup.clear();
+  ctx.db.unaccountedQueue.clear();
   ctx.db.replayTick.clear();
 
   const rs = getReplay(ctx);
