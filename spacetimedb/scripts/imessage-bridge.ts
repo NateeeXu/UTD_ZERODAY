@@ -15,7 +15,7 @@ import type { ImessageOutbox } from '../bindings/types.ts';
 const run = promisify(execFile);
 const DRY_RUN = process.argv.includes('--dry-run');
 const TO = process.env.IMESSAGE_DEMO_TO ?? '';
-const MAX_SENDS = 20;
+const MAX_SENDS = 200;
 
 // Recipient and text are passed as arguments, so message text is never parsed as AppleScript.
 const APPLESCRIPT = [
