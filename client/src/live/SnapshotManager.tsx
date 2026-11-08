@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { RegionConfig } from './config';
 import { CellDetail, RegionHeader } from './ManagerLive';
-import { LiveMap } from './LiveMap';
+import { FacilityKey, LiveMap } from './LiveMap';
 import { makeLabeler } from './labels';
 import { CAUSE, COLOR, isSuspected, prio, RANK, unitsFor, type MapUnit, type Priority } from './mapModel';
 import { loadPreview, snapshotFacilities, snapshotRows, type PreviewData } from './snapshot';
@@ -100,7 +100,7 @@ export function SnapshotManager({ region, onRegion }: { region: RegionConfig; on
             <span className="pill">{res === 7 ? 'Districts · H3 res 7' : 'Neighborhoods · H3 res 8'}</span>
             <label className="check chip-check">
               <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} />
-              Schools and hospitals
+              <FacilityKey />
             </label>
           </div>
         </div>

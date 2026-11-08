@@ -628,3 +628,16 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .map-legend .hazard-key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .map-legend .hazard-key svg { flex-shrink: 0; }
 .manager.live .overlay.map-legend { white-space: nowrap; }
+
+/* Schools / hospitals on the map (LiveMap facilityIcon) and their key in the toggle chip. */
+.fac-icon {
+  display: flex; align-items: center; justify-content: center;
+  font: 700 10px/1 system-ui, sans-serif; color: #fff;
+  border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+}
+.fac-school, .fac-university { background: #2b5fb4; border-radius: 50%; }
+.fac-university { font-size: 11px; }
+.fac-hospital { background: #0f7a55; border-radius: 3px; }
+.fac-key { display: inline-flex; align-items: center; gap: 4px; }
+.fac-key .fac-icon { width: 15px; height: 15px; font-size: 9px; }

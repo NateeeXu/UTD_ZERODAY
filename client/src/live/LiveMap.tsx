@@ -13,6 +13,20 @@ const HAZARD_FILL = '#3b5b8c';
 const HAZARD_INK = '#1e2a3a';
 export type FitTarget = { target: 'cells' | 'cone'; n: number };
 
+type FacilityKind = 'school' | 'university' | 'hospital';
+// Letter badges so the kind reads without hovering: H = hospital (green square), S = school and
+// U = university (blue circles). Same look as FacilityKey in the toggle chip.
+export const FACILITY_GLYPH: Record<FacilityKind, string> = { hospital: 'H', school: 'S', university: 'U' };
+function facilityIcon(kind: FacilityKind): L.DivIcon {
+  const size = kind === 'university' ? 20 : 16;
+  return L.divIcon({
+    className: `fac-icon fac-${kind}`,
+    html: FACILITY_GLYPH[kind],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 interface Props {
   cells: readonly HexStatsRow[];
   facilities: readonly FacilityRow[];
@@ -319,16 +333,15 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
     if (!m || !g) return;
     g.fac.clearLayers();
     // Schools, universities and hospitals only (the table also has fire stations, shelters, masts).
+    // Drawn as markers (markerPane, z 600), so they always sit above the hexes even after the cells
+    // are rebuilt on a zoom level-of-detail change.
     for (const f of facilities.filter((x) => x.kind === 'school' || x.kind === 'university' || x.kind === 'hospital')) {
-      const school = f.kind !== 'hospital';
-      L.circleMarker([f.lat, f.lng], {
-        radius: f.kind === 'university' ? 5 : 3,
-        color: school ? '#2b5fb4' : '#0f7a55',
-        weight: 1.5,
-        fillColor: '#fff',
-        fillOpacity: 1,
-      })
-        .bindTooltip(`${f.name}${f.enrollment != null ? ` · ${f.enrollment.toLocaleString()} students` : ''}`, { direction: 'top' })
+      const kind = f.kind as FacilityKind;
+      const what = kind === 'hospital' ? 'Hospital' : kind === 'university' ? 'University' : 'School';
+      const tip = document.createElement('span'); // textContent: names come from data, never parsed as HTML
+      tip.textContent = `${what} · ${f.name}${f.enrollment != null ? ` · ${f.enrollment.toLocaleString()} students` : ''}`;
+      L.marker([f.lat, f.lng], { icon: facilityIcon(kind), keyboard: false, title: '' })
+        .bindTooltip(tip, { direction: 'top', offset: [0, -8] })
         .addTo(g.fac);
     }
     if (showFacilities) g.fac.addTo(m);
@@ -352,4 +365,14 @@ export function LiveMap({ cells, facilities, showFacilities, labelFor, selected,
   }, [flash]);
 
   return <div ref={el} className="map" />;
+}
+
+/** Toggle-chip label that doubles as the map key for the facility icons. */
+export function FacilityKey() {
+  const badge = (k: FacilityKind) => <i className={`fac-icon fac-${k}`} aria-hidden>{FACILITY_GLYPH[k]}</i>;
+  return (
+    <span className="fac-key">
+      {badge('school')}{badge('university')} Schools &amp; universities · {badge('hospital')} Hospitals
+    </span>
+  );
 }

@@ -3,7 +3,7 @@ import { useReducer, useTable } from 'spacetimedb/react';
 import { reducers, tables } from '../module_bindings/index.ts';
 import { ConnectionBadge, LiveProvider } from './LiveProvider';
 import { REGIONS, initialRegion, rememberRegion, type RegionConfig } from './config';
-import { LiveMap, type FitTarget } from './LiveMap';
+import { FacilityKey, LiveMap, type FitTarget } from './LiveMap';
 import { hasCone, parseHazard } from './hazard';
 import { JoinDialog, rememberedName, useAutoRejoin } from './JoinDialog';
 import { ReplayBar } from './ReplayBar';
@@ -312,7 +312,7 @@ function ManagerScreen({ region, onRegion }: { region: RegionConfig; onRegion: (
             </div>
             <label className="glass-chip">
               <input type="checkbox" checked={showFacilities} onChange={(e) => setShowFacilities(e.target.checked)} disabled={!facilities.length} />
-              Schools and hospitals
+              <FacilityKey />
             </label>
             {hasCone(hazard) && (
               <button className="glass-chip chip-btn" aria-pressed={coneShown}
