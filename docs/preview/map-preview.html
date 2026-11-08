@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triage Loop · map style preview (A + C)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --ink:#1d1d1f; --muted:#6b6b70; --line:#e3e3e8; --bg:#f6f6f7; --p0:#d93a35; --p1:#ee7d2b; --p2:#e8b931; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; color:var(--ink); background:var(--bg); }
+  header { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:12px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header .sub { color:var(--muted); }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-left:auto; }
+  .seg button { border:0; background:#fff; padding:6px 12px; font:inherit; cursor:pointer; color:var(--muted); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  label.chk { display:flex; align-items:center; gap:6px; color:var(--muted); cursor:pointer; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); height:calc(100vh - 106px); min-height:520px; }
+  .panel { display:flex; flex-direction:column; background:#fff; min-width:0; }
+  .meta { padding:10px 16px; border-bottom:1px solid var(--line); }
+  .meta .t { font-size:15px; font-weight:600; }
+  .meta .s { color:var(--muted); font-size:13px; }
+  .meta .stats { margin-top:4px; font-size:13px; }
+  .meta .stats b { font-weight:600; }
+  .map { flex:1; }
+  footer { display:flex; gap:22px; align-items:center; flex-wrap:wrap; padding:8px 18px; background:#fff; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+  .sw { display:inline-block; width:14px; height:12px; border-radius:2px; vertical-align:-1px; margin-right:5px; }
+  .ramp { display:inline-flex; gap:2px; vertical-align:-1px; margin-right:5px; }
+  .ramp i { width:12px; height:12px; border-radius:2px; background:var(--p0); }
+  .tip b { font-weight:600; }
+  .leaflet-tooltip.tip { max-width:320px; white-space:normal; font-size:12.5px; line-height:1.4; }
+  /* C: pulse ring, only on the most urgent silent cells */
+  .pulse-ring { transform-box: fill-box; transform-origin: center; animation: ring 1.8s ease-out infinite; }
+  @keyframes ring { 0% { transform: scale(1); stroke-opacity: .95; } 75% { transform: scale(1.9); stroke-opacity: 0; } 100% { transform: scale(1.9); stroke-opacity: 0; } }
+  @media (max-width: 900px) { .grid { grid-template-columns:1fr; height:auto; } .map { height:60vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Triage Loop</h1>
+  <span class="sub">Synthetic exercise · real geography and census data · no real customer data · H3 res 8</span>
+  <div class="seg" id="times"></div>
+  <label class="chk"><input type="checkbox" id="schools"> Schools and hospitals</label>
+</header>
+<div class="grid">
+  <section class="panel"><div class="meta" id="meta-tx"></div><div class="map" id="map-tx"></div></section>
+  <section class="panel"><div class="meta" id="meta-ca"></div><div class="map" id="map-ca"></div></section>
+</div>
+<footer>
+  <span><span class="sw" style="background:var(--p0)"></span>P0 act now</span>
+  <span><span class="sw" style="background:var(--p1)"></span>P1</span>
+  <span><span class="sw" style="background:var(--p2)"></span>P2</span>
+  <span><span class="ramp"><i style="opacity:.2"></i><i style="opacity:.5"></i><i style="opacity:.85"></i></span>Fainter = less confident (needs verification)</span>
+  <span><svg width="18" height="14" style="vertical-align:-2px;margin-right:4px"><polygon points="9,1 16,5 16,11 9,13 2,11 2,5" fill="none" stroke="#d93a35" stroke-width="2"/></svg>Pulsing = top 10 silent high-hazard cells to verify first</span>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+<script src="preview-data.js"></script>
+<script>
+const D = window.PREVIEW_DATA;
+const COLOR = { P0: '#d93a35', P1: '#ee7d2b', P2: '#e8b931' };
+const CAUSE = { outage: 'cell towers down', away: 'residents likely away at work', trapped: 'many vulnerable residents', unknown: 'cause unclear' };
+const PULSE_TOP = 10;
+let current = D.times[1];
+const state = {};
+
+function fmtTime(t) { return t < 60 ? t + ' min' : (t / 60) + ' h'; }
+function localTime(r) {
+  if (r.eventLocalHour == null) return '';
+  const day = r.eventWeekday ? 'weekday' : 'weekend';
+  return ` · event at ${String(r.eventLocalHour).padStart(2, '0')}:00 local, ${day}`;
+}
+
+function setup(id) {
+  const r = D.regions[id];
+  const map = L.map('map-' + id, { zoomControl: true, preferCanvas: false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors', maxZoom: 16,
+  }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 16, pane: 'shadowPane',
+  }).addTo(map);
+  const cells = L.layerGroup().addTo(map);
+  const rings = L.layerGroup().addTo(map);
+  const fac = L.layerGroup();
+  for (const f of r.facilities) {
+    const isSchool = f.k !== 'hospital';
+    L.circleMarker([f.lat, f.lng], {
+      radius: f.k === 'university' ? 5 : 3, color: isSchool ? '#2b5fb4' : '#0f7a55', weight: 1.5, fillColor: '#fff', fillOpacity: 1,
+    }).bindTooltip(`${f.n}${f.e ? ` · ${f.e.toLocaleString()} students` : ''}`, { direction: 'top' }).addTo(fac);
+  }
+  const first = r.snapshots[String(D.times[0])];
+  const bounds = L.latLngBounds(first.flatMap((c) => h3.cellToBoundary(c.hex)));
+  map.fitBounds(bounds, { padding: [10, 10] });
+  state[id] = { map, cells, rings, fac };
+}
+
+function render(id) {
+  const r = D.regions[id];
+  const { cells, rings } = state[id];
+  const snap = r.snapshots[String(current)];
+  cells.clearLayers(); rings.clearLayers();
+
+  const suspected = snap
+    .filter((c) => c.p === 'P0' && c.v === 'needs_verification' && c.si >= 0.5 && c.hz >= 0.5)
+    .sort((a, b) => b.si * b.hz * b.n - a.si * a.hz * a.n)
+    .slice(0, PULSE_TOP);
+  const pulse = new Set(suspected.map((c) => c.hex));
+
+  const counts = { P0: 0, P1: 0, P2: 0 }; let nv = 0;
+  for (const c of snap) {
+    counts[c.p]++; if (c.v === 'needs_verification') nv++;
+    const ring = h3.cellToBoundary(c.hex);
+    const color = COLOR[c.p];
+    const fillOpacity = 0.12 + 0.73 * c.c;
+    const poly = L.polygon(ring, {
+      color, weight: 0.6, opacity: 0.35 + 0.5 * c.c, fillColor: color, fillOpacity,
+    });
+    const cause = c.sc ? `<br>Silence: ${Math.round(c.si * 100)}% · ${CAUSE[c.sc] || c.sc}` : '';
+    poly.bindTooltip(
+      `<b>${c.p}${c.v === 'needs_verification' ? ' · needs verification' : ' · verified'}</b>` +
+      `<br>Confidence ${Math.round(c.c * 100)}% · ${c.n} households · ~${c.ex} likely severe` +
+      `<br>SMS replies ${c.rep}/${c.sent} · claims ${c.cl}${cause}` +
+      (c.r ? `<br><span style="color:#6b6b70">${c.r}</span>` : ''),
+      { sticky: true, className: 'tip' });
+    poly.addTo(cells);
+    if (pulse.has(c.hex)) {
+      L.polygon(ring, { color: '#d93a35', weight: 2.5, fill: false, interactive: false, className: 'pulse-ring' }).addTo(rings);
+      L.polygon(ring, { color: '#7a1714', weight: 1.6, fill: false, interactive: false }).addTo(rings);
+    }
+  }
+  document.getElementById('meta-' + id).innerHTML =
+    `<div class="t">${r.title}</div>` +
+    `<div class="s">${r.subtitle}${localTime(r)}</div>` +
+    `<div class="stats">${r.households.toLocaleString()} synthetic policyholders · ${r.cells} cells · ` +
+    `t = ${fmtTime(current)} · <b style="color:${COLOR.P0}">${counts.P0} P0</b> · ${counts.P1} P1 · ${counts.P2} P2 · ` +
+    `<b>${nv}</b> need verification</div>`;
+}
+
+function renderAll() { render('tx'); render('ca'); }
+
+const seg = document.getElementById('times');
+for (const t of D.times) {
+  const b = document.createElement('button');
+  b.textContent = 't = ' + fmtTime(t);
+  b.onclick = () => { current = t; [...seg.children].forEach((x) => x.classList.toggle('on', x === b)); renderAll(); };
+  if (t === current) b.classList.add('on');
+  seg.appendChild(b);
+}
+document.getElementById('schools').onchange = (e) => {
+  for (const id of ['tx', 'ca']) e.target.checked ? state[id].fac.addTo(state[id].map) : state[id].fac.remove();
+};
+setup('tx'); setup('ca'); renderAll();
+</script>
+</body>
+</html>
