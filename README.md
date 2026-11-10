@@ -37,7 +37,7 @@ npm run seed:hb && npm run seed:tx && npm run seed:ca
 
 Always pass `-s local` to the `spacetime` CLI (its default server is Maincloud), for example `spacetime call -s local triage-loop-ca start_replay 30`, and run it outside `spacetimedb/` for any database other than `triage-loop`.
 
-- **Web client**: on branch `frontend/app`, not merged here yet. `cd client && npm install && npm run dev`, then open `#/` (manager), `#/adjuster` or `#/reply`. It defaults to the team's Maincloud databases; `client/README.md` on that branch explains the settings.
+- **Web client**: `cd client && npm install && npm run dev`, then open `#/` (manager), `#/adjuster` or `#/reply`. It defaults to the team's Maincloud databases; `client/README.md` explains the settings.
 - **Passcodes** for staff and reply screens are set at seed time; see `docs/SPACETIME_API.md` section 3.
 - **Free-text replies** need the Claude worker and your own Anthropic API key; see `docs/CLAUDE_PARSER.md`.
 
@@ -50,7 +50,7 @@ Always pass `-s local` to the `spacetime` CLI (its default server is Maincloud),
 | `spacetimedb/` | Spacetime module (tables, reducers, simulated staff) and scripts, including the Claude reply-parser worker |
 | `data/` | Generated event bundles and calibrated models ([`data/README.md`](data/README.md), [`data/real/README.md`](data/real/README.md)) |
 | `docs/` | Requirements, data card, API reference, design notes |
-| `client/` | Manager dashboard, adjuster phone view, policyholder reply page (branch `frontend/app`) |
+| `client/` | Manager dashboard, adjuster phone view, policyholder reply page |
 
 ## Docs
 - [Product requirements](docs/PRD.md)
